@@ -90,3 +90,35 @@ test("examples rewired from their own netlists connect the same pins", () => {
     assert.equal(sameNets({ ...base, wires }, c), null, name);
   }
 });
+
+test("autoWire does not join nets through a part's insides (a tact switch's legs)", () => {
+  const base = {
+    board: "half",
+    parts: [
+      { id: "U1", type: "xiao", at: "d9", rot: 180, model: "ESP32S3" },
+      { id: "SW1", type: "button", at: "e17" },
+      { id: "TH1", type: "dht11", at: "a24" },
+      { id: "R2", type: "resistor", pins: ["c22", "c25"] },
+      { id: "R1", type: "resistor", pins: ["c10", "c14"] },
+      { id: "LED1", type: "led", pins: ["b14", "b16"] },
+    ],
+    wires: [],
+  };
+  const nets = {
+    GND: ["U1.GND", "SW1.3", "SW1.4", "LED1.K", "T-", "B-"],
+    "3V3": ["U1.3V3", "TH1.VCC", "R2.1", "T+", "B+"],
+    BTN: ["U1.D1", "SW1.1"],
+    DATA: ["U1.D2", "TH1.DATA", "R2.2"],
+  };
+  const { wires } = autoWire(base, nets);
+  const c = { ...base, wires };
+  // the rails stay joined with the switch pulled out
+  const without = resolveCircuit({ ...c, parts: c.parts.filter((p) => p.id !== "SW1") });
+  const names = without.nets.map((n) => n.name);
+  assert.ok(names.includes("T-/B-"), names.join(", "));
+  assert.ok(names.includes("T+/B+"), names.join(", "));
+  // SW1.3 and SW1.4 are one point: no wire is spent joining them
+  const r = resolveCircuit(c);
+  const gnd = r.nets.find((n) => n.name === "T-/B-").pins.map((p) => p.ref);
+  for (const m of ["U1.GND", "SW1.3", "SW1.4", "LED1.K"]) assert.ok(gnd.includes(m), m);
+});

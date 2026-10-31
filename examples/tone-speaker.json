@@ -4,8 +4,8 @@
   "board": "half",
   "parts": [
     { "id": "U1", "type": "nano", "at": "h3" },
-    { "id": "R1", "type": "resistor", "value": "100", "pins": ["j13", "j18"] },
-    { "id": "SP1", "type": "speaker", "pos": [24, 21.5], "rot": 180 }
+    { "id": "R1", "type": "resistor", "value": "100", "pins": ["j13", "j18"], "idLabel": { "dy": 2.35 } },
+    { "id": "SP1", "type": "speaker", "pos": [24, 21.5], "rot": 180, "idLabel": { "dx": 1.2 } }
   ],
   "wires": [
     { "id": "W1", "from": "j6", "to": "B-6", "color": "black", "note": "GND" },

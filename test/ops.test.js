@@ -63,7 +63,7 @@ test("update renames, sets params, and null removes a key", () => {
   ]);
   assert.deepEqual(ids, ["R9", "W1", "W1"]);
   assert.equal(part(circuit, "R9").value, "1k");
-  assert.deepEqual(circuit.wires[0], { id: "W1", from: "c22", to: "T-22", color: "blue" });
+  assert.deepEqual(circuit.wires[0], { id: "W1", from: "a22", to: "T-22", color: "blue" });
 });
 
 test("wires: add, update ends, remove", () => {

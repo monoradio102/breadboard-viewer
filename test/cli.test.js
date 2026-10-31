@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { resolveCircuit } from "../src/circuit.js";
 import { coordsOf, layoutIssues, previewPlacement } from "../src/inspect.js";
+import { labelBox } from "../src/render.js";
 
 const bb = (...args) => spawnSync(process.execPath, ["tools/bb.mjs", ...args], { encoding: "utf8", cwd: new URL("..", import.meta.url) });
 
@@ -71,6 +74,10 @@ test("coords says which board it assumed, and points to the nearest rail hole", 
   assert.equal(t30.board, "full");
   assert.match(t30.note, /half \/ mini にはこの穴はありません/);
   const half = JSON.parse(bb("coords", "T-30", "--board", "half").stdout);
+  // place takes --board too
+  assert.equal(JSON.parse(bb("place", "led", "--at", "a40", "--board", "full").stdout).ok, true);
+  assert.match(JSON.parse(bb("place", "led", "--at", "a40", "--board", "half").stdout).errors[0], /a40/);
+  assert.match(bb("place", "led", "--at", "a10", "--board", "huge").stderr, /--board は full \/ half \/ mini/);
   assert.match(half.error, /近い穴: T-29/);
   const r = resolveCircuit({ board: "half", wires: [{ from: "a29", to: "T-30" }] });
   assert.match(r.errors[0], /穴 T-30 はこのボードにありません。.*近い穴: T-29/);
@@ -146,5 +153,49 @@ test("PNG from an installed Chromium run headless (--raster chrome)", { skip: ch
     assert.equal(readFileSync(out).subarray(1, 4).toString(), "PNG");
   } finally {
     rmSync(out, { force: true });
+  }
+});
+
+test("layout flags wires over LED / resistor bodies and labels under wires", () => {
+  const r = resolveCircuit({
+    board: "half",
+    parts: [
+      { id: "R1", type: "resistor", pins: ["c10", "c14"] },
+      { id: "LED1", type: "led", pins: ["b16", "b18"] },
+      { id: "TH1", type: "dht11", at: "a24" },
+    ],
+    wires: [
+      { id: "W1", from: "c8", to: "c16" }, // along R1's barrel
+      { id: "W4", from: "a15", to: "c20" }, // across LED1's dome
+      { id: "W2", from: "a17", to: "T-17" }, // through LED1's label
+      { id: "W3", from: "e8", to: "e20" }, // clear of both
+    ],
+  });
+  const issues = layoutIssues(r);
+  assert.ok(issues.includes("W1 が R1 の本体の上を通っています (via で避けられます)"), issues.join("\n"));
+  assert.ok(issues.includes("W4 が LED1 の本体の上を通っています (via で避けられます)"), issues.join("\n"));
+  assert.ok(issues.some((l) => l.startsWith("LED1 のラベルに W2 が重なっています")), issues.join("\n"));
+  assert.ok(!issues.some((l) => l.includes("W3")), issues.join("\n"));
+  // a sensor standing up from its pins gets its label beside the body, not on its face
+  assert.ok(!issues.some((l) => l.startsWith("TH1")), issues.join("\n"));
+  const th1 = labelBox(r.parts.find((p) => p.id === "TH1"));
+  assert.ok(th1.x > 28.5, JSON.stringify(th1));
+});
+
+test("Chrome / Edge are found where macOS and Windows install them", () => {
+  const home = mkdtempSync(join(tmpdir(), "bb-home-"));
+  try {
+    const app = join(home, "Applications", "Google Chrome.app", "Contents", "MacOS");
+    mkdirSync(app, { recursive: true });
+    writeFileSync(join(app, "Google Chrome"), "");
+    const code = `Object.defineProperty(process, "platform", { value: "darwin" });
+      const { findChrome, findRasterizer } = await import(${JSON.stringify(new URL("../tools/raster.mjs", import.meta.url).href)});
+      console.log(JSON.stringify([findChrome(), findChrome({ chromeOnly: true }), findRasterizer("chrome")]));`;
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8", env: { HOME: home, PATH: "" } });
+    assert.equal(r.status, 0, r.stderr);
+    const bin = join(app, "Google Chrome");
+    assert.deepEqual(JSON.parse(r.stdout), [bin, bin, `chrome:${bin}`]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
 });

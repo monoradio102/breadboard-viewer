@@ -11,9 +11,31 @@ const overlap = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(
 const inside = (p, b, m = 0) => p.x > b.x + m && p.x < b.x + b.w - m && p.y > b.y + m && p.y < b.y + b.h - m;
 
 // Body box of a part for layout purposes: rigid / off-board parts use their outline, parts with
-// bendable leads only the strip between their pins.
+// bendable leads the strip between their pins plus the drawn body (bodyCore).
 export function bodyBox(part) {
-  return part.def.mount === "leads" && !part.offboard ? partBox(part, 0.45) : partBox(part, 0.6);
+  if (part.def.mount !== "leads" || part.offboard) return partBox(part, 0.6);
+  const legs = partBox(part, 0.45);
+  const core = bodyCore(part);
+  const [x0, y0] = [Math.min(legs.x, core.x), Math.min(legs.y, core.y)];
+  const [x1, y1] = [Math.max(legs.x + legs.w, core.x + core.w), Math.max(legs.y + legs.h, core.y + core.h)];
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+// What is drawn as the part's body: for parts with leads, the body at the pins' centre without
+// the legs (def.body: a radius, or (span) => [half length along the leads, half width]).
+export function bodyCore(part) {
+  if (part.def.mount !== "leads" || part.offboard) return bodyBox(part);
+  const pins = part.pins;
+  const cx = pins.reduce((s, p) => s + p.x, 0) / pins.length;
+  const cy = pins.reduce((s, p) => s + p.y, 0) / pins.length;
+  const [a, b] = [pins[0], pins[pins.length - 1]];
+  const span = Math.hypot(b.x - a.x, b.y - a.y);
+  const body = typeof part.def.body === "function" ? part.def.body(span) : part.def.body;
+  const [hl, hw] = Array.isArray(body) ? body : [Number(body) || 0.45, Number(body) || 0.45];
+  const t = Math.atan2(b.y - a.y, b.x - a.x);
+  const [c, s] = [Math.abs(Math.cos(t)), Math.abs(Math.sin(t))];
+  const [rx, ry] = [hl * c + hw * s, hl * s + hw * c];
+  return { x: cx - rx, y: cy - ry, w: 2 * rx, h: 2 * ry };
 }
 
 // Holes hidden under rigid / off-board part bodies: hole -> part id (its own pins excluded).
@@ -123,7 +145,8 @@ export function partSpec(def) {
 // Problems only visible in the drawing. Heuristic: boxes are approximate.
 export function layoutIssues(result) {
   const out = [];
-  const bodies = result.parts.map((p) => ({ part: p, box: bodyBox(p) }));
+  // what is drawn as each body (an LED's dome, a resistor's barrel; not the thin legs)
+  const bodies = result.parts.map((p) => ({ part: p, box: bodyCore(p) }));
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
       const [a, b] = [bodies[i], bodies[j]];
@@ -157,7 +180,20 @@ export function layoutIssues(result) {
     const off = wirePoints(w).some((q) => q.x < b.x - 0.3 || q.x > b.x + b.w + 0.3 || q.y < b.y - 0.3 || q.y > b.y + b.h + 0.3);
     if (off) out.push(`${w.id} がボードの外にはみ出しています (bend / via を確かめてください)`);
   }
-  // id labels on top of other parts or labels
+  // wires running over a part's body (away from their own ends; a wire to the part's own pin
+  // may touch it). The box is shrunk a little: grazing an edge is fine.
+  const traces = result.wires.map((w) => ({ w, pts: wirePoints(w, 0.2) }));
+  for (const { w, pts } of traces) {
+    for (const { part, box } of bodies) {
+      if ([w.from, w.to].some((r) => String(r).startsWith(`${part.id}.`))) continue;
+      const edge = part.def.mount === "leads" && !part.offboard ? 0.15 : 0.6; // grazing a module's edge is fine
+      const [mx, my] = [Math.min(edge, box.w * 0.2), Math.min(edge, box.h * 0.2)];
+      const core = { x: box.x + mx, y: box.y + my, w: box.w - 2 * mx, h: box.h - 2 * my };
+      const away = pts.filter((q) => [w.a, w.b].every((e) => Math.hypot(q.x - e.x, q.y - e.y) > 0.6));
+      if (away.some((q) => inside(q, core))) out.push(`${w.id} が ${part.id} の本体の上を通っています (via で避けられます)`);
+    }
+  }
+  // id labels on top of other parts, labels or wires
   const labels = result.parts.map((p) => ({ part: p, box: labelBox(p) })).filter((l) => l.box);
   for (const l of labels) {
     for (const b of bodies) {
@@ -165,6 +201,9 @@ export function layoutIssues(result) {
     }
     for (const m of labels) {
       if (m.part.id > l.part.id && overlap(l.box, m.box) > 0.05) out.push(`${l.part.id} と ${m.part.id} のラベルが重なっています`);
+    }
+    for (const { w, pts } of traces) {
+      if (pts.some((q) => inside(q, l.box, -0.1))) out.push(`${l.part.id} のラベルに ${w.id} が重なっています (idLabel でずらせます)`);
     }
   }
   return [...new Set(out)];

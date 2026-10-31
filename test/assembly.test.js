@@ -41,7 +41,7 @@ test("assembly SVG: animated keyframes, still frames per step, step captions", (
   assert.match(step0, /data-asm="R1" transform="translate\((?!0 0\))/);
   const last = renderSvg(r, { assembly: true, time: plan.timeOfStep(plan.steps.length) });
   assert.match(last, /data-asm="R1" transform="translate\(0 0\)"/);
-  assert.match(last, /5\. c22 から − レールへ/);
+  assert.match(last, /5\. a22 から − レールへ/);
 });
 
 test("setSteps validates ids; steps follow renames and removals", () => {

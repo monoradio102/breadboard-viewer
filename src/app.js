@@ -55,6 +55,7 @@ let result = resolveCircuit(circuit);
 let selection = null; // id of the selected part or wire
 let drag = null;
 let view = null; // visible area {x, y, w, h} in pitch units (pan / zoom); null = fit on next draw
+let viewFitted = false; // the view is "the whole circuit" (not panned / zoomed by hand since)
 let showCaptions = readCaptionsSetting();
 let library = readLibrarySetting(); // "my parts": JSON part definitions kept in this browser
 const undoStack = { past: [], future: [] };
@@ -189,6 +190,7 @@ function fitView() {
   const w = sw / k;
   const h = sh / k;
   view = { x: b.x + b.w / 2 - w / 2, y: b.y + b.h / 2 - (sh - capPx) / k / 2, w, h };
+  viewFitted = true;
 }
 
 // Updates the view without re-rendering (pan / zoom must stay smooth).
@@ -200,6 +202,7 @@ function zoomAt(factor, cx, cy) {
   const w = Math.min(600, Math.max(4, view.w * factor));
   const f = w / view.w;
   view = { x: cx - (cx - view.x) * f, y: cy - (cy - view.y) * f, w, h: view.h * f };
+  viewFitted = false;
   applyView();
 }
 
@@ -207,9 +210,15 @@ function zoomCenter(factor) {
   zoomAt(factor, view.x + view.w / 2, view.y + view.h / 2);
 }
 
-// keep the scale when the stage changes size
+// keep the scale when the stage changes size; a fitted view fits again (the stage can start
+// almost empty, e.g. a link opened in a background tab, and grow once laid out)
 new ResizeObserver(() => {
   if (!view) return;
+  if (viewFitted) {
+    fitView();
+    applyView();
+    return;
+  }
   const svg = el.stage.querySelector("svg");
   const { w: sw, h: sh } = stageSize();
   const k = svg ? svg.getBoundingClientRect().width / view.w || sw / view.w : sw / view.w;
@@ -542,6 +551,7 @@ el.stage.addEventListener("pointermove", (ev) => {
   if (drag?.kind === "pan") {
     const k = el.stage.querySelector("svg").getBoundingClientRect().width / view.w;
     view = { ...view, x: drag.view.x - (ev.clientX - drag.x) / k, y: drag.view.y - (ev.clientY - drag.y) / k };
+    viewFitted = false;
     el.stage.classList.add("panning");
     return applyView();
   }

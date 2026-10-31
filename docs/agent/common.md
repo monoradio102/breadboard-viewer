@@ -25,23 +25,25 @@
 ```
 
 1. `parts` で部品の `type` とピン名を確かめる。`{{CLI}} parts --json --type xiao` でピンの相対位置と本体の範囲もわかる
-   置く前に `{{CLI}} place xiao --at h3 --rot 180 --in circuit.json` で、各ピンの穴・本体が覆う範囲・ぶつかりを確かめる
+   置く前に `{{CLI}} place xiao --at h3 --rot 180 --in circuit.json` (回路がまだなければ `--board half`) で、各ピンの穴・本体が覆う範囲・ぶつかりを確かめる
 2. `apply` で部品を置き、配線する (操作の一覧は {{OPS}})。JSON を直接書いてもよい。
-   配線は、部品を置いたあとにネットリストを渡して `autoWire` に任せられる (交差を避けて引く。部品の位置とピンの選び方で、きれいさが決まる):
+   配線は、部品を置いたあとにネットリストを渡して `autoWire` に任せられる (交差や部品の本体を避けて引く。タクトスイッチの中のつながりのような部品の内部には頼らず、上下のレールも線でつなぐ。部品の位置とピンの選び方で、きれいさが決まる):
    部品を動かすときは `"keepConnections": true` を付けると、つながりを保ったまま配線を付け替える (付けないと配線は元の穴に残り、つながりが変わることがある):
    `{{CLI}} apply circuit.json '[{"op":"move","id":"D1","to":"b25","keepConnections":true}]'`
    `{{CLI}} apply circuit.json '[{"op":"autoWire","nets":{"SDA":["U1.D4","DISP1.SDA"],"SCL":["U1.D5","DISP1.SCL"],"GND":["U1.GND","DISP1.GND","T-"],"3V3":["U1.3V3","DISP1.VCC","T+"]}}]'`
 3. 必ず `check` を実行し、エラーがなく、ネットリストが意図どおりか確かめる。`NOTE` (参考) は電気的なよくあるミス (電源どうしのショート、抵抗なしの LED、GND 未接続、電圧の過不足など) なので、意図したものでなければ直す
-4. `{{CLI}} check circuit.json --layout` で見た目の問題 (本体の重なり、本体の下に隠れた配線の端、ほかの穴の真上を通る配線、ラベルの重なり、大きすぎる bend、ボードの外にはみ出す配線) を文字で確かめ、最後に `render` で画像にして確かめる。
+4. `{{CLI}} check circuit.json --layout` で見た目の問題 (本体の重なり、本体の下に隠れた配線の端、ほかの穴の真上を通る配線、LED や抵抗などの本体の上を通る配線、ラベルの重なり、配線の下になったラベル、大きすぎる bend、ボードの外にはみ出す配線) を文字で確かめ、最後に `render` で画像にして確かめる。
    結果を機械的に読むときは `check --json`。静止画を確かめるだけなら、SVG を `rsvg-convert -o out.png circuit.svg` で PNG にしてもよい (アニメーションは止まった状態)
 5. 動作を説明するときは `animate` / `setAnimation` でアニメーションを付ける。複数の部品・配線をまとめて動かすときは `target` に配列か、`animation.groups` の名前を使う (`target: ["D3", "WL"]` に `{"on": true, "flow": true}` と書くと、LED には on、配線には flow が振り分けられる)。
    部品の状態で表せない演出は SVG を書いて `addOverlay` で流し込む。1 回きりの動きは `restart: true` (表示された時刻から SVG の時計が始まる)、消し方は `fadeOut` (ミリ秒) で指定する
 6. 組み方を説明するときは `setSteps` で組み立て手順を書く (`autoSteps` で自動生成もできる)。部品を並べたところから順に配置していく様子を描ける。
    トレイの位置や時間は `setAssembly` で指定し、`{{CLI}} plan circuit.json` で各手順の時刻・トレイの位置と重なりを確かめる
+7. **できあがったら、最後に必ず `{{CLI}} url circuit.json` でリンクを作り、ユーザーへの返答の最後に載せる。** クリックするだけでエディタが開き、ブラウザで確認・編集・共有できる (画像やファイルを渡すときも、リンクを添える)。
+   ブラウザのエディタ上で作業しているときは `bb.link()` で同じリンクが得られる
 
 SVG の出力と、parts / new / apply / check は Node.js 18 以上だけで動きます。
 PNG と連番 PNG は、Playwright (`npm i playwright && npx playwright install chromium`) があればブラウザで描きます。
-ない環境では、インストール済みの Chromium / Chrome (PATH にあるか `--browser-path`) をヘッドレスで使い、それもなければ rsvg-convert か Python の cairosvg (`pip install cairosvg`) で描きます (この2つでは影が省かれます)。`--raster browser|chrome|rsvg|cairosvg` で選べます。
+ない環境では、インストール済みの Chromium / Chrome / Edge (PATH、macOS の /Applications、Windows の Program Files から自動で探す。`--browser-path` で指定も可) をヘッドレスで使い、それもなければ rsvg-convert か Python の cairosvg (`pip install cairosvg`) で描きます (この2つでは影が省かれます)。`--raster browser|chrome|rsvg|cairosvg` で選べます。
 インストール済みの Google Chrome を使うなら `--chrome`、ほかのブラウザなら `--browser-path <実行ファイル>` (このときブラウザのダウンロードは不要で、`npm i playwright-core` だけで動きます)。
 `render` / `frames` は `--viewbox "x y w h"` か `--focus U1,MIC1 [--margin 2]` で表示範囲を絞れます。`frames --jobs 4` で並列に書き出します。
 知らないオプションはエラーになります。
@@ -62,7 +64,7 @@ PNG と連番 PNG は、Playwright (`npm i playwright && npx playwright install 
 - DIP の IC は 1 番ピンを f 行に置くと溝をまたぐ (例: `"at": "f10"`)
 - 組み込みにない部品は、データシートを調べて `partDefs` に JSON で定義する (`units: "mm"` でデータシートの寸法をそのまま書ける)
 - 定義した部品は、ライブラリにまとめて使い回せる: `{{CLI}} lib my-parts.json circuit.json` で集め、`{{CLI}} apply c.json ops.json --lib my-parts.json` で使う
-- 結果を人に渡すときは、エディタで開けるリンクが手軽: `{{CLI}} url circuit.json` で `{{EDITOR}}#data=<回路 JSON の Base64URL>` を出す (クリックするだけで開ける。回路はリンクの中にあり、サーバーには送られない)。
+- 結果は、エディタで開けるリンクで渡す: `{{CLI}} url circuit.json` で `{{EDITOR}}#data=<回路 JSON の Base64URL>` を出す (クリックするだけで開ける。回路はリンクの中にあり、サーバーには送られない)。
   リンクが長すぎる (数千文字を超える) ときや、ファイルで渡したいときは、回路の JSON か、書き出した SVG (回路データ入り) を渡す。エディタにドロップすると編集できる
 
 ## ドキュメント

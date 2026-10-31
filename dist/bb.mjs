@@ -4,7 +4,7 @@
 // tools/bb.mjs
 import { existsSync as existsSync3, mkdirSync, readFileSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { cpus } from "node:os";
-import { join as join2 } from "node:path";
+import { isAbsolute, join as join2 } from "node:path";
 
 // src/board.js
 var BOARD_TYPES = {
@@ -562,6 +562,8 @@ var resistor = {
   category: "\u53D7\u52D5\u90E8\u54C1",
   description: "\u30AB\u30FC\u30DC\u30F3\u62B5\u6297 1/4W\u3002value\u304B\u3089\u30AB\u30E9\u30FC\u30B3\u30FC\u30C9\u3092\u63CF\u753B\u3002",
   mount: "leads",
+  // the drawn body around the pins' centre (layout checks): [half length along the leads, half width]
+  body: (span) => [clamp(span - 0.7, 0.9, 2.6) / 2, 0.36],
   params: { value: { default: "220", description: "\u62B5\u6297\u5024 (\u4F8B: 220, 4.7k, 4k7, 1M)" } },
   pins: () => inline(["1", "2"]).map((p, i) => ({ ...p, x: i * 4 })),
   render({ pins: [a, b], params }) {
@@ -578,6 +580,8 @@ var led = {
   category: "\u534A\u5C0E\u4F53",
   description: "5mm\u7832\u5F3E\u578BLED\u3002\u30D4\u30F3A\u304C\u30A2\u30CE\u30FC\u30C9(+, \u9577\u3044\u8DB3)\u3001K\u304C\u30AB\u30BD\u30FC\u30C9(-)\u3002",
   mount: "leads",
+  body: 0.95,
+  // radius of the body drawn at the pins' centre (layout checks)
   params: { color: { default: "red", options: Object.keys(LED_COLORS), description: "\u767A\u5149\u8272" } },
   states: {
     on: { type: "bool", default: false, description: "\u70B9\u706F" },
@@ -603,6 +607,8 @@ var diode = {
   category: "\u534A\u5C0E\u4F53",
   description: "\u6574\u6D41/\u5C0F\u4FE1\u53F7\u30C0\u30A4\u30AA\u30FC\u30C9\u3002\u30D4\u30F3A\u304C\u30A2\u30CE\u30FC\u30C9\u3001K\u304C\u30AB\u30BD\u30FC\u30C9(\u5E2F\u306E\u5074)\u3002",
   mount: "leads",
+  body: (span) => [clamp(span - 0.7, 0.9, 2) / 2, 0.3],
+  // drawn body (layout checks)
   params: { model: { default: "1N4148", description: "\u578B\u756A (1N4148\u306F\u30AC\u30E9\u30B9, \u305D\u308C\u4EE5\u5916\u306F\u9ED2\u30E2\u30FC\u30EB\u30C9)" } },
   pins: () => [
     { name: "A", x: 0, y: 0 },
@@ -621,6 +627,8 @@ var capacitor = {
   category: "\u53D7\u52D5\u90E8\u54C1",
   description: "\u7A4D\u5C64\u30BB\u30E9\u30DF\u30C3\u30AF\u30B3\u30F3\u30C7\u30F3\u30B5\u3002\u6975\u6027\u306A\u3057\u3002",
   mount: "leads",
+  body: 0.5,
+  // radius of the body around the pins' centre (layout checks)
   params: { value: { default: "0.1uF", description: "\u5BB9\u91CF (\u4F8B: 0.1uF, 22pF)" } },
   pins: () => [
     { name: "1", x: 0, y: 0 },
@@ -637,6 +645,8 @@ var electrolytic = {
   category: "\u53D7\u52D5\u90E8\u54C1",
   description: "\u30A2\u30EB\u30DF\u96FB\u89E3\u30B3\u30F3\u30C7\u30F3\u30B5\u3002\u30D4\u30F3+\u304C\u9577\u3044\u8DB3\u3001-\u304C\u5E2F\u306E\u5074\u3002",
   mount: "leads",
+  body: 1.05,
+  // radius of the body around the pins' centre (layout checks)
   params: { value: { default: "10uF", description: "\u5BB9\u91CF (\u4F8B: 10uF, 100uF)" } },
   pins: () => inline(["+", "-"]),
   render({ pins: [a, b], params }) {
@@ -652,6 +662,8 @@ var cds = {
   category: "\u30BB\u30F3\u30B5",
   description: "\u660E\u308B\u3044\u307B\u3069\u62B5\u6297\u5024\u304C\u4E0B\u304C\u308B\u30D5\u30A9\u30C8\u30EC\u30B8\u30B9\u30BF\u3002\u6975\u6027\u306A\u3057\u3002",
   mount: "leads",
+  body: 0.8,
+  // radius of the body around the pins' centre (layout checks)
   params: {},
   pins: () => inline(["1", "2"]),
   render({ pins: [a, b] }) {
@@ -670,6 +682,8 @@ var transistor = {
   category: "\u534A\u5C0E\u4F53",
   description: "TO-92\u30D1\u30C3\u30B1\u30FC\u30B8\u3002pinout\u306F\u5E73\u3089\u306A\u9762\u3092\u624B\u524D\u306B\u3057\u3066\u5DE6\u304B\u3089\u306E\u4E26\u3073 (2SC1815=ECB, 2N3904=EBC)\u3002",
   mount: "leads",
+  body: 0.95,
+  // radius of the body around the pins' centre (layout checks)
   params: {
     model: { default: "2SC1815", description: "\u578B\u756A" },
     pinout: { default: "ECB", description: "\u5E73\u3089\u306A\u9762\u304B\u3089\u898B\u305F\u5DE6\u2192\u53F3\u306E\u30D4\u30F3\u914D\u7F6E (\u4F8B: ECB, EBC)" }
@@ -935,6 +949,8 @@ var motor = {
   category: "\u51FA\u529B",
   description: "FA-130\u578B\u306A\u3069\u3002\u4E0A\u304B\u3089\u898B\u305F\u56F3\u306B\u30D7\u30ED\u30DA\u30E9\u3092\u4ED8\u3051\u3066\u63CF\u304F\u3002speed (rpm) \u3067\u56DE\u8EE2\u30A2\u30CB\u30E1\u30FC\u30B7\u30E7\u30F3\u3002",
   mount: "leads",
+  body: 1.6,
+  // radius of the body around the pins' centre (layout checks)
   params: {},
   states: { speed: { type: "rate", default: 0, description: "\u56DE\u8EE2\u6570 rpm (\u8CA0\u3067\u9006\u56DE\u8EE2)\u3002\u30AD\u30FC\u9593\u306F\u76F4\u7DDA\u7684\u306B\u5909\u5316" } },
   animate: () => ({ rotor: (s) => ({ transform: `rotate(${Math.round(s.speedAngle * 10) / 10}deg)` }) }),
@@ -1106,6 +1122,8 @@ var rgbled = {
   category: "\u534A\u5C0E\u4F53",
   description: "5mm 4\u672C\u8DB3\u3002\u30D4\u30F3\u306F R, K(\u5171\u901A\u30AB\u30BD\u30FC\u30C9, \u4E00\u756A\u9577\u3044\u8DB3), G, B\u3002r / g / b (0\u301C1) \u3067\u767A\u5149\u8272\u3092\u30A2\u30CB\u30E1\u30FC\u30B7\u30E7\u30F3\u3002",
   mount: "leads",
+  body: 1.05,
+  // radius of the body around the pins' centre (layout checks)
   params: {},
   states: {
     r: { type: "number", default: 0, description: "\u8D64\u306E\u660E\u308B\u3055 0\u301C1" },
@@ -2456,9 +2474,13 @@ function labelSpot(part) {
   const xs = part.pins.map((p) => p.x);
   const ys = part.pins.map((p) => p.y);
   const leads = part.def.mount === "leads";
-  const x = (leads ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs)) + (Number(opt?.dx) || 0);
-  const y = (leads ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95) + (Number(opt?.dy) || 0);
-  return { x, y, anchor: leads ? "middle" : "start" };
+  let x = leads ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs);
+  const y = leads ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95;
+  if (!leads && !part.offboard) {
+    const box = partBox(part, 0.6);
+    if (box.y < y - 0.6) x = box.x + box.w + 0.15;
+  }
+  return { x: x + (Number(opt?.dx) || 0), y: y + (Number(opt?.dy) || 0), anchor: leads ? "middle" : "start" };
 }
 function labelBox(part) {
   const spot = labelSpot(part);
@@ -2650,7 +2672,26 @@ var r2 = (v) => Math.round(v * 100) / 100;
 var overlap = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 var inside = (p, b, m = 0) => p.x > b.x + m && p.x < b.x + b.w - m && p.y > b.y + m && p.y < b.y + b.h - m;
 function bodyBox(part) {
-  return part.def.mount === "leads" && !part.offboard ? partBox(part, 0.45) : partBox(part, 0.6);
+  if (part.def.mount !== "leads" || part.offboard) return partBox(part, 0.6);
+  const legs = partBox(part, 0.45);
+  const core = bodyCore(part);
+  const [x0, y0] = [Math.min(legs.x, core.x), Math.min(legs.y, core.y)];
+  const [x1, y1] = [Math.max(legs.x + legs.w, core.x + core.w), Math.max(legs.y + legs.h, core.y + core.h)];
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+function bodyCore(part) {
+  if (part.def.mount !== "leads" || part.offboard) return bodyBox(part);
+  const pins = part.pins;
+  const cx = pins.reduce((s2, p) => s2 + p.x, 0) / pins.length;
+  const cy = pins.reduce((s2, p) => s2 + p.y, 0) / pins.length;
+  const [a, b] = [pins[0], pins[pins.length - 1]];
+  const span = Math.hypot(b.x - a.x, b.y - a.y);
+  const body = typeof part.def.body === "function" ? part.def.body(span) : part.def.body;
+  const [hl, hw] = Array.isArray(body) ? body : [Number(body) || 0.45, Number(body) || 0.45];
+  const t = Math.atan2(b.y - a.y, b.x - a.x);
+  const [c, s] = [Math.abs(Math.cos(t)), Math.abs(Math.sin(t))];
+  const [rx, ry] = [hl * c + hw * s, hl * s + hw * c];
+  return { x: cx - rx, y: cy - ry, w: 2 * rx, h: 2 * ry };
 }
 function coveredBy(result) {
   const map = /* @__PURE__ */ new Map();
@@ -2747,7 +2788,7 @@ function partSpec(def) {
 }
 function layoutIssues(result) {
   const out = [];
-  const bodies = result.parts.map((p) => ({ part: p, box: bodyBox(p) }));
+  const bodies = result.parts.map((p) => ({ part: p, box: bodyCore(p) }));
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
       const [a, b2] = [bodies[i], bodies[j]];
@@ -2779,6 +2820,17 @@ function layoutIssues(result) {
     const off = wirePoints(w).some((q) => q.x < b.x - 0.3 || q.x > b.x + b.w + 0.3 || q.y < b.y - 0.3 || q.y > b.y + b.h + 0.3);
     if (off) out.push(`${w.id} \u304C\u30DC\u30FC\u30C9\u306E\u5916\u306B\u306F\u307F\u51FA\u3057\u3066\u3044\u307E\u3059 (bend / via \u3092\u78BA\u304B\u3081\u3066\u304F\u3060\u3055\u3044)`);
   }
+  const traces = result.wires.map((w) => ({ w, pts: wirePoints(w, 0.2) }));
+  for (const { w, pts } of traces) {
+    for (const { part, box } of bodies) {
+      if ([w.from, w.to].some((r) => String(r).startsWith(`${part.id}.`))) continue;
+      const edge = part.def.mount === "leads" && !part.offboard ? 0.15 : 0.6;
+      const [mx, my] = [Math.min(edge, box.w * 0.2), Math.min(edge, box.h * 0.2)];
+      const core = { x: box.x + mx, y: box.y + my, w: box.w - 2 * mx, h: box.h - 2 * my };
+      const away = pts.filter((q) => [w.a, w.b].every((e) => Math.hypot(q.x - e.x, q.y - e.y) > 0.6));
+      if (away.some((q) => inside(q, core))) out.push(`${w.id} \u304C ${part.id} \u306E\u672C\u4F53\u306E\u4E0A\u3092\u901A\u3063\u3066\u3044\u307E\u3059 (via \u3067\u907F\u3051\u3089\u308C\u307E\u3059)`);
+    }
+  }
   const labels = result.parts.map((p) => ({ part: p, box: labelBox(p) })).filter((l) => l.box);
   for (const l of labels) {
     for (const b2 of bodies) {
@@ -2786,6 +2838,9 @@ function layoutIssues(result) {
     }
     for (const m of labels) {
       if (m.part.id > l.part.id && overlap(l.box, m.box) > 0.05) out.push(`${l.part.id} \u3068 ${m.part.id} \u306E\u30E9\u30D9\u30EB\u304C\u91CD\u306A\u3063\u3066\u3044\u307E\u3059`);
+    }
+    for (const { w, pts } of traces) {
+      if (pts.some((q) => inside(q, l.box, -0.1))) out.push(`${l.part.id} \u306E\u30E9\u30D9\u30EB\u306B ${w.id} \u304C\u91CD\u306A\u3063\u3066\u3044\u307E\u3059 (idLabel \u3067\u305A\u3089\u305B\u307E\u3059)`);
     }
   }
   return [...new Set(out)];
@@ -2870,7 +2925,7 @@ function circuitLink(circuit, base = "https://monoradio102.github.io/breadboard-
 
 // src/autowire.js
 var RAILS2 = ["T+", "T-", "B+", "B-"];
-var COST = { length: 1, crossing: 25, alongside: 20, overHole: 40, overBody: 8, offBoard: 10, bend: 2, detour: 1.5 };
+var COST = { length: 1, crossing: 25, alongside: 20, overHole: 40, overBody: 8, body: 12, offBoard: 10, bend: 2, detour: 1.5 };
 var PALETTE = ["yellow", "blue", "green", "orange", "purple", "white", "brown", "gray"];
 var LANES = [3, 9.5, 16];
 var NEAR = 0.22;
@@ -2895,9 +2950,18 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300 } = 
     if (!pin.node) throw new Error(`${s} \u306F\u3069\u3053\u306B\u3082\u633F\u3055\u3063\u3066\u3044\u307E\u305B\u3093`);
     return pin.node;
   };
+  const internalKey = (m) => {
+    const s = String(m);
+    const dot = s.indexOf(".");
+    const part = dot > 0 ? result.parts.find((p) => p.id === s.slice(0, dot)) : null;
+    const g2 = part?.internal.findIndex((group) => group.includes(s.slice(dot + 1))) ?? -1;
+    return g2 >= 0 ? `${part.id}#${g2}` : s;
+  };
   const todo = list.map(([name, members], i) => {
     if (!Array.isArray(members) || members.length < 2) throw new Error(`net "${name}": 2\u3064\u4EE5\u4E0A\u306E\u30E1\u30F3\u30D0\u30FC\u304C\u5FC5\u8981\u3067\u3059`);
-    return { name, color: colorFor(name, members.map(String), i), nodes: members.map(nodeOf) };
+    const nodes = members.map(nodeOf);
+    const keys = members.map(internalKey);
+    return { name, color: colorFor(name, members.map(String), i), nodes: nodes.filter((_, k) => keys.indexOf(keys[k]) === k) };
   });
   const baseUsed = new Set(result.occupied.keys());
   const covered = coveredBy(result);
@@ -2908,7 +2972,12 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300 } = 
   const holeEnds = new Map([...board.holes].filter(([h]) => !covered.has(h)).map(([h, p]) => [h, { ref: h, x: p.x, y: p.y, hole: h, node: h }]));
   const trace = (w) => withBox(wirePoints(w, 0.35));
   const baseDrawn = result.wires.map(trace);
-  const bodies = result.parts.filter((p) => p.def.mount !== "leads" || p.offboard).map(bodyBox).map((b) => ({ x: b.x + 0.6, y: b.y + 0.6, w: b.w - 1.2, h: b.h - 1.2 }));
+  const bodies = result.parts.map((part) => {
+    const b = bodyBox(part);
+    const edge = part.def.mount === "leads" && !part.offboard ? 0.15 : 0.6;
+    const [mx, my] = [Math.min(edge, b.w * 0.25), Math.min(edge, b.h * 0.25)];
+    return { id: part.id, x: b.x + mx, y: b.y + my, w: b.w - 2 * mx, h: b.h - 2 * my };
+  });
   const bounds = board.bounds;
   const kitStyle = circuit.wireStyle === "kit";
   const unionFind = (autos2) => {
@@ -2923,12 +2992,6 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300 } = 
     const union2 = (a, b) => parent.set(find(a), find(b));
     for (const strip of boardStrips(board)) strip.slice(1).forEach((h) => union2(strip[0], h));
     for (const w of result.wires) union2(w.nodes[0], w.nodes[1]);
-    for (const part of result.parts) {
-      for (const group of part.internal) {
-        const nodes = group.map((name) => part.pins.find((p) => p.name === name)?.node).filter(Boolean);
-        nodes.slice(1).forEach((h) => union2(nodes[0], h));
-      }
-    }
     for (const w of autos2) union2(w.a.node, w.b.node);
     return find;
   };
@@ -3132,11 +3195,18 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300 } = 
       if (drawn.some((line2) => line2.some((q) => Math.hypot(q.x - end.x, q.y - end.y) < NEAR))) cost += COST.overHole;
     }
     const step = len / Math.max(1, points.length - 1);
+    const own = (bx) => [a.ref, b.ref].some((r) => r.startsWith(`${bx.id}.`));
+    const crossed = /* @__PURE__ */ new Set();
     for (const q of points) {
-      if (bodies.some((bx) => q.x > bx.x && q.x < bx.x + bx.w && q.y > bx.y && q.y < bx.y + bx.h)) cost += COST.overBody * step;
+      for (const bx of bodies) {
+        if (q.x > bx.x && q.x < bx.x + bx.w && q.y > bx.y && q.y < bx.y + bx.h && !own(bx)) {
+          cost += COST.overBody * step;
+          crossed.add(bx);
+        }
+      }
       if (a.hole && b.hole && (q.x < bounds.x || q.x > bounds.x + bounds.w || q.y < bounds.y || q.y > bounds.y + bounds.h)) cost += COST.offBoard * step;
     }
-    return cost;
+    return cost + crossed.size * COST.body;
   }
 }
 function lengthOf(points) {
@@ -3809,7 +3879,7 @@ function spriteTime(sp, t) {
 // tools/raster.mjs
 import { spawnSync } from "node:child_process";
 import { existsSync as existsSync2, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 var has = (cmd2, args) => {
@@ -3821,10 +3891,26 @@ var has = (cmd2, args) => {
 };
 var PYTHON = ["python3", "python"];
 var CHROMES = ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome"];
+var APPS = {
+  darwin: (home) => ["Google Chrome", "Chromium", "Microsoft Edge", "Brave Browser"].flatMap((app) => {
+    const bin = `${app}.app/Contents/MacOS/${app}`;
+    return [`/Applications/${bin}`, join(home, "Applications", bin)];
+  }),
+  win32: () => {
+    const roots = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean);
+    return [String.raw`Google\Chrome\Application\chrome.exe`, String.raw`Chromium\Application\chrome.exe`, String.raw`Microsoft\Edge\Application\msedge.exe`].flatMap((bin) => roots.map((r) => join(r, bin)));
+  }
+};
+function findChrome({ chromeOnly = false } = {}) {
+  const names = chromeOnly ? ["google-chrome", "google-chrome-stable"] : CHROMES;
+  for (const c of names) if (has(c, ["--version"])) return c;
+  const apps = (APPS[process.platform]?.(homedir()) ?? []).filter((p) => !chromeOnly || /Google[\\/]Chrome|Google Chrome/.test(p));
+  return apps.find((p) => existsSync2(p)) ?? null;
+}
 function findRasterizer(want = "auto", browserPath = null) {
   if (want === "auto" || want === "chrome") {
-    if (browserPath) return `chrome:${browserPath}`;
-    for (const c of CHROMES) if (has(c, ["--version"])) return `chrome:${c}`;
+    const chrome = browserPath ?? findChrome();
+    if (chrome) return `chrome:${chrome}`;
   }
   if ((want === "auto" || want === "rsvg") && has("rsvg-convert", ["--version"])) return "rsvg";
   if (want === "auto" || want === "cairosvg") {
@@ -3832,7 +3918,7 @@ function findRasterizer(want = "auto", browserPath = null) {
   }
   return null;
 }
-var NO_RASTERIZER = "PNG \u3092\u4F5C\u308C\u308B\u3082\u306E\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u6B21\u306E\u3069\u308C\u304B\u3092\u7528\u610F\u3057\u3066\u304F\u3060\u3055\u3044:\n  - Playwright (Chromium): npm i playwright && npx playwright install chromium\n  - Chromium / Google Chrome (PATH \u306B\u3042\u308B\u304B\u3001--browser-path \u3067\u6307\u5B9A)\n  - Python \u306E cairosvg: pip install cairosvg\n  - rsvg-convert (librsvg)\nSVG (-o out.svg) \u306F Node.js \u3060\u3051\u3067\u66F8\u304D\u51FA\u305B\u307E\u3059\u3002";
+var NO_RASTERIZER = "PNG \u3092\u4F5C\u308C\u308B\u3082\u306E\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u6B21\u306E\u3069\u308C\u304B\u3092\u7528\u610F\u3057\u3066\u304F\u3060\u3055\u3044:\n  - Playwright (Chromium): npm i playwright && npx playwright install chromium\n  - Chromium / Google Chrome / Edge (PATH\u3001macOS \u306E /Applications\u3001Windows \u306E Program Files \u304B\u3089\u63A2\u3057\u307E\u3059\u3002--browser-path \u3067\u6307\u5B9A\u3082\u53EF)\n  - Python \u306E cairosvg: pip install cairosvg\n  - rsvg-convert (librsvg)\nSVG (-o out.svg) \u306F Node.js \u3060\u3051\u3067\u66F8\u304D\u51FA\u305B\u307E\u3059\u3002";
 function rasterize(engine, jobs, { scale = 2, transparent = false } = {}) {
   if (engine.startsWith("chrome:")) return chromeShots(engine.slice("chrome:".length), jobs, { scale, transparent });
   if (engine === "rsvg") {
@@ -3920,10 +4006,10 @@ var COMMANDS = {
   apply: ["apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json] [--lib lib.json]", 2, 2, { "-o": "value", "--lib": "multi" }],
   parts: ["parts  [circuit.json] [--lib lib.json] [--json] [--type t1,t2]", 0, 1, { "--lib": "multi", "--json": "flag", "--type": "value" }],
   place: [
-    "place  <type> (--at hole | --pos x,y) [--rot 0|90|180|270] [--param k=v ...] [--in circuit.json] [--lib lib.json]",
+    "place  <type> (--at hole | --pos x,y) [--rot 0|90|180|270] [--param k=v ...] [--in circuit.json | --board full|half|mini] [--lib lib.json]",
     1,
     1,
-    { "--at": "value", "--pos": "value", "--rot": "value", "--param": "multi", "--in": "value", "--lib": "multi" }
+    { "--at": "value", "--pos": "value", "--rot": "value", "--param": "multi", "--in": "value", "--board": "value", "--lib": "multi" }
   ],
   coords: ["coords <hole | PartId.Pin | x,y ...> [--in circuit.json] [--board full|half|mini]", 1, Infinity, { "--in": "value", "--board": "value" }],
   lib: ["lib    <out.json> <circuit.json|library.json ...>", 2, Infinity, {}],
@@ -3987,6 +4073,7 @@ try {
   fail2(e.message, 1);
 }
 async function main() {
+  if (opts["--board"] !== void 0 && !BOARD_TYPES[opts["--board"]]) fail2(`--board \u306F ${Object.keys(BOARD_TYPES).join(" / ")} \u306E\u3069\u308C\u304B\u3067\u3059`);
   switch (cmd) {
     case "check": {
       const result = resolveCircuit(readCircuit(pos[0]));
@@ -4103,7 +4190,8 @@ async function main() {
       break;
     }
     case "place": {
-      const circuit = opts["--in"] ? readCircuit(opts["--in"]) : emptyCircuit();
+      if (opts["--in"] && opts["--board"]) fail2("--in \u3068 --board \u306F\u3069\u3061\u3089\u304B\u4E00\u65B9\u3067\u3059 (--in \u306E\u56DE\u8DEF\u306E\u30DC\u30FC\u30C9\u3092\u4F7F\u3044\u307E\u3059)");
+      const circuit = opts["--in"] ? readCircuit(opts["--in"]) : { ...emptyCircuit(), ...opts["--board"] ? { board: opts["--board"] } : {} };
       circuit.partDefs = mergeDefs(libDefs(), circuit.partDefs);
       const inst = { type: pos[0], ...opts["--rot"] !== void 0 ? { rot: num("--rot") } : {} };
       if (opts["--at"]) inst.at = opts["--at"];
@@ -4234,8 +4322,20 @@ function pngEngine() {
   const want = opts["--raster"] ?? "auto";
   if (!["auto", "browser", "chrome", "rsvg", "cairosvg"].includes(want)) fail2("--raster \u306F auto / browser / chrome / rsvg / cairosvg \u3067\u3059");
   const playwright = hasPlaywright();
+  if (want === "auto" && playwright && !opts["--chrome"] && !opts["--browser-path"] && !hasBrowser()) {
+    const app = findChrome();
+    if (app && isAbsolute(app)) {
+      opts["--browser-path"] = app;
+      return "browser";
+    }
+  }
   if (want === "browser" || want === "auto" && playwright && (opts["--chrome"] || opts["--browser-path"] || hasBrowser())) return "browser";
-  const engine = findRasterizer(want, opts["--browser-path"] ?? (opts["--chrome"] ? "google-chrome" : null));
+  let browserPath = opts["--browser-path"] ?? null;
+  if (!browserPath && opts["--chrome"]) {
+    browserPath = findChrome({ chromeOnly: true });
+    if (!browserPath) fail2("Google Chrome \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002--browser-path \u3067\u30D6\u30E9\u30A6\u30B6\u306E\u5B9F\u884C\u30D5\u30A1\u30A4\u30EB\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044", 1);
+  }
+  const engine = findRasterizer(want, browserPath);
   if (!engine) fail2(want === "auto" ? NO_RASTERIZER : `${want} \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002
 ${NO_RASTERIZER}`, 1);
   const name = engine.split(":")[0];

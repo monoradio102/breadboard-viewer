@@ -5,16 +5,16 @@
   "wireStyle": "kit",
   "parts": [
     { "id": "BAT1", "type": "battery", "kind": "AAx2", "pos": [35, 3], "rot": 90 },
-    { "id": "Q1", "type": "transistor", "pins": { "E": "d5", "C": "d6", "B": "d7" } },
-    { "id": "Q2", "type": "transistor", "pins": { "E": "d22", "C": "d23", "B": "d24" } },
+    { "id": "Q1", "type": "transistor", "pins": { "E": "d5", "C": "d6", "B": "d7" }, "idLabel": { "dy": 1.9 } },
+    { "id": "Q2", "type": "transistor", "pins": { "E": "d22", "C": "d23", "B": "d24" }, "idLabel": { "dx": -1, "dy": 1.9 } },
     { "id": "R1", "type": "resistor", "value": "330", "pins": ["T+4", "a4"] },
     { "id": "R2", "type": "resistor", "value": "47k", "pins": ["T+7", "a7"] },
     { "id": "R3", "type": "resistor", "value": "47k", "pins": ["T+24", "a24"] },
     { "id": "R4", "type": "resistor", "value": "330", "pins": ["T+21", "a21"] },
-    { "id": "D1", "type": "led", "color": "red", "pins": { "A": "b4", "K": "b6" } },
-    { "id": "D2", "type": "led", "color": "green", "pins": { "A": "b21", "K": "b23" } },
+    { "id": "D1", "type": "led", "color": "red", "pins": { "A": "b4", "K": "b6" }, "idLabel": { "dx": -1.75, "dy": 1.25 } },
+    { "id": "D2", "type": "led", "color": "green", "pins": { "A": "b21", "K": "b23" }, "idLabel": { "dx": -1.75, "dy": 1.25 } },
     { "id": "C1", "type": "electrolytic", "value": "10uF", "pins": { "+": "d13", "-": "d14" } },
-    { "id": "C2", "type": "electrolytic", "value": "10uF", "pins": { "+": "h15", "-": "h16" } }
+    { "id": "C2", "type": "electrolytic", "value": "10uF", "pins": { "+": "h15", "-": "h16" }, "idLabel": { "dx": -2.1, "dy": 1.25 } }
   ],
   "wires": [
     { "id": "W1", "from": "BAT1.+", "to": "T+29", "color": "red" },

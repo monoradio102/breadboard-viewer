@@ -2,9 +2,9 @@
 // CLI for humans and AI agents. Run without arguments for usage. Unknown options are errors.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { planAssembly } from "../src/assembly.js";
-import { createBoard } from "../src/board.js";
+import { BOARD_TYPES, createBoard } from "../src/board.js";
 import { describe, kitList, resolveCircuit } from "../src/circuit.js";
 import { bodyBox, coordsOf, layoutIssues, partSpec, previewPlacement } from "../src/inspect.js";
 import { circuitLink, emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "../src/io.js";
@@ -12,7 +12,7 @@ import { OpError, applyOps } from "../src/ops.js";
 import { createRegistry, fromJson } from "../src/parts/registry.js";
 import { renderSvg } from "../src/render.js";
 import { hasBrowser, hasPlaywright, launchBrowser, openCapture } from "./capture.mjs";
-import { NO_RASTERIZER, findRasterizer, rasterize } from "./raster.mjs";
+import { NO_RASTERIZER, findChrome, findRasterizer, rasterize } from "./raster.mjs";
 
 const VIEW = {
   "--viewbox": "value",
@@ -47,10 +47,10 @@ const COMMANDS = {
   apply: ["apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json] [--lib lib.json]", 2, 2, { "-o": "value", "--lib": "multi" }],
   parts: ["parts  [circuit.json] [--lib lib.json] [--json] [--type t1,t2]", 0, 1, { "--lib": "multi", "--json": "flag", "--type": "value" }],
   place: [
-    "place  <type> (--at hole | --pos x,y) [--rot 0|90|180|270] [--param k=v ...] [--in circuit.json] [--lib lib.json]",
+    "place  <type> (--at hole | --pos x,y) [--rot 0|90|180|270] [--param k=v ...] [--in circuit.json | --board full|half|mini] [--lib lib.json]",
     1,
     1,
-    { "--at": "value", "--pos": "value", "--rot": "value", "--param": "multi", "--in": "value", "--lib": "multi" },
+    { "--at": "value", "--pos": "value", "--rot": "value", "--param": "multi", "--in": "value", "--board": "value", "--lib": "multi" },
   ],
   coords: ["coords <hole | PartId.Pin | x,y ...> [--in circuit.json] [--board full|half|mini]", 1, Infinity, { "--in": "value", "--board": "value" }],
   lib: ["lib    <out.json> <circuit.json|library.json ...>", 2, Infinity, {}],
@@ -119,6 +119,7 @@ try {
 }
 
 async function main() {
+  if (opts["--board"] !== undefined && !BOARD_TYPES[opts["--board"]]) fail(`--board は ${Object.keys(BOARD_TYPES).join(" / ")} のどれかです`);
   switch (cmd) {
     case "check": {
       const result = resolveCircuit(readCircuit(pos[0]));
@@ -233,7 +234,8 @@ async function main() {
       break;
     }
     case "place": {
-      const circuit = opts["--in"] ? readCircuit(opts["--in"]) : emptyCircuit();
+      if (opts["--in"] && opts["--board"]) fail("--in と --board はどちらか一方です (--in の回路のボードを使います)");
+      const circuit = opts["--in"] ? readCircuit(opts["--in"]) : { ...emptyCircuit(), ...(opts["--board"] ? { board: opts["--board"] } : {}) };
       circuit.partDefs = mergeDefs(libDefs(), circuit.partDefs);
       const inst = { type: pos[0], ...(opts["--rot"] !== undefined ? { rot: num("--rot") } : {}) };
       if (opts["--at"]) inst.at = opts["--at"];
@@ -376,8 +378,21 @@ function pngEngine() {
   const want = opts["--raster"] ?? "auto";
   if (!["auto", "browser", "chrome", "rsvg", "cairosvg"].includes(want)) fail("--raster は auto / browser / chrome / rsvg / cairosvg です");
   const playwright = hasPlaywright();
+  // Playwright without its own Chromium: drive the installed Chrome / Edge (macOS / Windows apps) instead
+  if (want === "auto" && playwright && !opts["--chrome"] && !opts["--browser-path"] && !hasBrowser()) {
+    const app = findChrome();
+    if (app && isAbsolute(app)) {
+      opts["--browser-path"] = app;
+      return "browser";
+    }
+  }
   if (want === "browser" || (want === "auto" && playwright && (opts["--chrome"] || opts["--browser-path"] || hasBrowser()))) return "browser";
-  const engine = findRasterizer(want, opts["--browser-path"] ?? (opts["--chrome"] ? "google-chrome" : null));
+  let browserPath = opts["--browser-path"] ?? null;
+  if (!browserPath && opts["--chrome"]) {
+    browserPath = findChrome({ chromeOnly: true });
+    if (!browserPath) fail("Google Chrome が見つかりません。--browser-path でブラウザの実行ファイルを指定してください", 1);
+  }
+  const engine = findRasterizer(want, browserPath);
   if (!engine) fail(want === "auto" ? NO_RASTERIZER : `${want} が見つかりません。\n${NO_RASTERIZER}`, 1);
   const name = engine.split(":")[0];
   console.error(name === "chrome" ? `PNG: ${engine.slice(7)} (ヘッドレス) で描画します` : `PNG: ${name} で描画します (影は描かれません)`);

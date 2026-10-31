@@ -1,6 +1,6 @@
 // Renders a resolved circuit (see circuit.js) to an SVG string.
 import { EFFECT_CSS, captionTrack, compileCss, cssDecl, initialState, stateAtTime, stillEffectCss, valuesOf } from "./animation.js";
-import { drawnAt, highlightAt, keyframesCss, offsetAt, planAssembly, rampTimes } from "./assembly.js";
+import { drawnAt, highlightAt, keyframesCss, offsetAt, partBox, planAssembly, rampTimes } from "./assembly.js";
 import { rotate } from "./circuit.js";
 import { attrs, circle, esc, g, line, n, rect, spriteImage, tag, text } from "./svg.js";
 import { kitInfo, kitRoute, roundedPath, trimRoute, wirePath, wirePoints } from "./wires.js";
@@ -312,9 +312,15 @@ function labelSpot(part) {
   const xs = part.pins.map((p) => p.x);
   const ys = part.pins.map((p) => p.y);
   const leads = part.def.mount === "leads";
-  const x = (leads ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs)) + (Number(opt?.dx) || 0);
-  const y = (leads ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95) + (Number(opt?.dy) || 0);
-  return { x, y, anchor: leads ? "middle" : "start" };
+  let x = leads ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs);
+  const y = leads ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95;
+  // a module standing up from its pins (DHT11, HC-SR04): the spot above the pins is on its own
+  // face, so the label goes just right of the body
+  if (!leads && !part.offboard) {
+    const box = partBox(part, 0.6);
+    if (box.y < y - 0.6) x = box.x + box.w + 0.15;
+  }
+  return { x: x + (Number(opt?.dx) || 0), y: y + (Number(opt?.dy) || 0), anchor: leads ? "middle" : "start" };
 }
 
 // Approximate box of the id label (for layout checks).

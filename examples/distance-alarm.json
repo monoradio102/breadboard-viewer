@@ -13,7 +13,7 @@
     { "id": "W2", "from": "a4", "to": "T-4", "color": "black", "note": "GND" },
     { "id": "W3", "from": "j6", "to": "B-6", "color": "black", "note": "GND" },
     { "id": "W4", "from": "T+61", "to": "B+61", "color": "red", "note": "上下の+レールをつなぐ" },
-    { "id": "W5", "from": "c22", "to": "T-22", "color": "black" },
+    { "id": "W5", "from": "a22", "to": "T-22", "color": "black" },
     { "id": "W6", "from": "h40", "to": "B+40", "color": "red" },
     { "id": "W7", "from": "h43", "to": "B-43", "color": "black" },
     { "id": "TRIG", "from": "i14", "to": "i41", "color": "yellow", "note": "D9 → TRIG" },

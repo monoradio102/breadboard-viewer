@@ -2,8 +2,9 @@
 // Pure functions (no DOM); used by the autoWire op (see ops.js / docs/OPS.md).
 //
 // A net is a list of members: part pins ("U1.D4"), holes ("a10"), or whole rails ("T+", "T-",
-// "B+", "B-"). Members already connected (same strip, existing wires, a part's internal links)
-// need nothing. The rest are joined one wire at a time, always taking the cheapest wire over all
+// "B+", "B-"). Members already connected (same strip, existing wires) need nothing. A part's
+// internal links (a tact switch's always-connected legs) do not count: a net must not depend on
+// a part staying in place, e.g. the top and bottom GND rails joined only through a switch. The rest are joined one wire at a time, always taking the cheapest wire over all
 // nets (short, no crossing, not over a used hole or a part body, inside the board). Then each new
 // wire is taken out and routed again with all the others in place, as long as that lowers the
 // total: a wire laid early no longer blocks one laid later.
@@ -13,7 +14,7 @@ import { bodyBox, coveredBy } from "./inspect.js";
 import { wirePoints } from "./wires.js";
 
 const RAILS = ["T+", "T-", "B+", "B-"];
-const COST = { length: 1, crossing: 25, alongside: 20, overHole: 40, overBody: 8, offBoard: 10, bend: 2, detour: 1.5 };
+const COST = { length: 1, crossing: 25, alongside: 20, overHole: 40, overBody: 8, body: 12, offBoard: 10, bend: 2, detour: 1.5 };
 const PALETTE = ["yellow", "blue", "green", "orange", "purple", "white", "brown", "gray"];
 // free lanes between hole rows (pitch units): above row a, the centre trench, below row j
 const LANES = [3, 9.5, 16];
@@ -47,9 +48,19 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
     if (!pin.node) throw new Error(`${s} はどこにも挿さっていません`);
     return pin.node;
   };
+  // pins joined inside their part stand for each other: keep one of them per net
+  const internalKey = (m) => {
+    const s = String(m);
+    const dot = s.indexOf(".");
+    const part = dot > 0 ? result.parts.find((p) => p.id === s.slice(0, dot)) : null;
+    const g = part?.internal.findIndex((group) => group.includes(s.slice(dot + 1))) ?? -1;
+    return g >= 0 ? `${part.id}#${g}` : s;
+  };
   const todo = list.map(([name, members], i) => {
     if (!Array.isArray(members) || members.length < 2) throw new Error(`net "${name}": 2つ以上のメンバーが必要です`);
-    return { name, color: colorFor(name, members.map(String), i), nodes: members.map(nodeOf) };
+    const nodes = members.map(nodeOf);
+    const keys = members.map(internalKey);
+    return { name, color: colorFor(name, members.map(String), i), nodes: nodes.filter((_, k) => keys.indexOf(keys[k]) === k) };
   });
 
   // fixed facts about the board
@@ -62,11 +73,14 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
   const holeEnds = new Map([...board.holes].filter(([h]) => !covered.has(h)).map(([h, p]) => [h, { ref: h, x: p.x, y: p.y, hole: h, node: h }]));
   const trace = (w) => withBox(wirePoints(w, 0.35));
   const baseDrawn = result.wires.map(trace);
-  // part bodies a wire should not run over (shrunk a little: grazing an edge is fine)
-  const bodies = result.parts
-    .filter((p) => p.def.mount !== "leads" || p.offboard)
-    .map(bodyBox)
-    .map((b) => ({ x: b.x + 0.6, y: b.y + 0.6, w: b.w - 1.2, h: b.h - 1.2 }));
+  // part bodies a wire should not run over, resistors and LEDs included (shrunk a little:
+  // grazing an edge is fine). A wire to one of the part's own pins may touch it.
+  const bodies = result.parts.map((part) => {
+    const b = bodyBox(part);
+    const edge = part.def.mount === "leads" && !part.offboard ? 0.15 : 0.6; // as in the layout check
+    const [mx, my] = [Math.min(edge, b.w * 0.25), Math.min(edge, b.h * 0.25)];
+    return { id: part.id, x: b.x + mx, y: b.y + my, w: b.w - 2 * mx, h: b.h - 2 * my };
+  });
   const bounds = board.bounds;
   const kitStyle = circuit.wireStyle === "kit";
 
@@ -83,12 +97,6 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
     const union = (a, b) => parent.set(find(a), find(b));
     for (const strip of boardStrips(board)) strip.slice(1).forEach((h) => union(strip[0], h));
     for (const w of result.wires) union(w.nodes[0], w.nodes[1]);
-    for (const part of result.parts) {
-      for (const group of part.internal) {
-        const nodes = group.map((name) => part.pins.find((p) => p.name === name)?.node).filter(Boolean);
-        nodes.slice(1).forEach((h) => union(nodes[0], h));
-      }
-    }
     for (const w of autos) union(w.a.node, w.b.node);
     return find;
   };
@@ -322,13 +330,20 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
       if (!end.hole) continue;
       if (drawn.some((line) => line.some((q) => Math.hypot(q.x - end.x, q.y - end.y) < NEAR))) cost += COST.overHole;
     }
-    // over part bodies, and off the board when both ends are on it
+    // over part bodies (each body crossed, and how far), and off the board when both ends are on it
     const step = len / Math.max(1, points.length - 1);
+    const own = (bx) => [a.ref, b.ref].some((r) => r.startsWith(`${bx.id}.`));
+    const crossed = new Set();
     for (const q of points) {
-      if (bodies.some((bx) => q.x > bx.x && q.x < bx.x + bx.w && q.y > bx.y && q.y < bx.y + bx.h)) cost += COST.overBody * step;
+      for (const bx of bodies) {
+        if (q.x > bx.x && q.x < bx.x + bx.w && q.y > bx.y && q.y < bx.y + bx.h && !own(bx)) {
+          cost += COST.overBody * step;
+          crossed.add(bx);
+        }
+      }
       if (a.hole && b.hole && (q.x < bounds.x || q.x > bounds.x + bounds.w || q.y < bounds.y || q.y > bounds.y + bounds.h)) cost += COST.offBoard * step;
     }
-    return cost;
+    return cost + crossed.size * COST.body;
   }
 }
 

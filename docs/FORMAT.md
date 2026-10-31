@@ -15,7 +15,7 @@
     { "id": "D1", "type": "led", "color": "red", "pins": { "A": "b21", "K": "b22" } }
   ],
   "wires": [
-    { "from": "c22", "to": "T-22", "color": "black" }
+    { "from": "a22", "to": "T-22", "color": "black" }
   ]
 }
 ```

@@ -135,7 +135,7 @@
   ],
   "parts": [
     { "id": "U1", "type": "nano", "at": "h3" },
-    { "id": "DISP1", "type": "oled-ssd1306-i2c", "at": "d24" }
+    { "id": "DISP1", "type": "oled-ssd1306-i2c", "at": "d24", "idLabel": { "dx": -2, "dy": -2.1 } }
   ],
   "wires": [
     { "id": "W1", "from": "a4", "to": "T-4", "color": "black" },

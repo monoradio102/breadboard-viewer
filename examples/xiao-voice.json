@@ -3,7 +3,7 @@
   "title": "XIAO ESP32S3 で音声入出力 (I2S マイク + アンプ)",
   "board": "full",
   "parts": [
-    { "id": "U1", "type": "xiao", "at": "h12", "model": "ESP32S3" },
+    { "id": "U1", "type": "xiao", "at": "h12", "model": "ESP32S3", "idLabel": { "dx": -1.6, "dy": 2 } },
     { "id": "MIC1", "type": "inmp441", "at": "f5" },
     { "id": "AMP1", "type": "max98357a", "at": "a22" },
     { "id": "SP1", "type": "speaker", "pos": [25, -9], "label": "4Ω 3W" },

@@ -39,6 +39,8 @@ const resistor = {
   category: "受動部品",
   description: "カーボン抵抗 1/4W。valueからカラーコードを描画。",
   mount: "leads",
+  // the drawn body around the pins' centre (layout checks): [half length along the leads, half width]
+  body: (span) => [clamp(span - 0.7, 0.9, 2.6) / 2, 0.36],
   params: { value: { default: "220", description: "抵抗値 (例: 220, 4.7k, 4k7, 1M)" } },
   pins: () => inline(["1", "2"]).map((p, i) => ({ ...p, x: i * 4 })),
   render({ pins: [a, b], params }) {
@@ -58,6 +60,7 @@ const led = {
   category: "半導体",
   description: "5mm砲弾型LED。ピンAがアノード(+, 長い足)、Kがカソード(-)。",
   mount: "leads",
+  body: 0.95, // radius of the body drawn at the pins' centre (layout checks)
   params: { color: { default: "red", options: Object.keys(LED_COLORS), description: "発光色" } },
   states: {
     on: { type: "bool", default: false, description: "点灯" },
@@ -91,6 +94,7 @@ const diode = {
   category: "半導体",
   description: "整流/小信号ダイオード。ピンAがアノード、Kがカソード(帯の側)。",
   mount: "leads",
+  body: (span) => [clamp(span - 0.7, 0.9, 2.0) / 2, 0.3], // drawn body (layout checks)
   params: { model: { default: "1N4148", description: "型番 (1N4148はガラス, それ以外は黒モールド)" } },
   pins: () => [
     { name: "A", x: 0, y: 0 },
@@ -112,6 +116,7 @@ const capacitor = {
   category: "受動部品",
   description: "積層セラミックコンデンサ。極性なし。",
   mount: "leads",
+  body: 0.5, // radius of the body around the pins' centre (layout checks)
   params: { value: { default: "0.1uF", description: "容量 (例: 0.1uF, 22pF)" } },
   pins: () => [
     { name: "1", x: 0, y: 0 },
@@ -131,6 +136,7 @@ const electrolytic = {
   category: "受動部品",
   description: "アルミ電解コンデンサ。ピン+が長い足、-が帯の側。",
   mount: "leads",
+  body: 1.05, // radius of the body around the pins' centre (layout checks)
   params: { value: { default: "10uF", description: "容量 (例: 10uF, 100uF)" } },
   pins: () => inline(["+", "-"]),
   render({ pins: [a, b], params }) {
@@ -151,6 +157,7 @@ const cds = {
   category: "センサ",
   description: "明るいほど抵抗値が下がるフォトレジスタ。極性なし。",
   mount: "leads",
+  body: 0.8, // radius of the body around the pins' centre (layout checks)
   params: {},
   pins: () => inline(["1", "2"]),
   render({ pins: [a, b] }) {
@@ -172,6 +179,7 @@ const transistor = {
   category: "半導体",
   description: "TO-92パッケージ。pinoutは平らな面を手前にして左からの並び (2SC1815=ECB, 2N3904=EBC)。",
   mount: "leads",
+  body: 0.95, // radius of the body around the pins' centre (layout checks)
   params: {
     model: { default: "2SC1815", description: "型番" },
     pinout: { default: "ECB", description: "平らな面から見た左→右のピン配置 (例: ECB, EBC)" },
@@ -418,6 +426,7 @@ const motor = {
   category: "出力",
   description: "FA-130型など。上から見た図にプロペラを付けて描く。speed (rpm) で回転アニメーション。",
   mount: "leads",
+  body: 1.6, // radius of the body around the pins' centre (layout checks)
   params: {},
   states: { speed: { type: "rate", default: 0, description: "回転数 rpm (負で逆回転)。キー間は直線的に変化" } },
   animate: () => ({ rotor: (s) => ({ transform: `rotate(${Math.round(s.speedAngle * 10) / 10}deg)` }) }),
@@ -644,6 +653,7 @@ const rgbled = {
   category: "半導体",
   description: "5mm 4本足。ピンは R, K(共通カソード, 一番長い足), G, B。r / g / b (0〜1) で発光色をアニメーション。",
   mount: "leads",
+  body: 1.05, // radius of the body around the pins' centre (layout checks)
   params: {},
   states: {
     r: { type: "number", default: 0, description: "赤の明るさ 0〜1" },

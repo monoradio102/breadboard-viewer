@@ -7,7 +7,7 @@
     { "id": "Q1", "type": "transistor", "pinout": "BCE", "pins": { "B": "c21", "C": "c22", "E": "c23" }, "idLabel": { "dx": -1.2 } },
     { "id": "R1", "type": "resistor", "value": "1k", "pins": ["d21", "g21"] },
     { "id": "M1", "type": "motor", "pins": { "+": "b29", "-": "b22" } },
-    { "id": "D1", "type": "diode", "model": "1N4007", "pins": { "A": "d22", "K": "d29" } },
+    { "id": "D1", "type": "diode", "model": "1N4007", "pins": { "A": "d22", "K": "d29" }, "idLabel": { "dy": 1.85 } },
     { "id": "S1", "type": "servo", "pos": [28, -6] }
   ],
   "wires": [

@@ -4,7 +4,7 @@
 // installed: only it plays the CSS / SMIL inside overlay SVGs at the right moment.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -16,13 +16,35 @@ const has = (cmd, args) => {
   }
 };
 const PYTHON = ["python3", "python"];
+// commands on PATH (Linux), then where the apps are installed on macOS / Windows
 const CHROMES = ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome"];
+const APPS = {
+  darwin: (home) =>
+    ["Google Chrome", "Chromium", "Microsoft Edge", "Brave Browser"].flatMap((app) => {
+      const bin = `${app}.app/Contents/MacOS/${app}`;
+      return [`/Applications/${bin}`, join(home, "Applications", bin)];
+    }),
+  win32: () => {
+    const roots = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean);
+    return [String.raw`Google\Chrome\Application\chrome.exe`, String.raw`Chromium\Application\chrome.exe`, String.raw`Microsoft\Edge\Application\msedge.exe`]
+      .flatMap((bin) => roots.map((r) => join(r, bin)));
+  },
+};
+
+// An installed Chromium-based browser: a command name or a full path, or null.
+// chromeOnly: Google Chrome itself (for --chrome).
+export function findChrome({ chromeOnly = false } = {}) {
+  const names = chromeOnly ? ["google-chrome", "google-chrome-stable"] : CHROMES;
+  for (const c of names) if (has(c, ["--version"])) return c;
+  const apps = (APPS[process.platform]?.(homedir()) ?? []).filter((p) => !chromeOnly || /Google[\\/]Chrome|Google Chrome/.test(p));
+  return apps.find((p) => existsSync(p)) ?? null;
+}
 
 // "chrome:<path>" | "rsvg" | "cairosvg:<python>" | null. browserPath: a Chromium-based browser to use.
 export function findRasterizer(want = "auto", browserPath = null) {
   if (want === "auto" || want === "chrome") {
-    if (browserPath) return `chrome:${browserPath}`;
-    for (const c of CHROMES) if (has(c, ["--version"])) return `chrome:${c}`;
+    const chrome = browserPath ?? findChrome();
+    if (chrome) return `chrome:${chrome}`;
   }
   if ((want === "auto" || want === "rsvg") && has("rsvg-convert", ["--version"])) return "rsvg";
   if (want === "auto" || want === "cairosvg") {
@@ -34,7 +56,7 @@ export function findRasterizer(want = "auto", browserPath = null) {
 export const NO_RASTERIZER =
   "PNG を作れるものが見つかりません。次のどれかを用意してください:\n" +
   "  - Playwright (Chromium): npm i playwright && npx playwright install chromium\n" +
-  "  - Chromium / Google Chrome (PATH にあるか、--browser-path で指定)\n" +
+  "  - Chromium / Google Chrome / Edge (PATH、macOS の /Applications、Windows の Program Files から探します。--browser-path で指定も可)\n" +
   "  - Python の cairosvg: pip install cairosvg\n" +
   "  - rsvg-convert (librsvg)\n" +
   "SVG (-o out.svg) は Node.js だけで書き出せます。";

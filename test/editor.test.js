@@ -119,3 +119,26 @@ test("the page refuses inline scripts (Content-Security-Policy)", { skip }, asyn
   assert.equal(await saved(page), "earlier work");
   await page.close();
 });
+
+test("a view that showed the whole circuit fits again when the stage grows", { skip }, async () => {
+  const circuit = JSON.parse(readFileSync(new URL("../examples/oled-hello.json", import.meta.url), "utf8"));
+  const { page, problems } = await open(circuitLink(circuit, base));
+  const box = () => page.evaluate(() => document.querySelector("#stage svg").getAttribute("viewBox"));
+  // opened while the window is tiny (a tab in the background), then laid out at full size
+  await page.setViewportSize({ width: 120, height: 90 });
+  await page.waitForTimeout(150);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.waitForTimeout(150);
+  const grown = await box();
+  await page.evaluate(() => bb.fit());
+  assert.equal(grown, await box());
+  // zoomed by hand: not fitted again
+  await page.evaluate(() => bb.zoom(0.5));
+  const zoomed = (await box()).split(" ").map(Number);
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.waitForTimeout(150);
+  const after = (await box()).split(" ").map(Number);
+  assert.equal(after[2], zoomed[2]);
+  assert.deepEqual(problems, []);
+  await page.close();
+});
