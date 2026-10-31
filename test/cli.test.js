@@ -169,10 +169,14 @@ test("layout flags wires over LED / resistor bodies and labels under wires", () 
       { id: "W4", from: "a15", to: "c20" }, // across LED1's dome
       { id: "W2", from: "a17", to: "T-17" }, // through LED1's label
       { id: "W3", from: "e8", to: "e20" }, // clear of both
+      { id: "W5", from: "a12", to: "T-12" }, // ends next to R1, not under it
+      { id: "W6", from: "c12", to: "T-11" }, // ends under R1's barrel
     ],
   });
   const issues = layoutIssues(r);
   assert.ok(issues.includes("W1 が R1 の本体の上を通っています (via で避けられます)"), issues.join("\n"));
+  assert.ok(issues.includes("W6 の端 c12 が R1 の本体の下に隠れています"), issues.join("\n"));
+  assert.ok(!issues.some((l) => l.startsWith("W5")), issues.join("\n"));
   assert.ok(issues.includes("W4 が LED1 の本体の上を通っています (via で避けられます)"), issues.join("\n"));
   assert.ok(issues.some((l) => l.startsWith("LED1 のラベルに W2 が重なっています")), issues.join("\n"));
   assert.ok(!issues.some((l) => l.includes("W3")), issues.join("\n"));

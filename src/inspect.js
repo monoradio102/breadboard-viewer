@@ -38,14 +38,15 @@ export function bodyCore(part) {
   return { x: cx - rx, y: cy - ry, w: 2 * rx, h: 2 * ry };
 }
 
-// Holes hidden under rigid / off-board part bodies: hole -> part id (its own pins excluded).
+// Holes hidden under part bodies: hole -> part id (its own pins excluded). For parts with leads,
+// under the drawn body (a resistor's barrel, an LED's dome), not under the thin legs.
 export function coveredBy(result) {
   const map = new Map();
   for (const part of result.parts) {
-    if (part.def.mount === "leads" && !part.offboard) continue;
-    const box = bodyBox(part);
+    const leads = part.def.mount === "leads" && !part.offboard;
+    const box = leads ? bodyCore(part) : bodyBox(part);
     const own = new Set(part.pins.map((p) => p.hole));
-    for (const [hole, p] of result.board.holes) if (!own.has(hole) && inside(p, box, 0.25)) map.set(hole, part.id);
+    for (const [hole, p] of result.board.holes) if (!own.has(hole) && inside(p, box, leads ? 0.1 : 0.25)) map.set(hole, part.id);
   }
   return map;
 }

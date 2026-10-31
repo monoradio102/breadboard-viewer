@@ -25,7 +25,8 @@ const NEAR = 0.22; // a wire this close to a hole's centre covers it
 // Throws Error with a readable message when a member does not exist or a net cannot be wired.
 // budget: how many searches for one wire (cheapest()) the whole run may make. The run is the
 // same for the same input on any machine; a bigger budget tries more orders and swaps.
-export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300 } = {}) {
+// reserved: ids the new wires must not take (wires being replaced keep theirs).
+export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300, reserved = [] } = {}) {
   const result = resolveCircuit(circuit);
   if (result.errors.length) throw new Error(`回路にエラーがあります: ${result.errors[0]}`);
   const { board } = result;
@@ -58,9 +59,7 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
   };
   const todo = list.map(([name, members], i) => {
     if (!Array.isArray(members) || members.length < 2) throw new Error(`net "${name}": 2つ以上のメンバーが必要です`);
-    const nodes = members.map(nodeOf);
-    const keys = members.map(internalKey);
-    return { name, color: colorFor(name, members.map(String), i), nodes: nodes.filter((_, k) => keys.indexOf(keys[k]) === k) };
+    return { name, color: colorFor(name, members.map(String), i), nodes: members.map(nodeOf), keys: members.map(internalKey) };
   });
 
   // fixed facts about the board
@@ -110,6 +109,19 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
     ...[...holeEnds.values()].filter((e) => !ctx.used.has(e.hole) && ctx.find(e.hole) === root),
     ...[...terminals.values()].filter((t) => ctx.find(t.node) === root),
   ];
+
+  // of pins joined inside a part, keep the one already wired to the rest of its net (else the first)
+  {
+    const find = unionFind([]);
+    for (const net of todo) {
+      const keep = new Map();
+      net.keys.forEach((key, k) => {
+        const others = net.nodes.filter((_, j) => net.keys[j] !== key).map(find);
+        if (!keep.has(key) || (others.includes(find(net.nodes[k])) && !others.includes(find(net.nodes[keep.get(key)])))) keep.set(key, k);
+      });
+      net.nodes = net.nodes.filter((_, k) => keep.get(net.keys[k]) === k);
+    }
+  }
 
   let spent = 0;
   const outOfBudget = () => spent >= budget;
@@ -219,7 +231,7 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
   if (!autos) throw new Error(`net "${failed.name}" をつなげませんでした (空いている穴が足りません)`);
 
   // the wires, and a note for any that still cross or cover something
-  const taken = new Set([...result.wires.map((w) => w.id), ...result.parts.map((p) => p.id), ...(circuit.overlays ?? []).map((o) => o.id)]);
+  const taken = new Set([...result.wires.map((w) => w.id), ...result.parts.map((p) => p.id), ...(circuit.overlays ?? []).map((o) => o.id), ...reserved]);
   let n = 0;
   const nextId = () => {
     do n++;

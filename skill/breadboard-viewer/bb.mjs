@@ -2696,10 +2696,10 @@ function bodyCore(part) {
 function coveredBy(result) {
   const map = /* @__PURE__ */ new Map();
   for (const part of result.parts) {
-    if (part.def.mount === "leads" && !part.offboard) continue;
-    const box = bodyBox(part);
+    const leads = part.def.mount === "leads" && !part.offboard;
+    const box = leads ? bodyCore(part) : bodyBox(part);
     const own = new Set(part.pins.map((p) => p.hole));
-    for (const [hole, p] of result.board.holes) if (!own.has(hole) && inside(p, box, 0.25)) map.set(hole, part.id);
+    for (const [hole, p] of result.board.holes) if (!own.has(hole) && inside(p, box, leads ? 0.1 : 0.25)) map.set(hole, part.id);
   }
   return map;
 }
@@ -2929,7 +2929,7 @@ var COST = { length: 1, crossing: 25, alongside: 20, overHole: 40, overBody: 8, 
 var PALETTE = ["yellow", "blue", "green", "orange", "purple", "white", "brown", "gray"];
 var LANES = [3, 9.5, 16];
 var NEAR = 0.22;
-function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300 } = {}) {
+function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300, reserved = [] } = {}) {
   const result = resolveCircuit(circuit);
   if (result.errors.length) throw new Error(`\u56DE\u8DEF\u306B\u30A8\u30E9\u30FC\u304C\u3042\u308A\u307E\u3059: ${result.errors[0]}`);
   const { board } = result;
@@ -2959,9 +2959,7 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300 } = 
   };
   const todo = list.map(([name, members], i) => {
     if (!Array.isArray(members) || members.length < 2) throw new Error(`net "${name}": 2\u3064\u4EE5\u4E0A\u306E\u30E1\u30F3\u30D0\u30FC\u304C\u5FC5\u8981\u3067\u3059`);
-    const nodes = members.map(nodeOf);
-    const keys = members.map(internalKey);
-    return { name, color: colorFor(name, members.map(String), i), nodes: nodes.filter((_, k) => keys.indexOf(keys[k]) === k) };
+    return { name, color: colorFor(name, members.map(String), i), nodes: members.map(nodeOf), keys: members.map(internalKey) };
   });
   const baseUsed = new Set(result.occupied.keys());
   const covered = coveredBy(result);
@@ -3004,6 +3002,17 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300 } = 
     ...[...holeEnds.values()].filter((e) => !ctx.used.has(e.hole) && ctx.find(e.hole) === root),
     ...[...terminals.values()].filter((t) => ctx.find(t.node) === root)
   ];
+  {
+    const find = unionFind([]);
+    for (const net of todo) {
+      const keep = /* @__PURE__ */ new Map();
+      net.keys.forEach((key, k) => {
+        const others = net.nodes.filter((_, j) => net.keys[j] !== key).map(find);
+        if (!keep.has(key) || others.includes(find(net.nodes[k])) && !others.includes(find(net.nodes[keep.get(key)]))) keep.set(key, k);
+      });
+      net.nodes = net.nodes.filter((_, k) => keep.get(net.keys[k]) === k);
+    }
+  }
   let spent = 0;
   const outOfBudget = () => spent >= budget;
   const route = (order) => {
@@ -3101,7 +3110,7 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300 } = 
     if (autos === done && !hasTrouble(done)) break;
   }
   if (!autos) throw new Error(`net "${failed.name}" \u3092\u3064\u306A\u3052\u307E\u305B\u3093\u3067\u3057\u305F (\u7A7A\u3044\u3066\u3044\u308B\u7A74\u304C\u8DB3\u308A\u307E\u305B\u3093)`);
-  const taken = /* @__PURE__ */ new Set([...result.wires.map((w) => w.id), ...result.parts.map((p) => p.id), ...(circuit.overlays ?? []).map((o) => o.id)]);
+  const taken = /* @__PURE__ */ new Set([...result.wires.map((w) => w.id), ...result.parts.map((p) => p.id), ...(circuit.overlays ?? []).map((o) => o.id), ...reserved]);
   let n2 = 0;
   const nextId2 = () => {
     do
@@ -3319,8 +3328,9 @@ function normalize(circuit) {
   });
   return c;
 }
-function applyOps(circuit, ops) {
+function applyOps(circuit, ops, { strict = true } = {}) {
   let c = normalize(circuit);
+  const start = c;
   const ids = [];
   (Array.isArray(ops) ? ops : [ops]).forEach((op, i) => {
     const fn = OPS[op?.op];
@@ -3334,6 +3344,11 @@ function applyOps(circuit, ops) {
       throw e;
     }
   });
+  if (strict) {
+    const before = new Set(resolveCircuit(start).errors);
+    const added = resolveCircuit(c).errors.filter((e) => !before.has(e));
+    if (added.length) fail(`\u9069\u7528\u3059\u308B\u3068\u56DE\u8DEF\u304C\u30A8\u30E9\u30FC\u306B\u306A\u308A\u307E\u3059: ${added[0]}${added.length > 1 ? ` (\u307B\u304B ${added.length - 1} \u4EF6)` : ""}`);
+  }
   return { circuit: c, ids };
 }
 var OPS = {
@@ -3690,7 +3705,7 @@ function keepConnections(before, after, ids) {
   const base = { ...after, wires: after.wires.filter((w) => !removed.includes(w)) };
   let laid;
   try {
-    laid = autoWire(base, Object.fromEntries(groups.map((g2) => [g2.name, g2.members])));
+    laid = autoWire(base, Object.fromEntries(groups.map((g2) => [g2.name, g2.members])), { reserved: removed.map((w) => w.id) });
   } catch (e) {
     fail(`\u63A5\u7D9A\u3092\u4FDD\u3066\u307E\u305B\u3093\u3067\u3057\u305F: ${e.message}`);
   }
@@ -3915,7 +3930,7 @@ var CHROMES = ["chromium", "chromium-browser", "google-chrome", "google-chrome-s
 var APPS = {
   darwin: (home) => ["Google Chrome", "Chromium", "Microsoft Edge", "Brave Browser"].flatMap((app) => {
     const bin = `${app}.app/Contents/MacOS/${app}`;
-    return [`/Applications/${bin}`, join2(home, "Applications", bin)];
+    return [join2(home, "Applications", bin), `/Applications/${bin}`];
   }),
   win32: () => {
     const roots = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean);

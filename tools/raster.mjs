@@ -22,7 +22,7 @@ const APPS = {
   darwin: (home) =>
     ["Google Chrome", "Chromium", "Microsoft Edge", "Brave Browser"].flatMap((app) => {
       const bin = `${app}.app/Contents/MacOS/${app}`;
-      return [`/Applications/${bin}`, join(home, "Applications", bin)];
+      return [join(home, "Applications", bin), `/Applications/${bin}`]; // the user's own first
     }),
   win32: () => {
     const roots = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean);

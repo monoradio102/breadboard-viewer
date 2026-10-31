@@ -150,3 +150,41 @@ test("keepConnections refuses a place that joins other nets, and works for rotat
   assert.deepEqual(pinGroups(moved), pinGroups(xiao));
   assert.deepEqual(resolveCircuit(moved).warnings, []);
 });
+
+test("keepConnections gives every wire its own id and spends none on a part's insides", () => {
+  // LED1.A shares R1's column (no wire), LED1.K has W1: moving LED1 needs two wires, one is W1 again
+  const c = {
+    version: 1,
+    board: "half",
+    parts: [
+      { id: "R1", type: "resistor", pins: ["c10", "c14"] },
+      { id: "LED1", type: "led", pins: { A: "b14", K: "b16" } },
+    ],
+    wires: [{ id: "W1", from: "a16", to: "T-16", color: "black" }],
+  };
+  const { circuit } = applyOps(c, [{ op: "move", id: "LED1", to: "g20", keepConnections: true }]);
+  const ids = circuit.wires.map((w) => w.id);
+  assert.equal(new Set(ids).size, ids.length, ids.join(", "));
+  assert.ok(ids.includes("W1"));
+  // a switch wired on its lower leg: the upper leg (joined inside) needs no wire of its own
+  const sw = {
+    version: 1,
+    board: "half",
+    parts: [
+      { id: "SW1", type: "button", at: "e17" },
+      { id: "R1", type: "resistor", pins: ["j10", "j14"] },
+    ],
+    wires: [{ id: "W1", from: "j17", to: "i14" }],
+  };
+  const moved = applyOps(sw, [{ op: "setPin", id: "R1", pin: "1", to: "j8", keepConnections: true }]).circuit;
+  assert.deepEqual(moved.wires.map((w) => [w.from, w.to]), [["j17", "i14"]]);
+});
+
+test("ops that leave a new error change nothing (strict), unless the editor asks otherwise", () => {
+  const c = { version: 1, board: "half", parts: [{ id: "R1", type: "resistor", pins: ["c10", "c14"] }], wires: [{ id: "W1", from: "c8", to: "T-8" }] };
+  assert.throws(() => applyOps(c, [{ op: "setPin", id: "R1", pin: "1", to: "c8" }]), /適用すると回路がエラーになります: 穴 c8 に R1\.1 と W1\.from/);
+  const loose = applyOps(c, [{ op: "setPin", id: "R1", pin: "1", to: "c8" }], { strict: false }).circuit;
+  assert.deepEqual(loose.parts[0].pins, ["c8", "c14"]);
+  // errors that were there before do not block other edits
+  assert.doesNotThrow(() => applyOps(loose, [{ op: "setTitle", title: "x" }]));
+});

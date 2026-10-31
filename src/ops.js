@@ -62,8 +62,12 @@ export function normalize(circuit) {
 
 // Applies ops in order. Throws OpError (and changes nothing) if any op fails.
 // Returns { circuit, ids } where ids[i] is the id created/affected by ops[i].
-export function applyOps(circuit, ops) {
+// strict (the default): fail, changing nothing, when the result has errors the circuit did not
+// have before (a pin and a wire end in one hole, ...). The editor's own drags pass false: they
+// show such errors as warnings instead.
+export function applyOps(circuit, ops, { strict = true } = {}) {
   let c = normalize(circuit);
+  const start = c;
   const ids = [];
   (Array.isArray(ops) ? ops : [ops]).forEach((op, i) => {
     const fn = OPS[op?.op];
@@ -77,6 +81,11 @@ export function applyOps(circuit, ops) {
       throw e;
     }
   });
+  if (strict) {
+    const before = new Set(resolveCircuit(start).errors);
+    const added = resolveCircuit(c).errors.filter((e) => !before.has(e));
+    if (added.length) fail(`適用すると回路がエラーになります: ${added[0]}${added.length > 1 ? ` (ほか ${added.length - 1} 件)` : ""}`);
+  }
   return { circuit: c, ids };
 }
 
@@ -487,7 +496,7 @@ function keepConnections(before, after, ids) {
   const base = { ...after, wires: after.wires.filter((w) => !removed.includes(w)) };
   let laid;
   try {
-    laid = autoWire(base, Object.fromEntries(groups.map((g) => [g.name, g.members])));
+    laid = autoWire(base, Object.fromEntries(groups.map((g) => [g.name, g.members])), { reserved: removed.map((w) => w.id) });
   } catch (e) {
     fail(`接続を保てませんでした: ${e.message}`);
   }

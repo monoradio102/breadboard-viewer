@@ -119,8 +119,9 @@ function report() {
 }
 
 // Applies ops and records one undo step. Returns the ids the ops created / touched.
-function apply(ops) {
-  const out = applyOps(circuit, ops);
+// strict: refuse ops that leave new errors (window.bb); the UI's own edits show them as warnings.
+function apply(ops, strict = false) {
+  const out = applyOps(circuit, ops, { strict });
   commit(out.circuit);
   return out.ids;
 }
@@ -608,7 +609,7 @@ el.stage.addEventListener("pointermove", (ev) => {
       : [{ op: "update", id: drag.id, set: { [drag.handle]: to } }];
   }
   try {
-    drag.preview = applyOps(circuit, ops).circuit;
+    drag.preview = applyOps(circuit, ops, { strict: false }).circuit;
     drag.ops = ops;
     const r = resolveCircuit(drag.preview);
     draw(r);
@@ -1202,16 +1203,16 @@ window.bb = {
   library: () => structuredClone(library),
   addToLibrary: (defs) => addToLibrary(Array.isArray(defs) ? defs : [defs]),
   /** Add user SVG drawn above the circuit (x, y, w, h in pitch units). */
-  addOverlay: (svg, box) => apply([{ op: "addOverlay", svg, ...box }])[0],
+  addOverlay: (svg, box) => apply([{ op: "addOverlay", svg, ...box }], true)[0],
   /** Apply edit ops (see docs/OPS.md) as one undo step. Throws on error. Returns affected ids. */
-  apply: (ops) => apply(ops),
-  addPart: (type, opts = {}) => apply([{ op: "addPart", type, ...opts }])[0],
-  move: (id, to, opts = {}) => apply([{ op: "move", id, to, ...opts }]),
-  rotate: (id, by = 90, opts = {}) => apply([{ op: "rotate", id, by, ...opts }]),
-  setPin: (id, pin, to) => apply([{ op: "setPin", id, pin, to }]),
-  update: (id, set) => apply([{ op: "update", id, set }]),
-  remove: (id) => apply([{ op: "remove", id }]),
-  addWire: (from, to, color = "red") => apply([{ op: "addWire", from, to, color }])[0],
+  apply: (ops) => apply(ops, true),
+  addPart: (type, opts = {}) => apply([{ op: "addPart", type, ...opts }], true)[0],
+  move: (id, to, opts = {}) => apply([{ op: "move", id, to, ...opts }], true),
+  rotate: (id, by = 90, opts = {}) => apply([{ op: "rotate", id, by, ...opts }], true),
+  setPin: (id, pin, to) => apply([{ op: "setPin", id, pin, to }], true),
+  update: (id, set) => apply([{ op: "update", id, set }], true),
+  remove: (id) => apply([{ op: "remove", id }], true),
+  addWire: (from, to, color = "red") => apply([{ op: "addWire", from, to, color }], true)[0],
   undo,
   redo,
   select,

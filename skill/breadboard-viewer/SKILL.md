@@ -41,10 +41,12 @@ node "$SKILL_DIR/bb.mjs" frames circuit.json -o asm --assembly --fps 30         
 1. `parts` で部品の `type` とピン名を確かめる。`node "$SKILL_DIR/bb.mjs" parts --json --type xiao` でピンの相対位置と本体の範囲もわかる
    置く前に `node "$SKILL_DIR/bb.mjs" place xiao --at h3 --rot 180 --in circuit.json` (回路がまだなければ `--board half`) で、各ピンの穴・本体が覆う範囲・ぶつかりを確かめる
 2. `apply` で部品を置き、配線する (操作の一覧は このフォルダの `OPS.md`)。JSON を直接書いてもよい。
-   配線は、部品を置いたあとにネットリストを渡して `autoWire` に任せられる (交差や部品の本体を避けて引く。タクトスイッチの中のつながりのような部品の内部には頼らず、上下のレールも線でつなぐ。部品の位置とピンの選び方で、きれいさが決まる):
+   配線は、部品を置いたあとにネットリストを渡して `autoWire` に任せられる (交差や部品の本体を避けて引く。タクトスイッチの中のつながりのような部品の内部には頼らず、上下のレールも線でつなぐ):
+   `node "$SKILL_DIR/bb.mjs" apply circuit.json '[{"op":"autoWire","nets":{"SDA":["U1.D4","DISP1.SDA"],"SCL":["U1.D5","DISP1.SCL"],"GND":["U1.GND","DISP1.GND","T-"],"3V3":["U1.3V3","DISP1.VCC","T+"]}}]'`
+   **自動配線は叩き台。** 結果を `check --layout` と `render` で見て、気になる線は自分で引き直す (`update` で端や `via` を変える / `remove` して `addWire`)。
+   たとえば上下のレールどうしは、ボードの端でまっすぐつなぐ (`T-3` → `B-3` など) と見やすい。長い斜めの線や、遠回りの線も直す。きれいさは部品の位置とピンの選び方でも決まる
    部品を動かすときは `"keepConnections": true` を付けると、つながりを保ったまま配線を付け替える (付けないと配線は元の穴に残り、つながりが変わることがある):
    `node "$SKILL_DIR/bb.mjs" apply circuit.json '[{"op":"move","id":"D1","to":"b25","keepConnections":true}]'`
-   `node "$SKILL_DIR/bb.mjs" apply circuit.json '[{"op":"autoWire","nets":{"SDA":["U1.D4","DISP1.SDA"],"SCL":["U1.D5","DISP1.SCL"],"GND":["U1.GND","DISP1.GND","T-"],"3V3":["U1.3V3","DISP1.VCC","T+"]}}]'`
 3. 必ず `check` を実行し、エラーがなく、ネットリストが意図どおりか確かめる。`NOTE` (参考) は電気的なよくあるミス (電源どうしのショート、抵抗なしの LED、GND 未接続、電圧の過不足など) なので、意図したものでなければ直す
 4. `node "$SKILL_DIR/bb.mjs" check circuit.json --layout` で見た目の問題 (本体の重なり、本体の下に隠れた配線の端、ほかの穴の真上を通る配線、LED や抵抗などの本体の上を通る配線、ラベルの重なり、配線の下になったラベル、大きすぎる bend、ボードの外にはみ出す配線) を文字で確かめ、最後に `render` で画像にして確かめる。
    結果を機械的に読むときは `check --json`。静止画を確かめるだけなら、SVG を `rsvg-convert -o out.png circuit.svg` で PNG にしてもよい (アニメーションは止まった状態)
