@@ -20,7 +20,7 @@ test("check --json and --layout", () => {
   assert.equal(r.stderr, "");
   const out = JSON.parse(r.stdout);
   assert.equal(out.ok, true);
-  assert.ok(out.nets.some((n) => n.pins.includes("U1.D6") && n.pins.includes("LED1.DIN")));
+  assert.ok(out.nets.some((n) => n.pins.includes("U1.D2") && n.pins.includes("LED1.DIN")));
   assert.ok(Array.isArray(out.layout));
   assert.ok(out.unconnected.includes("AMP1.GAIN"));
 });

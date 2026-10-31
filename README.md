@@ -5,8 +5,6 @@ Claude Code や Codex などのAIエージェントが、読み書きしやす�
 
 **エディタ: https://monoradio102.github.io/breadboard-viewer/**
 
-![エディタの操作 (穴の導通の表示、ジャンパ線を引く、描き方の切り替え、組み立て手順)](docs/images/editor-demo.gif)
-
 **AIに使わせるとき**は、Claude Code や Codex に次のURLを渡してください。リポジトリのクローンは不要です。
 回路の書き方、1ファイルのコマンドラインツール (`dist/bb.mjs`)、ブラウザからの操作方法がまとまっています。
 
@@ -136,7 +134,7 @@ bb.help()
 | `docs/FORMAT.md` | 回路ファイルの形式 |
 | `docs/OPS.md` | 編集操作 |
 | `examples/` | サンプル回路 |
-| `docs/images/` | README用の画像 (`npm run images` で生成。`editor-demo.gif` は `npm run demo` で生成) |
+| `docs/images/` | README用の画像 (`npm run images` で生成) |
 | `tools/bb.mjs` | コマンドライン |
 | `dist/bb.mjs` | コマンドラインを1ファイルにまとめたもの (`npm run build` で生成。Pagesから配布) |
 | `docs/agent/common.md` | AIエージェント向けの手引きの本文 (`llms.txt` と `SKILL.md` の元) |
