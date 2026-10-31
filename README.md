@@ -113,3 +113,10 @@ bb.help()
 | `docs/agent/common.md` | AIエージェント向けの手引きの本文 (`llms.txt` と `SKILL.md` の元) |
 | `llms.txt` | AIエージェント向けの手引き (Pagesのトップから参照。`npm run build` で生成) |
 | `skill/breadboard-viewer/` | Claude のスキル (`SKILL.md`, `bb.mjs`, `FORMAT.md`, `OPS.md`。`npm run build` で生成) と、その zip |
+
+## 免責事項
+
+部品データ (ピン配置、寸法など)、サンプル回路、ドキュメントは参考情報で、**誤りを含んでいる可能性があります。**
+実際に配線する前に、必ずデータシートやメーカーの資料で確認してください。
+検証機能は配線の構造だけを確認するもので、電気的に正しく安全な回路であることは保証しません。
+本ツールの利用によって生じた損害について、作者は責任を負いません。詳しくは [DISCLAIMER.md](DISCLAIMER.md) を参照してください。
