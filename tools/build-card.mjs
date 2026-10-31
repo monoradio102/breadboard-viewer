@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Renders docs/images/json-to-circuit.png for the README / social posts: the ops in
 // docs/hello-ops.json on the left, the circuit they make on the right. Needs Playwright.
-//   node tools/build-card.mjs
+//   node tools/build-card.mjs [out.png] [--scale 1.2]   (1.2 gives 1920x1080, for video)
 import { readFileSync } from "node:fs";
 import { resolveCircuit } from "../src/circuit.js";
 import { emptyCircuit } from "../src/io.js";
@@ -43,10 +43,14 @@ b{font-weight:400}.k{color:#88c0d0}.s{color:#a3be8c}.n{color:#d08770}
 <div class="url">github.com/monoradio102/breadboard-viewer</div></div>
 <div class="arrow">→</div>`;
 
+const args = process.argv.slice(2);
+const at = args.indexOf("--scale");
+const scale = at >= 0 ? Number(args.splice(at, 2)[1]) || 1 : 1;
+const out = args[0] ?? new URL("docs/images/json-to-circuit.png", root).pathname;
 const browser = await launchBrowser();
-const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: scale });
 await page.setContent(html);
 await page.waitForTimeout(200);
-await page.screenshot({ path: new URL("docs/images/json-to-circuit.png", root).pathname });
+await page.screenshot({ path: out });
 await browser.close();
-console.log("docs/images/json-to-circuit.png");
+console.log(out);
