@@ -38,8 +38,7 @@
    部品の状態で表せない演出は SVG を書いて `addOverlay` で流し込む。1 回きりの動きは `restart: true` (表示された時刻から SVG の時計が始まる)、消し方は `fadeOut` (ミリ秒) で指定する
 6. 組み方を説明するときは `setSteps` で組み立て手順を書く (`autoSteps` で自動生成もできる)。部品を並べたところから順に配置していく様子を描ける。
    トレイの位置や時間は `setAssembly` で指定し、`{{CLI}} plan circuit.json` で各手順の時刻・トレイの位置と重なりを確かめる
-7. **できあがったら、最後に必ず `{{CLI}} url circuit.json` でリンクを作り、ユーザーへの返答の最後に載せる。** クリックするだけでエディタが開き、ブラウザで確認・編集・共有できる (画像やファイルを渡すときも、リンクを添える)。
-   ブラウザのエディタ上で作業しているときは `bb.link()` で同じリンクが得られる
+7. できあがったら `{{CLI}} url circuit.json` でリンクを作り、返答の最後に載せるとユーザーがブラウザで確認できる
 
 SVG の出力と、parts / new / apply / check は Node.js 18 以上だけで動きます。
 PNG と連番 PNG は、Playwright (`npm i playwright && npx playwright install chromium`) があればブラウザで描きます。Playwright は bb.mjs と同じフォルダ、コマンドを実行したフォルダ、`npm i -g` のパッケージから探します。何で描いたか (Playwright の Chromium を使わなかったときはその理由) は標準エラーに出ます。
