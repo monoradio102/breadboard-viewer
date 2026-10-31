@@ -26,7 +26,8 @@ AI は、座標も絵も扱いません。部品をどの穴に挿すかと、�
 
 https://monoradio102.github.io/breadboard-viewer/llms.txt
 
-**ChatGPT で使うとき**は、ChatGPT のコード実行環境からはこのサイトに届かないので、GitHub 連携でこのリポジトリの `dist/bb.mjs` を読ませるか、[dist/bb.mjs](https://monoradio102.github.io/breadboard-viewer/dist/bb.mjs) を保存してチャットにアップロードし、「この bb.mjs で描いて」と頼みます。
+**ChatGPT で使うとき**は、ChatGPT のコード実行環境からはこのサイトにも GitHub にも届きません。エディタ右上の「bb.mjs」(または [dist/bb.mjs](https://monoradio102.github.io/breadboard-viewer/dist/bb.mjs) を保存) でダウンロードしたファイルをチャットに添付し、llms.txt の URL と一緒に「この bb.mjs で描いて」と頼むのが確実です。
+(GitHub 連携で読ませることもできますが、大きなファイルを書き写すことになるので時間がかかります。)
 PNG は、コンテナにある Chromium を自動で使って描きます (Playwright がなくても可。llms.txt に手順があります)。
 
 よく使う場合は、**Claude のスキル**としてインストールしておくと、URLを渡さなくても
