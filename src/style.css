@@ -480,3 +480,15 @@ button.danger {
 .caption-layer[hidden] {
   display: none;
 }
+
+.ai-link {
+  align-self: center;
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 4px 6px;
+}
+
+.ai-link:hover {
+  text-decoration: underline;
+}

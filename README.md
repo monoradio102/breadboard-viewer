@@ -5,6 +5,11 @@ Claude Code や Codex などのAIエージェントが、読み書きしやす�
 
 **エディタ: https://monoradio102.github.io/breadboard-viewer/**
 
+**AIに使わせるとき**は、Claude Code や Codex に次のURLを渡してください。リポジトリのクローンは不要です。
+回路の書き方、1ファイルのコマンドラインツール (`dist/bb.mjs`)、ブラウザからの操作方法がまとまっています。
+
+https://monoradio102.github.io/breadboard-viewer/llms.txt
+
 | | |
 |---|---|
 | ![トランジスタでモーター駆動 + サーボ](docs/images/motor-servo.svg) | ![HC-SR04 で距離アラーム](docs/images/distance-alarm.svg) |
@@ -91,3 +96,5 @@ bb.help()
 | `examples/` | サンプル回路 |
 | `docs/images/` | README用の画像 (`npm run images` で生成) |
 | `tools/bb.mjs` | コマンドライン |
+| `dist/bb.mjs` | コマンドラインを1ファイルにまとめたもの (`npm run build` で生成。Pagesから配布) |
+| `llms.txt` | AIエージェント向けの手引き (Pagesのトップから参照) |

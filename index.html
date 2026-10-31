@@ -6,6 +6,8 @@
     <title>Breadboard Viewer</title>
     <meta name="description" content="ブレッドボード上の配線をJSONで記述・共有するビューア。AIエージェントから扱いやすい形式。" />
     <link rel="stylesheet" href="src/style.css" />
+    <!-- AI agents: start at llms.txt (format, single-file CLI, window.bb API) -->
+    <link rel="help" type="text/plain" href="llms.txt" title="AIエージェント向けの手引き" />
   </head>
   <body>
     <header class="topbar">
@@ -33,6 +35,7 @@
           <option value="svg-anim">SVG (アニメーション)</option>
         </select>
         <input id="file" type="file" accept=".json,.svg,application/json,image/svg+xml" hidden />
+        <a class="ai-link" href="llms.txt" target="_blank" rel="noopener" title="AIエージェントにこのURLを渡すと、回路を書いて描画できます">AI向け</a>
       </div>
     </header>
 

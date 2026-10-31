@@ -1,0 +1,77 @@
+# Breadboard Viewer
+
+> ブレッドボード上の配線を JSON で記述し、SVG / PNG / アニメーションとして描画するツールです。
+> このファイルは、AIエージェントがこのサイトの URL だけを渡されたときの手引きです。リポジトリをクローンする必要はありません。
+
+Base URL: https://monoradio102.github.io/breadboard-viewer/
+
+## できること
+
+- 回路 (ブレッドボード、部品、ジャンパ線) を JSON で書き、検証してネットリストを得る
+- SVG (アニメーション付き)、PNG (透過可・時刻指定)、連番 PNG (→ ffmpeg で GIF / MP4) に描画する
+- 動作の台本 (LED 点灯、モーター回転、サーボ角度、信号の流れ、キャプション) を付ける
+- 組み込みにない部品を JSON で定義する。煙・矢印などの演出は任意の SVG アニメーションとして流し込む
+
+## 手順 A: シェルと Node.js 18 以上がある場合 (推奨)
+
+依存のない1ファイルのコマンドラインツールを取得して使います。
+
+```bash
+curl -fsSLO https://monoradio102.github.io/breadboard-viewer/dist/bb.mjs
+node bb.mjs parts                      # 使える部品の type とピン名
+node bb.mjs new circuit.json half      # 空の回路 (full / half / mini)
+node bb.mjs apply circuit.json '[{"op":"addPart","type":"nano","at":"h3"},{"op":"addPart","type":"led","pins":{"A":"b21","K":"b22"}}]'
+node bb.mjs check circuit.json         # エラー / 警告 / ネットリスト。エラーがあると終了コード 1
+node bb.mjs render circuit.json -o circuit.svg              # アニメーション付き SVG (回路データ入り)
+node bb.mjs render circuit.json -o f.png --time 1500 --transparent   # 1.5 秒時点の透過 PNG
+node bb.mjs frames circuit.json -o frames --fps 30 --transparent     # 1 周分の連番 PNG と ffmpeg のコマンド
+```
+
+PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx playwright install chromium`)。
+SVG の出力と、parts / new / apply / check は Node.js だけで動きます。
+
+## 手順 B: ブラウザを操作できる場合
+
+エディタ https://monoradio102.github.io/breadboard-viewer/ を開き、`window.bb` を使います。
+
+```js
+bb.load(circuitJson)            // 回路を読み込む (オブジェクト / JSON 文字列 / 書き出した SVG)
+bb.apply([{ op: "addWire", from: "c22", to: "T-22", color: "black" }])
+bb.check()                      // 検証結果とネットリスト (テキスト)
+bb.svg()                        // アニメーション付き SVG / bb.svg({ time: 1500 }) で静止画
+await bb.png({ time: 1500 })    // PNG の Blob (background: null で透過)
+bb.get()                        // 現在の回路 JSON
+bb.help()
+```
+
+## 手順 C: 結果を人に渡す
+
+回路の JSON ファイル、または書き出した SVG ファイル (回路データ入り) を渡してください。
+エディタにドロップすると、そのまま編集できます。
+
+## 回路を書くときの要点
+
+- 穴: `a1`〜`j63` (行 a〜j × 列)。同じ列の a〜e、f〜j がそれぞれ導通。e と f の間が中央の溝
+- 電源レール: `T+5`, `T-5` (上), `B+5`, `B-5` (下)。各レールは端から端まで導通。穴は列 3 から 5 個ずつ、6 列ごと (3-7, 9-13, 15-19, …)
+- 部品の置き方: `at` (1 番ピンの穴) + `rot`、`pins` (抵抗や LED など足を曲げられる部品の穴を個別に)、`pos: [x, y]` (ボードの外)
+- 配線の端: 穴の名前、または `"部品ID.ピン名"` (ボード外の部品のピン)
+- DIP の IC は 1 番ピンを f 行に置くと溝をまたぐ (例: `"at": "f10"`)
+- 書いたら必ず `check` を実行し、ネットリストが意図どおりか確かめる
+
+## ドキュメント
+
+- [回路ファイルの形式](https://monoradio102.github.io/breadboard-viewer/docs/FORMAT.md): 穴、部品、配線、独自部品、アニメーション、演出 SVG
+- [編集操作 (ops)](https://monoradio102.github.io/breadboard-viewer/docs/OPS.md): addPart, move, rotate, setPin, update, remove, addWire, addOverlay, animate, setAnimation
+- [README](https://monoradio102.github.io/breadboard-viewer/README.md)
+
+## サンプル回路 (JSON)
+
+- [Arduino Nano で Lチカ](https://monoradio102.github.io/breadboard-viewer/examples/blink-nano.json)
+- [Pico でボタン入力と LED](https://monoradio102.github.io/breadboard-viewer/examples/pico-button.json)
+- [トランジスタでモーター駆動 + サーボ (ボード外配置)](https://monoradio102.github.io/breadboard-viewer/examples/motor-servo.json)
+- [HC-SR04 で距離アラーム](https://monoradio102.github.io/breadboard-viewer/examples/distance-alarm.json)
+- [スピーカーで音を鳴らす (ボード外配置)](https://monoradio102.github.io/breadboard-viewer/examples/tone-speaker.json)
+- [独自部品の定義例 (I2C OLED)](https://monoradio102.github.io/breadboard-viewer/examples/oled-custom-part.json)
+- [演出 SVG の例 (抵抗なしで LED をつなぐと…)](https://monoradio102.github.io/breadboard-viewer/examples/led-burnout.json)
+
+エディタで開くには `https://monoradio102.github.io/breadboard-viewer/?example=<名前>` (例: `?example=motor-servo`)。

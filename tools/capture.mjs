@@ -9,8 +9,7 @@ import { createRequire } from "node:module";
 const SPRITE_PREFIX = "data:image/svg+xml;charset=utf-8,";
 
 export async function openCapture(svg, { scale = 2, transparent = false } = {}) {
-  // require() also finds a globally installed Playwright (NODE_PATH), which import() does not.
-  const { chromium } = createRequire(import.meta.url)("playwright");
+  const { chromium } = loadPlaywright();
   const browser = await chromium.launch();
   const block = (ctx) => ctx.route("**/*", (route) => route.abort());
   const mainCtx = await browser.newContext({ deviceScaleFactor: scale });
@@ -80,4 +79,22 @@ export async function openCapture(svg, { scale = 2, transparent = false } = {}) 
     },
     close: () => browser.close(),
   };
+}
+
+function loadPlaywright() {
+  // require() also finds a globally installed Playwright (NODE_PATH), which import() does not.
+  const require = createRequire(import.meta.url);
+  for (const name of ["playwright", "playwright-core", "@playwright/test"]) {
+    try {
+      return require(name);
+    } catch {
+      // try the next package name
+    }
+  }
+  const err = new Error(
+    "PNG の書き出しには Playwright が必要です。このファイルと同じフォルダで次を実行してください:\n" +
+      "  npm i playwright && npx playwright install chromium",
+  );
+  err.code = "NO_PLAYWRIGHT";
+  throw err;
 }

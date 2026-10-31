@@ -49,84 +49,94 @@ const to = option("--to");
 const [cmd, file, extra] = args;
 const readCircuit = (f) => parseCircuitText(readFileSync(f, "utf8"));
 
-switch (cmd) {
-  case "check": {
-    need(file);
-    const result = resolveCircuit(readCircuit(file));
-    console.log(describe(result));
-    process.exit(result.errors.length ? 1 : 0);
-    break;
-  }
-  case "render": {
-    need(file);
-    const circuit = readCircuit(file);
-    const result = resolveCircuit(circuit);
-    if (out?.endsWith(".png")) {
-      // a PNG is one frame: the animated SVG paused at --time (default 0)
-      const cap = await openCapture(renderSvg(result, { captions }), { scale: Number(scale ?? 2), transparent });
-      await cap.frame(time ?? 0, out);
-      await cap.close();
-    } else {
-      const svg = renderSvg(result, { embed: circuit, captions, ...(time !== undefined ? { time } : {}) });
-      if (out) writeFileSync(out, svg);
-      else process.stdout.write(svg);
+try {
+  await main();
+} catch (e) {
+  if (e?.code !== "NO_PLAYWRIGHT") throw e;
+  console.error(e.message);
+  process.exit(1);
+}
+
+async function main() {
+  switch (cmd) {
+    case "check": {
+      need(file);
+      const result = resolveCircuit(readCircuit(file));
+      console.log(describe(result));
+      process.exit(result.errors.length ? 1 : 0);
+      break;
     }
-    for (const e of result.errors) console.error(`ERROR: ${e}`);
-    break;
-  }
-  case "frames": {
-    need(file && out);
-    const result = resolveCircuit(readCircuit(file));
-    const duration = result.timeline.duration;
-    const start = Number(from ?? 0);
-    const end = Number(to ?? duration);
-    const count = Math.max(1, Math.round(((end - start) / 1000) * fps));
-    mkdirSync(out, { recursive: true });
-    const cap = await openCapture(renderSvg(result, { captions }), { scale: Number(scale ?? 1), transparent });
-    for (let i = 0; i < count; i++) {
-      await cap.frame(start + (i * 1000) / fps, join(out, `frame_${String(i).padStart(5, "0")}.png`));
-    }
-    await cap.close();
-    console.log(`${count} frames (${fps} fps, ${start}–${end} ms) -> ${out}/frame_%05d.png`);
-    console.log(`mp4: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -pix_fmt yuv420p -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" out.mp4`);
-    console.log(`gif: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -vf "split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse" out.gif`);
-    break;
-  }
-  case "apply": {
-    need(file && extra);
-    const ops = JSON.parse(existsSync(extra) ? readFileSync(extra, "utf8") : extra);
-    try {
-      const { circuit, ids } = applyOps(readCircuit(file), ops);
-      writeFileSync(out ?? file, stringifyCircuit(circuit));
-      console.log(`applied ${ids.length} op(s): ${ids.filter(Boolean).join(", ")}`);
+    case "render": {
+      need(file);
+      const circuit = readCircuit(file);
       const result = resolveCircuit(circuit);
-      for (const e of result.errors) console.log(`ERROR: ${e}`);
-      for (const w of result.warnings) console.log(`WARN:  ${w}`);
-    } catch (e) {
-      if (!(e instanceof OpError)) throw e;
-      console.error(`failed (nothing written): ${e.message}`);
-      process.exit(1);
+      if (out?.endsWith(".png")) {
+        // a PNG is one frame: the animated SVG paused at --time (default 0)
+        const cap = await openCapture(renderSvg(result, { captions }), { scale: Number(scale ?? 2), transparent });
+        await cap.frame(time ?? 0, out);
+        await cap.close();
+      } else {
+        const svg = renderSvg(result, { embed: circuit, captions, ...(time !== undefined ? { time } : {}) });
+        if (out) writeFileSync(out, svg);
+        else process.stdout.write(svg);
+      }
+      for (const e of result.errors) console.error(`ERROR: ${e}`);
+      break;
     }
-    break;
-  }
-  case "parts": {
-    const registry = createRegistry(file ? (readCircuit(file).partDefs ?? []) : []);
-    for (const def of registry.parts.values()) {
-      const params = Object.fromEntries(Object.entries(def.params ?? {}).map(([k, s]) => [k, s.default]));
-      const pins = def.pins(params).map((p) => p.name);
-      const paramText = Object.entries(params).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
-      console.log(`${def.type}  [${def.mount}]  ${def.name}\n    pins: ${pins.join(", ")}${paramText ? `\n    params: ${paramText}` : ""}`);
+    case "frames": {
+      need(file && out);
+      const result = resolveCircuit(readCircuit(file));
+      const duration = result.timeline.duration;
+      const start = Number(from ?? 0);
+      const end = Number(to ?? duration);
+      const count = Math.max(1, Math.round(((end - start) / 1000) * fps));
+      mkdirSync(out, { recursive: true });
+      const cap = await openCapture(renderSvg(result, { captions }), { scale: Number(scale ?? 1), transparent });
+      for (let i = 0; i < count; i++) {
+        await cap.frame(start + (i * 1000) / fps, join(out, `frame_${String(i).padStart(5, "0")}.png`));
+      }
+      await cap.close();
+      console.log(`${count} frames (${fps} fps, ${start}–${end} ms) -> ${out}/frame_%05d.png`);
+      console.log(`mp4: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -pix_fmt yuv420p -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" out.mp4`);
+      console.log(`gif: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -vf "split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse" out.gif`);
+      break;
     }
-    break;
+    case "apply": {
+      need(file && extra);
+      const ops = JSON.parse(existsSync(extra) ? readFileSync(extra, "utf8") : extra);
+      try {
+        const { circuit, ids } = applyOps(readCircuit(file), ops);
+        writeFileSync(out ?? file, stringifyCircuit(circuit));
+        console.log(`applied ${ids.length} op(s): ${ids.filter(Boolean).join(", ")}`);
+        const result = resolveCircuit(circuit);
+        for (const e of result.errors) console.log(`ERROR: ${e}`);
+        for (const w of result.warnings) console.log(`WARN:  ${w}`);
+      } catch (e) {
+        if (!(e instanceof OpError)) throw e;
+        console.error(`failed (nothing written): ${e.message}`);
+        process.exit(1);
+      }
+      break;
+    }
+    case "parts": {
+      const registry = createRegistry(file ? (readCircuit(file).partDefs ?? []) : []);
+      for (const def of registry.parts.values()) {
+        const params = Object.fromEntries(Object.entries(def.params ?? {}).map(([k, s]) => [k, s.default]));
+        const pins = def.pins(params).map((p) => p.name);
+        const paramText = Object.entries(params).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
+        console.log(`${def.type}  [${def.mount}]  ${def.name}\n    pins: ${pins.join(", ")}${paramText ? `\n    params: ${paramText}` : ""}`);
+      }
+      break;
+    }
+    case "new": {
+      need(file);
+      writeFileSync(file, stringifyCircuit({ ...emptyCircuit(), board: extra ?? "half" }));
+      break;
+    }
+    default:
+      console.error(USAGE);
+      process.exit(2);
   }
-  case "new": {
-    need(file);
-    writeFileSync(file, stringifyCircuit({ ...emptyCircuit(), board: extra ?? "half" }));
-    break;
-  }
-  default:
-    console.error(USAGE);
-    process.exit(2);
 }
 
 function need(ok) {
