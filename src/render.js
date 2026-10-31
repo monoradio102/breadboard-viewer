@@ -16,7 +16,11 @@ export const WIRE_COLORS = {
   brown: "#795548",
 };
 
-// options: { labels = true, embed = circuit object to store in <metadata> }
+// options:
+//   labels    = true       draw part ids
+//   embed     = circuit    store the circuit JSON in <metadata> (so the SVG can be re-imported)
+//   selection = id         highlight a part or wire and draw its drag handles (editor only)
+//   tempWire  = {a, b, color}  a wire being drawn (editor only)
 export function renderSvg(result, options = {}) {
   const { board } = result;
   const labels = options.labels ?? true;
@@ -27,8 +31,10 @@ export function renderSvg(result, options = {}) {
     g(drawBoard(board), { class: "board" }),
     g(result.parts.map((p) => drawPart(p)).join(""), { class: "parts" }),
     g(result.wires.map(drawWire).join(""), { class: "wires" }),
-    labels ? g(result.parts.map(drawLabel).join(""), { class: "labels" }) : "",
+    labels ? g(result.parts.map(drawLabel).join(""), { class: "labels", "pointer-events": "none" }) : "",
     g(drawProblems(result), { class: "problems" }),
+    options.selection ? g(drawSelection(result, options.selection), { class: "selection" }) : "",
+    options.tempWire ? g(drawTempWire(options.tempWire), { class: "temp-wire", "pointer-events": "none" }) : "",
   ].join("");
   const meta = options.embed
     ? `<metadata id="breadboard-circuit" data-format="breadboard-viewer/v1">${esc(JSON.stringify(options.embed))}</metadata>`
@@ -124,4 +130,55 @@ function drawProblems(result) {
     }
   }
   return out.join("");
+}
+
+const ACCENT = "#1e6fd9";
+
+function handle(x, y, owner, name) {
+  return circle(x, y, 0.32, {
+    fill: "rgba(255,255,255,.85)",
+    stroke: ACCENT,
+    "stroke-width": 0.08,
+    "data-handle": name,
+    "data-owner": owner,
+    style: "cursor:grab",
+  });
+}
+
+function drawSelection(result, id) {
+  const part = result.parts.find((p) => p.id === id);
+  if (part) {
+    const xs = part.pins.map((p) => p.x);
+    const ys = part.pins.map((p) => p.y);
+    const m = 0.75;
+    const box = rect(Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) - Math.min(...xs) + 2 * m, Math.max(...ys) - Math.min(...ys) + 2 * m, {
+      fill: "none",
+      stroke: ACCENT,
+      "stroke-width": 0.08,
+      "stroke-dasharray": "0.3 0.2",
+      rx: 0.2,
+      "pointer-events": "none",
+    });
+    const handles = part.def.mount === "leads" ? part.pins.map((p) => handle(p.x, p.y, part.id, `pin:${p.name}`)).join("") : "";
+    return box + handles;
+  }
+  const wire = result.wires.find((w) => w.id === id);
+  if (wire) {
+    const pts = [wire.a, ...wire.via, wire.b].map((p) => `${n(p.x)},${n(p.y)}`).join(" ");
+    return (
+      tag("polyline", { points: pts, fill: "none", stroke: ACCENT, "stroke-width": 0.12, "stroke-dasharray": "0.3 0.2", "pointer-events": "none" }) +
+      handle(wire.a.x, wire.a.y, wire.id, "from") +
+      handle(wire.b.x, wire.b.y, wire.id, "to")
+    );
+  }
+  return "";
+}
+
+function drawTempWire({ a, b, color }) {
+  const c = WIRE_COLORS[color] ?? color ?? WIRE_COLORS.blue;
+  return (
+    line(a.x, a.y, b.x, b.y, { stroke: c, "stroke-width": 0.26, "stroke-linecap": "round", opacity: 0.8 }) +
+    circle(a.x, a.y, 0.18, { fill: c }) +
+    circle(b.x, b.y, 0.18, { fill: c })
+  );
 }

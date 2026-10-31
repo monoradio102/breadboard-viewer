@@ -11,6 +11,7 @@
   --warn: #9a6700;
   --ok: #2e7d32;
   --stage: #e9ecef;
+  --danger: #c62828;
   color-scheme: light;
 }
 
@@ -28,6 +29,7 @@
     --warn: #e0b341;
     --ok: #6bc46f;
     --stage: #23272d;
+    --danger: #ef6b6b;
     color-scheme: dark;
   }
 }
@@ -208,6 +210,37 @@ button.primary {
   background: var(--stage);
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button.danger {
+  color: var(--danger);
+}
+
 .stage {
   flex: 1;
   overflow: auto;
@@ -220,6 +253,8 @@ button.primary {
 .stage svg {
   max-width: 100%;
   height: auto;
+  touch-action: none;
+  user-select: none;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.12));
 }
 
@@ -308,4 +343,77 @@ button.primary {
   .stage {
     max-height: 70vh;
   }
+}
+
+.stage .part {
+  cursor: move;
+}
+
+.stage .wire {
+  cursor: pointer;
+}
+
+.stage [data-hole] {
+  cursor: crosshair;
+}
+
+.stage [data-hole].hl {
+  fill: #1e6fd9;
+}
+
+.status.warn {
+  color: var(--warn);
+}
+
+.inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.inspector h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.inspector .hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.inspector .field {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.inspector .field span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.inspector input,
+.inspector select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: var(--bg);
+  min-width: 0;
+}
+
+.inspector .pins {
+  margin: 0;
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.inspector .row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }

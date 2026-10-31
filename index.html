@@ -35,11 +35,23 @@
       </aside>
 
       <section class="stage-wrap">
+        <div class="toolbar">
+          <button id="btn-undo" type="button" title="元に戻す (Ctrl+Z)">↶</button>
+          <button id="btn-redo" type="button" title="やり直し (Ctrl+Shift+Z)">↷</button>
+          <label>ボード <select id="board-type"></select></label>
+          <label>配線の色 <select id="wire-color"></select></label>
+          <span class="spacer"></span>
+          <button id="btn-zoom-out" type="button" title="縮小">−</button>
+          <button id="btn-zoom-fit" type="button" title="幅に合わせる">全体</button>
+          <button id="btn-zoom-in" type="button" title="拡大">＋</button>
+        </div>
         <div id="stage" class="stage" aria-label="ブレッドボード"></div>
         <div id="status" class="status">穴にカーソルを合わせると位置とネットを表示します</div>
       </section>
 
       <aside class="panel editor-panel">
+        <h2>選択中</h2>
+        <div id="inspector" class="inspector"></div>
         <h2>回路データ (JSON)</h2>
         <textarea id="editor" spellcheck="false" aria-label="回路JSON"></textarea>
         <div id="messages" class="messages"></div>

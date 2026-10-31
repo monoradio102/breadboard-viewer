@@ -5,8 +5,9 @@
 ## 回路を書く / 直すとき
 
 1. `docs/FORMAT.md` で、穴の名前とつながり方を確認します。`a`〜`e` と `f`〜`j` は列ごとに導通し、`T+` / `T-` / `B+` / `B-` はレール全体で導通します。
-2. JSONを書いたら、必ず `node tools/bb.mjs check <file>` を実行します。エラーがなく、ネットリストが意図どおりになっていることを確認してください。
-3. 見た目を確認したいときは、`node tools/bb.mjs render <file> -o out.png` で画像にします。
+2. 編集は、JSONを直接書き換えても、編集操作 (`node tools/bb.mjs apply`, [docs/OPS.md](docs/OPS.md)) を使っても構いません。編集操作を使うと、IDの自動採番、空き場所の検索、ピンが穴から外れていないかのチェックが受けられます。部品の `type` とピン名は `node tools/bb.mjs parts` で確認できます。
+3. 編集したら、必ず `node tools/bb.mjs check <file>` を実行します。エラーがなく、ネットリストが意図どおりになっていることを確認してください。
+4. 見た目を確認したいときは、`node tools/bb.mjs render <file> -o out.png` で画像にします。
 
 ## 組み込みにない部品を使うとき
 
@@ -20,4 +21,5 @@
 ## コードを変更するとき
 
 - 依存パッケージなし、ビルド不要の ES Modules です。`src/` はブラウザとNodeの両方で動くようにしてください (`app.js` 以外ではDOMを使わないこと)。
+- 回路を変更する処理は `src/ops.js` に op として追加し、UI (`src/app.js`)、`window.bb`、CLI (`tools/bb.mjs`) からはそれを呼ぶようにしてください。
 - `npm test` が通ることを確認してください。

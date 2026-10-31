@@ -1,13 +1,12 @@
-// Browser UI: parts list, live SVG view, JSON editor, import/export.
-import { describe, findFreeSpot, resolveCircuit } from "./circuit.js";
+// Browser UI. Every edit goes through ops.js (the same operations AI agents use via window.bb).
+import { BOARD_TYPES } from "./board.js";
+import { describe, resolveCircuit, stripOf } from "./circuit.js";
 import { emptyCircuit, parseCircuitText, stringifyCircuit } from "./io.js";
-import { renderSvg } from "./render.js";
+import { OP_NAMES, OpError, applyOps, normalize } from "./ops.js";
+import { WIRE_COLORS, renderSvg } from "./render.js";
 
 const STORAGE_KEY = "breadboard-viewer:last";
-const ID_PREFIX = {
-  resistor: "R", led: "D", diode: "D", capacitor: "C", electrolytic: "C", cds: "CDS", transistor: "Q",
-  regulator: "U", button: "SW", trimmer: "VR", buzzer: "BZ", header: "J",
-};
+const PART_MIME = "application/x-breadboard-part";
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -20,58 +19,362 @@ const el = {
   partList: $("part-list"),
   partDetail: $("part-detail"),
   partFilter: $("part-filter"),
+  inspector: $("inspector"),
   file: $("file"),
+  board: $("board-type"),
+  wireColor: $("wire-color"),
+  undo: $("btn-undo"),
+  redo: $("btn-redo"),
 };
 
-let circuit = emptyCircuit();
+let circuit = normalize(emptyCircuit());
 let result = resolveCircuit(circuit);
+let selection = null; // id of the selected part or wire
+let drag = null;
+let zoom = null; // null = fit to width
+const history = { past: [], future: [] };
 
-// ---- rendering ----
+// ---- state ----
 
-function setCircuit(next, { updateEditor = true } = {}) {
+// Replaces the circuit. record=false is used for undo/redo and the initial load.
+function commit(next, { record = true, updateEditor = true } = {}) {
+  next = normalize(next);
+  if (record && JSON.stringify(next) !== JSON.stringify(circuit)) {
+    history.past.push(circuit);
+    if (history.past.length > 200) history.past.shift();
+    history.future = [];
+  }
   circuit = next;
   result = resolveCircuit(circuit);
-  el.stage.innerHTML = renderSvg(result);
+  if (selection && !result.parts.some((p) => p.id === selection) && !result.wires.some((w) => w.id === selection)) {
+    selection = null;
+  }
+  draw();
   if (updateEditor) el.editor.value = stringifyCircuit(circuit);
   if (document.activeElement !== el.title) el.title.value = circuit.title ?? "";
+  el.board.value = circuit.board ?? "half";
   showMessages(result.errors, result.warnings);
   el.nets.textContent = describe({ ...result, errors: [], warnings: [] });
+  el.undo.disabled = !history.past.length;
+  el.redo.disabled = !history.future.length;
   renderPartList();
+  renderInspector();
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(circuit));
   } catch {
-    // storage unavailable (private mode etc.) — nothing to do
+    // storage unavailable (private mode etc.)
   }
 }
 
-function showMessages(errors, warnings, syntax) {
-  const items = [
-    ...(syntax ? [["error", syntax]] : []),
-    ...errors.map((m) => ["error", m]),
-    ...warnings.map((m) => ["warn", m]),
-  ];
+// Applies ops and records one undo step. Returns the ids the ops created / touched.
+function apply(ops) {
+  const out = applyOps(circuit, ops);
+  commit(out.circuit);
+  return out.ids;
+}
+
+function tryApply(ops) {
+  try {
+    return apply(ops);
+  } catch (e) {
+    if (!(e instanceof OpError)) throw e;
+    flash(e.message);
+    return null;
+  }
+}
+
+function undo() {
+  if (!history.past.length) return;
+  history.future.push(circuit);
+  commit(history.past.pop(), { record: false });
+}
+
+function redo() {
+  if (!history.future.length) return;
+  history.past.push(circuit);
+  commit(history.future.pop(), { record: false });
+}
+
+function select(id) {
+  selection = id;
+  draw();
+  renderInspector();
+}
+
+// ---- drawing ----
+
+function draw(previewResult = result, extra = {}) {
+  el.stage.innerHTML = renderSvg(previewResult, { selection, ...extra });
+  const svg = el.stage.querySelector("svg");
+  if (zoom) {
+    const w = Number(svg.getAttribute("width"));
+    svg.style.width = `${w * zoom}px`;
+    svg.style.maxWidth = "none";
+  }
+}
+
+function showMessages(errors, warnings, extra) {
+  const items = [...(extra ? [["error", extra]] : []), ...errors.map((m) => ["error", m]), ...warnings.map((m) => ["warn", m])];
   el.messages.replaceChildren(
     ...(items.length
-      ? items.map(([kind, m]) => Object.assign(document.createElement("div"), { className: `msg ${kind}`, textContent: m }))
-      : [Object.assign(document.createElement("div"), { className: "msg ok", textContent: "問題は見つかりません" })]),
+      ? items.map(([kind, m]) => node("div", m, `msg ${kind}`))
+      : [node("div", "問題は見つかりません", "msg ok")]),
   );
 }
 
-// ---- editor ----
+function flash(message) {
+  el.status.textContent = `⚠ ${message}`;
+  el.status.classList.add("warn");
+  setTimeout(() => el.status.classList.remove("warn"), 2500);
+}
+
+function node(tag, text, className) {
+  const n = document.createElement(tag);
+  if (text !== undefined) n.textContent = text;
+  if (className) n.className = className;
+  return n;
+}
+
+// ---- pointer editing ----
+
+function svgPoint(ev) {
+  const svg = el.stage.querySelector("svg");
+  return new DOMPoint(ev.clientX, ev.clientY).matrixTransform(svg.getScreenCTM().inverse());
+}
+
+function holeNear(pt, radius = 0.5) {
+  const x = Math.round(pt.x);
+  const y = Math.round(pt.y);
+  return Math.hypot(pt.x - x, pt.y - y) <= radius ? result.board.holeAt(x, y) : null;
+}
+
+el.stage.addEventListener("pointerdown", (ev) => {
+  if (ev.button !== 0 || !el.stage.querySelector("svg")) return;
+  const pt = svgPoint(ev);
+  const handleEl = ev.target.closest("[data-handle]");
+  const partEl = ev.target.closest(".part");
+  const wireEl = ev.target.closest(".wire");
+  if (handleEl) {
+    drag = { kind: "handle", id: handleEl.dataset.owner, handle: handleEl.dataset.handle };
+  } else if (partEl) {
+    select(partEl.dataset.id);
+    const part = result.parts.find((p) => p.id === partEl.dataset.id);
+    drag = { kind: "move", id: part.id, startPt: pt, origin: { x: part.pins[0].x, y: part.pins[0].y } };
+  } else if (wireEl) {
+    select(wireEl.dataset.id);
+    return;
+  } else {
+    const hole = holeNear(pt);
+    if (selection) select(null);
+    if (!hole) return;
+    drag = { kind: "wire", from: hole, fromPos: result.board.pos(hole) };
+  }
+  drag.preview = null;
+  el.stage.setPointerCapture(ev.pointerId);
+  ev.preventDefault();
+});
+
+el.stage.addEventListener("pointermove", (ev) => {
+  if (!el.stage.querySelector("svg") || !result.board) return;
+  const pt = svgPoint(ev);
+  if (!drag) return hover(pt);
+  if (drag.kind === "wire") {
+    const hole = holeNear(pt);
+    const b = hole ? result.board.pos(hole) : { x: pt.x, y: pt.y };
+    drag.to = hole;
+    draw(result, { tempWire: { a: drag.fromPos, b, color: el.wireColor.value } });
+    el.status.textContent = `${drag.from} → ${hole ?? "…"}`;
+    return;
+  }
+  let ops;
+  if (drag.kind === "move") {
+    const dx = Math.round(pt.x - drag.startPt.x);
+    const dy = Math.round(pt.y - drag.startPt.y);
+    const to = result.board.holeAt(drag.origin.x + dx, drag.origin.y + dy);
+    if (!to || to === drag.lastTo) return;
+    drag.lastTo = to;
+    ops = [{ op: "move", id: drag.id, to }];
+  } else {
+    const to = holeNear(pt);
+    if (!to || to === drag.lastTo) return;
+    drag.lastTo = to;
+    ops = drag.handle.startsWith("pin:")
+      ? [{ op: "setPin", id: drag.id, pin: drag.handle.slice(4), to }]
+      : [{ op: "update", id: drag.id, set: { [drag.handle]: to } }];
+  }
+  try {
+    drag.preview = applyOps(circuit, ops).circuit;
+    const r = resolveCircuit(drag.preview);
+    draw(r);
+    el.status.textContent = `${drag.id} → ${drag.lastTo}${r.errors.length ? `  ·  ⚠ ${r.errors[0]}` : ""}`;
+  } catch (e) {
+    if (!(e instanceof OpError)) throw e;
+  }
+});
+
+function endDrag() {
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  if (d.kind === "wire") {
+    if (d.to && d.to !== d.from) {
+      const [id] = tryApply([{ op: "addWire", from: d.from, to: d.to, color: el.wireColor.value }]) ?? [];
+      if (id) select(id);
+    } else draw();
+  } else if (d.preview) {
+    commit(d.preview);
+  } else draw();
+}
+
+el.stage.addEventListener("pointerup", endDrag);
+el.stage.addEventListener("pointercancel", () => {
+  drag = null;
+  draw();
+});
+
+function hover(pt) {
+  const hole = holeNear(pt, 0.45);
+  for (const h of el.stage.querySelectorAll(".hl")) h.classList.remove("hl");
+  if (!hole) return;
+  const strip = stripOf(hole);
+  for (const h of el.stage.querySelectorAll("[data-hole]")) {
+    if (stripOf(h.dataset.hole) === strip) h.classList.add("hl");
+  }
+  el.status.textContent = describeHole(hole);
+}
+
+function describeHole(hole) {
+  const who = result.occupied.get(hole);
+  const net = result.netOfHole(hole);
+  return `${hole}${who ? `  ·  ${who}` : ""}${net ? `  ·  ネット ${net}` : ""}`;
+}
+
+// ---- keyboard ----
+
+window.addEventListener("keydown", (ev) => {
+  if (ev.target.closest("input, textarea, select")) return;
+  const mod = ev.ctrlKey || ev.metaKey;
+  if (mod && ev.key.toLowerCase() === "z") {
+    ev.preventDefault();
+    ev.shiftKey ? redo() : undo();
+  } else if (mod && ev.key.toLowerCase() === "y") {
+    ev.preventDefault();
+    redo();
+  } else if (!selection) {
+    return;
+  } else if (ev.key === "Delete" || ev.key === "Backspace") {
+    ev.preventDefault();
+    tryApply([{ op: "remove", id: selection }]);
+  } else if (ev.key.toLowerCase() === "r" && !mod) {
+    tryApply([{ op: "rotate", id: selection, by: ev.shiftKey ? 270 : 90 }]);
+  } else if (ev.key === "Escape") {
+    select(null);
+  } else if (ev.key.startsWith("Arrow")) {
+    ev.preventDefault();
+    nudge(ev.key);
+  }
+});
+
+// Moves the selected part one hole in the arrow direction (skipping the channel / gaps).
+function nudge(key) {
+  const part = result.parts.find((p) => p.id === selection);
+  if (!part) return;
+  const [dx, dy] = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[key];
+  for (let k = 1; k <= 4; k++) {
+    const to = result.board.holeAt(part.pins[0].x + dx * k, part.pins[0].y + dy * k);
+    if (!to) continue;
+    try {
+      apply([{ op: "move", id: part.id, to }]);
+      return;
+    } catch (e) {
+      if (!(e instanceof OpError)) throw e;
+    }
+  }
+}
+
+// ---- inspector ----
+
+function renderInspector() {
+  const box = el.inspector;
+  box.replaceChildren();
+  const part = result.parts.find((p) => p.id === selection);
+  const wire = circuit.wires.find((w) => w.id === selection);
+  if (!part && !wire) {
+    box.append(
+      node("p", "部品をクリックで選択・ドラッグで移動。空いた穴からドラッグでジャンパ線。R で回転、Delete で削除、矢印キーで1マス移動。", "hint"),
+    );
+    return;
+  }
+  const id = part?.id ?? wire.id;
+  box.append(node("h3", part ? `${part.id} · ${part.def.name}` : `${wire.id} · ジャンパ線`));
+  box.append(field("ID", id, (v) => v && v !== id && selectAfter(tryApply([{ op: "update", id, set: { id: v } }]))));
+  if (part) {
+    for (const [key, spec] of Object.entries(part.def.params ?? {})) {
+      if (spec.default !== null && typeof spec.default === "object") continue;
+      if (Array.isArray(part.params[key])) continue;
+      const set = (v) => tryApply([{ op: "update", id, set: { [key]: typeof spec.default === "number" ? Number(v) : v } }]);
+      box.append(field(key, part.params[key] ?? "", set, spec.options, spec.description));
+    }
+    box.append(node("p", part.pins.map((p) => `${p.name}=${p.hole ?? "?"}`).join("  "), "pins"));
+  } else {
+    const colors = Object.keys(WIRE_COLORS);
+    box.append(field("color", wire.color ?? "blue", (v) => tryApply([{ op: "update", id, set: { color: v } }]), colors));
+    box.append(field("from", wire.from, (v) => tryApply([{ op: "update", id, set: { from: v } }])));
+    box.append(field("to", wire.to, (v) => tryApply([{ op: "update", id, set: { to: v } }])));
+  }
+  const row = node("div", undefined, "row");
+  if (part) {
+    row.append(button("⟲ 左回転", () => tryApply([{ op: "rotate", id, by: 270 }])));
+    row.append(button("⟳ 右回転", () => tryApply([{ op: "rotate", id, by: 90 }])));
+  }
+  row.append(button("削除", () => tryApply([{ op: "remove", id }]), "danger"));
+  box.append(row);
+}
+
+function selectAfter(ids) {
+  if (ids?.[0]) select(ids[0]);
+}
+
+function field(label, value, onChange, options, title) {
+  const wrap = node("label", undefined, "field");
+  wrap.append(node("span", label));
+  let input;
+  if (options) {
+    input = document.createElement("select");
+    const list = options.includes(value) ? options : [value, ...options];
+    for (const o of list) input.append(Object.assign(document.createElement("option"), { value: o, textContent: o }));
+    input.value = value;
+  } else {
+    input = Object.assign(document.createElement("input"), { value: String(value) });
+  }
+  if (title) wrap.title = title;
+  input.addEventListener("change", () => onChange(input.value.trim()));
+  wrap.append(input);
+  return wrap;
+}
+
+function button(text, onClick, className) {
+  const b = node("button", text, className);
+  b.type = "button";
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+// ---- JSON editor ----
 
 let editTimer;
 el.editor.addEventListener("input", () => {
   clearTimeout(editTimer);
   editTimer = setTimeout(() => {
     try {
-      setCircuit(JSON.parse(el.editor.value), { updateEditor: false });
+      commit(JSON.parse(el.editor.value), { updateEditor: false });
     } catch (e) {
       showMessages([], [], `JSON構文エラー: ${e.message}`);
     }
-  }, 250);
+  }, 300);
 });
 
-el.title.addEventListener("input", () => setCircuit({ ...circuit, title: el.title.value }));
+el.title.addEventListener("change", () => tryApply([{ op: "setTitle", title: el.title.value }]));
 
 // ---- parts list ----
 
@@ -86,17 +389,18 @@ function renderPartList() {
   }
   const frag = document.createDocumentFragment();
   for (const [cat, defs] of byCat) {
-    const h = document.createElement("h3");
-    h.textContent = cat;
-    frag.append(h);
+    frag.append(node("h3", cat));
     for (const def of defs) {
-      const b = document.createElement("button");
+      const b = node("button", undefined, "part-item");
       b.type = "button";
-      b.className = "part-item";
-      b.innerHTML = `<span class="part-name"></span><code></code>`;
-      b.querySelector(".part-name").textContent = def.name;
-      b.querySelector("code").textContent = def.type;
+      b.draggable = true;
+      b.title = "ボードにドラッグして配置";
+      b.append(node("span", def.name, "part-name"), node("code", def.type));
       b.addEventListener("click", () => showPartDetail(def));
+      b.addEventListener("dragstart", (ev) => {
+        ev.dataTransfer.setData(PART_MIME, def.type);
+        ev.dataTransfer.effectAllowed = "copy";
+      });
       frag.append(b);
     }
   }
@@ -108,60 +412,64 @@ el.partFilter.addEventListener("input", renderPartList);
 function showPartDetail(def) {
   const params = {};
   for (const [k, spec] of Object.entries(def.params ?? {})) params[k] = spec.default;
-  const pins = def.pins(params);
   const d = el.partDetail;
   d.hidden = false;
-  d.innerHTML = "";
-  const add = (tagName, text, cls) => {
-    const node = document.createElement(tagName);
-    node.textContent = text;
-    if (cls) node.className = cls;
-    d.append(node);
-    return node;
-  };
-  add("h3", def.name);
-  add("p", def.description);
-  add("p", `type: ${def.type} / ${def.mount === "leads" ? "足を曲げられる (pins で穴を個別指定可)" : "固定形状 (at + rot で配置)"}`, "meta");
-  add("p", `ピン: ${pins.map((p) => p.name).join(", ")}`, "meta");
+  d.replaceChildren(
+    node("h3", def.name),
+    node("p", def.description),
+    node("p", `type: ${def.type} / ${def.mount === "leads" ? "足を曲げられる (ピンごとに動かせる)" : "固定形状 (at + rot で配置)"}`, "meta"),
+    node("p", `ピン: ${def.pins(params).map((p) => p.name).join(", ")}`, "meta"),
+  );
   const paramText = Object.entries(def.params ?? {})
     .map(([k, s]) => `${k} = ${JSON.stringify(s.default)}  … ${s.description ?? ""}`)
     .join("\n");
-  if (paramText) add("pre", paramText);
-  const btn = add("button", "回路に追加", "primary");
-  btn.type = "button";
-  btn.addEventListener("click", () => addPart(def));
+  if (paramText) d.append(node("pre", paramText));
+  d.append(
+    button("回路に追加", () => selectAfter(tryApply([{ op: "addPart", type: def.type }])), "primary"),
+  );
 }
 
-function addPart(def) {
-  const spot = findFreeSpot(result, def);
-  if (!spot) {
-    showMessages([`${def.name} を置ける空きが見つかりません`], []);
-    return;
-  }
-  const prefix = ID_PREFIX[def.type] ?? def.json?.prefix ?? (def.category === "IC" || def.category === "マイコンボード" ? "U" : "X");
-  const used = new Set((circuit.parts ?? []).map((p) => p.id));
-  let i = 1;
-  while (used.has(`${prefix}${i}`)) i++;
-  const inst = { id: `${prefix}${i}`, type: def.type };
-  if (def.mount === "leads") inst.pins = spot.pins;
-  else inst.at = spot.at;
-  setCircuit({ ...circuit, parts: [...(circuit.parts ?? []), inst] });
-}
-
-// ---- hover info ----
-
-el.stage.addEventListener("mousemove", (ev) => {
-  const svg = el.stage.querySelector("svg");
-  if (!svg || !result.board) return;
-  const pt = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(svg.getScreenCTM().inverse());
-  const x = Math.round(pt.x);
-  const y = Math.round(pt.y);
-  const hole = Math.hypot(pt.x - x, pt.y - y) < 0.45 ? result.board.holeAt(x, y) : null;
-  if (!hole) return;
-  const who = result.occupied.get(hole);
-  const net = result.netOfHole(hole);
-  el.status.textContent = `${hole}${who ? `  ·  ${who}` : ""}${net ? `  ·  ネット ${net}` : ""}`;
+// drop a part from the list onto the board
+el.stage.addEventListener("dragover", (ev) => {
+  if (!ev.dataTransfer.types.includes(PART_MIME)) return;
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = "copy";
 });
+el.stage.addEventListener("drop", (ev) => {
+  const type = ev.dataTransfer.getData(PART_MIME);
+  if (!type) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  const hole = holeNear(svgPoint(ev), 0.7);
+  if (!hole) return flash("穴の上にドロップしてください");
+  selectAfter(tryApply([{ op: "addPart", type, at: hole }]));
+});
+
+// ---- toolbar ----
+
+for (const [type, spec] of Object.entries(BOARD_TYPES)) {
+  el.board.append(Object.assign(document.createElement("option"), { value: type, textContent: spec.label }));
+}
+el.board.addEventListener("change", () => tryApply([{ op: "setBoard", board: el.board.value }]));
+for (const c of Object.keys(WIRE_COLORS)) {
+  el.wireColor.append(Object.assign(document.createElement("option"), { value: c, textContent: c }));
+}
+el.wireColor.value = "red";
+el.undo.addEventListener("click", undo);
+el.redo.addEventListener("click", redo);
+
+function setZoom(z) {
+  zoom = z;
+  draw();
+}
+$("btn-zoom-in").addEventListener("click", () => setZoom((zoom ?? currentFitZoom()) * 1.25));
+$("btn-zoom-out").addEventListener("click", () => setZoom((zoom ?? currentFitZoom()) / 1.25));
+$("btn-zoom-fit").addEventListener("click", () => setZoom(null));
+
+function currentFitZoom() {
+  const svg = el.stage.querySelector("svg");
+  return svg.getBoundingClientRect().width / Number(svg.getAttribute("width"));
+}
 
 // ---- import / export ----
 
@@ -178,11 +486,11 @@ $("btn-save").addEventListener("click", () => download(`${baseName()}.json`, str
 $("btn-svg").addEventListener("click", () =>
   download(`${baseName()}.svg`, renderSvg(result, { embed: circuit }), "image/svg+xml"),
 );
-$("btn-new").addEventListener("click", () => setCircuit(emptyCircuit()));
+$("btn-new").addEventListener("click", () => commit(emptyCircuit()));
 $("btn-open").addEventListener("click", () => el.file.click());
 el.file.addEventListener("change", async () => {
   const f = el.file.files?.[0];
-  if (f) await loadText(await f.text());
+  if (f) loadText(await f.text());
   el.file.value = "";
 });
 
@@ -194,20 +502,23 @@ $("examples").addEventListener("change", async (ev) => {
 
 async function loadExample(name) {
   const res = await fetch(`examples/${name}.json`);
-  await loadText(await res.text());
+  loadText(await res.text());
 }
 
-async function loadText(text) {
+function loadText(text) {
   try {
-    setCircuit(parseCircuitText(text));
+    selection = null;
+    commit(parseCircuitText(text));
   } catch (e) {
     showMessages([`読み込めませんでした: ${e.message}`], []);
   }
 }
 
-// drag & drop (JSON, or an SVG exported by this app)
+// drag & drop a JSON file, or an SVG exported by this app
 const hint = $("drop-hint");
+const isFileDrag = (ev) => ev.dataTransfer?.types.includes("Files");
 window.addEventListener("dragover", (ev) => {
+  if (!isFileDrag(ev)) return;
   ev.preventDefault();
   hint.hidden = false;
 });
@@ -215,23 +526,50 @@ window.addEventListener("dragleave", (ev) => {
   if (!ev.relatedTarget) hint.hidden = true;
 });
 window.addEventListener("drop", async (ev) => {
-  ev.preventDefault();
   hint.hidden = true;
-  const f = ev.dataTransfer?.files?.[0];
-  if (f) await loadText(await f.text());
-  else {
-    const text = ev.dataTransfer?.getData("text/plain");
-    if (text) await loadText(text);
-  }
+  if (!isFileDrag(ev)) return;
+  ev.preventDefault();
+  const f = ev.dataTransfer.files[0];
+  if (f) loadText(await f.text());
 });
 
-// ---- scripting API for AI agents / devtools ----
+// ---- scripting API for AI agents (devtools / Playwright) ----
 
 window.bb = {
+  /** Current circuit JSON (a copy). */
   get: () => structuredClone(circuit),
-  load: (c) => setCircuit(typeof c === "string" ? parseCircuitText(c) : c),
+  /** Replace the circuit (object, JSON text, or exported SVG text). */
+  load: (c) => commit(typeof c === "string" ? parseCircuitText(c) : c),
+  /** Apply edit ops (see docs/OPS.md) as one undo step. Throws on error. Returns affected ids. */
+  apply: (ops) => apply(ops),
+  addPart: (type, opts = {}) => apply([{ op: "addPart", type, ...opts }])[0],
+  move: (id, to) => apply([{ op: "move", id, to }]),
+  rotate: (id, by = 90) => apply([{ op: "rotate", id, by }]),
+  setPin: (id, pin, to) => apply([{ op: "setPin", id, pin, to }]),
+  update: (id, set) => apply([{ op: "update", id, set }]),
+  remove: (id) => apply([{ op: "remove", id }]),
+  addWire: (from, to, color = "red") => apply([{ op: "addWire", from, to, color }])[0],
+  undo,
+  redo,
+  select,
+  /** Validation result and netlist as text. */
   check: () => describe(result),
+  /** What is at a hole: { hole, occupant, net }. */
+  inspect: (hole) => ({ hole, occupant: result.occupied.get(hole) ?? null, net: result.netOfHole(hole) }),
+  /** Available part types with pins and params. */
+  parts: () =>
+    [...result.registry.parts.values()].map((d) => ({
+      type: d.type,
+      name: d.name,
+      mount: d.mount,
+      params: Object.fromEntries(Object.entries(d.params ?? {}).map(([k, s]) => [k, s.default])),
+      pins: d.pins(Object.fromEntries(Object.entries(d.params ?? {}).map(([k, s]) => [k, s.default]))).map((p) => p.name),
+    })),
+  /** SVG with the circuit embedded. */
   svg: () => renderSvg(result, { embed: circuit }),
+  ops: OP_NAMES,
+  help: () =>
+    "bb.get() / bb.load(json) / bb.apply([{op:'addPart',type:'led',at:'a10'}, ...]) / bb.check() / bb.inspect('a10') / bb.parts() / bb.undo() — 詳細は docs/OPS.md",
 };
 
 // ---- start ----
@@ -243,6 +581,9 @@ window.bb = {
   } catch {
     saved = null;
   }
-  if (saved) setCircuit(saved);
-  else await loadExample("blink-nano");
+  if (saved) commit(saved, { record: false });
+  else {
+    const res = await fetch("examples/blink-nano.json");
+    commit(parseCircuitText(await res.text()), { record: false });
+  }
 })();
