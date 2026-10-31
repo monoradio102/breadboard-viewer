@@ -70,17 +70,18 @@ test("layout issues: overlapping bodies, hidden wire ends, wires over holes, lab
 });
 
 test("coords says which board it assumed, and points to the nearest rail hole", () => {
-  const [t30] = bb("coords", "T-30").stdout.trim().split("\n").map((l) => JSON.parse(l));
-  assert.equal(t30.board, "full");
-  assert.match(t30.note, /half \/ mini にはこの穴はありません/);
-  const half = JSON.parse(bb("coords", "T-30", "--board", "half").stdout);
+  // T-7: a rail hole on the full board (3-7, 9-13, ...) but not on the half one (2-6, 8-12, ...)
+  const [t7] = bb("coords", "T-7").stdout.trim().split("\n").map((l) => JSON.parse(l));
+  assert.equal(t7.board, "full");
+  assert.match(t7.note, /half \/ mini にはこの穴はありません/);
+  const half = JSON.parse(bb("coords", "T-7", "--board", "half").stdout);
   // place takes --board too
   assert.equal(JSON.parse(bb("place", "led", "--at", "a40", "--board", "full").stdout).ok, true);
   assert.match(JSON.parse(bb("place", "led", "--at", "a40", "--board", "half").stdout).errors[0], /a40/);
   assert.match(bb("place", "led", "--at", "a10", "--board", "huge").stderr, /--board は full \/ half \/ mini/);
-  assert.match(half.error, /近い穴: T-29/);
-  const r = resolveCircuit({ board: "half", wires: [{ from: "a29", to: "T-30" }] });
-  assert.match(r.errors[0], /穴 T-30 はこのボードにありません。.*近い穴: T-29/);
+  assert.match(half.error, /近い穴: T-6/);
+  const r = resolveCircuit({ board: "half", wires: [{ from: "a7", to: "T-7" }] });
+  assert.match(r.errors[0], /穴 T-7 はこのボードにありません。.*2-6, 8-12, 14-18, 20-24, 26-30.*近い穴: T-6/);
 });
 
 test("layout flags a bend that is too large and wires that leave the board", () => {
@@ -259,7 +260,7 @@ test("layout: round bodies are checked as circles (a CdS cell on a resistor, a w
       { id: "CDS2", type: "cds", pins: ["h14", "h15"] },
     ],
     wires: [
-      { id: "W7", from: "c20", to: "T-19" }, // grazes D1's dome
+      { id: "W7", from: "c22", to: "T-21" }, // grazes D1's dome (0.97 from its centre, radius 0.95)
       { id: "W8", from: "c25", to: "T-26" }, // well clear of it
     ],
   });

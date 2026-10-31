@@ -7,9 +7,12 @@
 // Columns are connected vertically within a-e and within f-j.
 // Each rail row (T+, T-, B+, B-) is connected along its whole length.
 
+// railStart / railGroups: the power rails' holes come in groups of 5, one column apart, from
+// railStart (half: 2-6, 8-12, ..., 26-30 = 25 holes a rail, as on a real 400-hole board;
+// full: 3-7, ..., 57-61 = 50 holes a rail, 830 in all).
 export const BOARD_TYPES = {
-  full: { cols: 63, rails: true, label: "フルサイズ (830穴)" },
-  half: { cols: 30, rails: true, label: "ハーフサイズ (400穴)" },
+  full: { cols: 63, rails: true, railStart: 3, railGroups: 10, label: "フルサイズ (830穴)" },
+  half: { cols: 30, rails: true, railStart: 2, railGroups: 5, label: "ハーフサイズ (400穴)" },
   mini: { cols: 17, rails: false, label: "ミニ (170穴)" },
 };
 
@@ -25,13 +28,24 @@ export function colX(col) {
   return col + 1;
 }
 
-// Rail holes come in groups of 5 starting at column 3, with a one-hole gap between groups.
-export function railCols(cols) {
+// Rail holes come in groups of 5 with a one-hole gap between groups (see BOARD_TYPES).
+export function railCols({ cols, railStart, railGroups }) {
   const out = [];
-  for (let start = 3; start <= cols - 1; start += 6) {
-    for (let c = start; c < start + 5 && c <= cols - 1; c++) out.push(c);
+  for (let g = 0; g < railGroups; g++) {
+    for (let c = railStart + g * 6; c < railStart + g * 6 + 5 && c <= cols; c++) out.push(c);
   }
   return out;
+}
+
+// "2-6, 8-12, ..." for messages
+export function railGroupsText(rcols) {
+  const groups = [];
+  for (const c of rcols) {
+    const g = groups.at(-1);
+    if (g && c === g[1] + 1) g[1] = c;
+    else groups.push([c, c]);
+  }
+  return groups.map(([a, b]) => `${a}-${b}`).join(", ");
 }
 
 export function parseHole(id) {
@@ -53,7 +67,7 @@ export function createBoard(type = "half") {
   for (let col = 1; col <= spec.cols; col++) {
     for (const row of ROWS) add(`${row}${col}`, colX(col), ROW_Y[row]);
   }
-  const rcols = spec.rails ? railCols(spec.cols) : [];
+  const rcols = spec.rails ? railCols(spec) : [];
   for (const rail of spec.rails ? RAILS : []) {
     for (const col of rcols) add(`${rail}${col}`, colX(col), RAIL_Y[rail]);
   }
@@ -77,7 +91,7 @@ export function createBoard(type = "half") {
       if (h.kind === "main") return h.col > spec.cols ? `このボード (${type}) の列は 1〜${spec.cols} です` : "";
       if (!spec.rails) return `このボード (${type}) には電源レールがありません`;
       const near = rcols.reduce((a, c) => (Math.abs(c - h.col) < Math.abs(a - h.col) ? c : a));
-      return `電源レールの穴は列 ${rcols[0]} から5個ずつ、6列ごとです (このボードでは ${rcols[0]}〜${rcols.at(-1)})。近い穴: ${h.rail}${near}`;
+      return `電源レールの穴は列 ${rcols[0]} から5個ずつ、6列ごとです (このボードでは ${rcols[0]}〜${rcols.at(-1)}。${railGroupsText(rcols)})。近い穴: ${h.rail}${near}`;
     },
     holeAt(x, y) {
       const rx = Math.round(x * 1000) / 1000;

@@ -7,11 +7,11 @@
     { "id": "DISP1", "type": "ssd1306", "at": "b14", "idLabel": false }
   ],
   "wires": [
-    { "id": "W1", "from": "j26", "to": "B+25", "color": "red", "note": "3V3 → 下の + レール" },
+    { "id": "W1", "from": "j26", "to": "B+26", "color": "red", "note": "3V3 → 下の + レール" },
     { "id": "W2", "from": "j27", "to": "B-27", "color": "black", "note": "GND → 下の − レール" },
     { "id": "W3", "from": "B+3", "to": "T+3", "color": "red", "note": "上下の + レールをつなぐ (3V3)" },
     { "id": "W4", "from": "B-4", "to": "T-4", "color": "black", "note": "上下の − レールをつなぐ" },
-    { "id": "W5", "from": "a14", "to": "T-13", "color": "black", "note": "OLED の GND" },
+    { "id": "W5", "from": "a14", "to": "T-14", "color": "black", "note": "OLED の GND" },
     { "id": "W6", "from": "a15", "to": "T+15", "color": "red", "note": "OLED の VCC" },
     { "id": "SCL", "from": "a16", "to": "a23", "color": "yellow", "via": [[17, 3], [24, 3]], "note": "SCL ← D5 (SDA の上を通す)" },
     { "id": "SDA", "from": "a17", "to": "b24", "color": "blue", "note": "SDA ← D4" }

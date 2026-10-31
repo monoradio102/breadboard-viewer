@@ -141,7 +141,7 @@
     { "id": "W1", "from": "a4", "to": "T-4", "color": "black" },
     { "id": "W2", "from": "a6", "to": "T+6", "color": "red" },
     { "id": "W3", "from": "a24", "to": "T-24", "color": "black" },
-    { "id": "W4", "from": "a25", "to": "T+25", "color": "red" },
+    { "id": "W4", "from": "a25", "to": "T+26", "color": "red" },
     { "id": "W5", "from": "c9", "to": "c26", "color": "yellow", "note": "A5 = SCL" },
     { "id": "W6", "from": "b10", "to": "b27", "color": "green", "note": "A4 = SDA" }
   ],

@@ -7,7 +7,7 @@ const advice = (c) => resolveCircuit({ board: "half", ...c }).advice.join("\n");
 const xiao = { id: "U1", type: "xiao", at: "h5" };
 
 test("3V3 and 5V on the same rail", () => {
-  const a = advice({ parts: [xiao], wires: [{ from: "a7", to: "T+7" }, { from: "a5", to: "T+5" }] });
+  const a = advice({ parts: [xiao], wires: [{ from: "a7", to: "T+8" }, { from: "a5", to: "T+5" }] });
   assert.match(a, /電圧の違う電源どうし.*U1\.3V3 \(3\.3V\).*U1\.5V \(5V\)/);
 });
 
@@ -85,10 +85,10 @@ test("electrolytic capacitors: rating from the value, reversed polarity", () => 
 test("an input needing a higher HIGH than its driver (WS2812B at 5 V from a 3.3 V GPIO)", () => {
   const parts = [xiao, { id: "LED1", type: "ws2812b", at: "a20" }];
   // XIAO 5V (d5) -> T+, GND (d6) -> T-, D0 (h5) -> LED1.DIN (a20)
-  const wires = [{ from: "a5", to: "T+5" }, { from: "a6", to: "T-7" }, { from: "b21", to: "T+21" }, { from: "b22", to: "T-23" }, { from: "j5", to: "b20" }];
+  const wires = [{ from: "a5", to: "T+5" }, { from: "a6", to: "T-8" }, { from: "b21", to: "T+21" }, { from: "b22", to: "T-22" }, { from: "j5", to: "b20" }];
   assert.match(advice({ parts, wires }), /LED1\.DIN は HIGH に 3\.5V 以上が必要ですが、U1\.D0 の出力は 3\.3V です/);
   // powered from 3.3 V the threshold is 2.31 V: no level warning (but VCC below 3.5 V is reported)
-  const at3v3 = advice({ parts, wires: [{ from: "a7", to: "T+7" }, ...wires.slice(1)] });
+  const at3v3 = advice({ parts, wires: [{ from: "a7", to: "T+8" }, ...wires.slice(1)] });
   assert.doesNotMatch(at3v3, /HIGH に/);
   assert.match(at3v3, /LED1\.VCC は 3\.5V 以上が必要/);
 });

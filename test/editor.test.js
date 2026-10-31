@@ -124,20 +124,29 @@ test("a view that showed the whole circuit fits again when the stage grows", { s
   const circuit = JSON.parse(readFileSync(new URL("../examples/oled-hello.json", import.meta.url), "utf8"));
   const { page, problems } = await open(circuitLink(circuit, base));
   const box = () => page.evaluate(() => document.querySelector("#stage svg").getAttribute("viewBox"));
+  // the viewBox once it has stopped changing (the resize observer runs after layout)
+  const settled = async () => {
+    let last = await box();
+    for (let i = 0; i < 40; i++) {
+      await page.waitForTimeout(100);
+      const now = await box();
+      if (now === last) return now;
+      last = now;
+    }
+    return last;
+  };
   // opened while the window is tiny (a tab in the background), then laid out at full size
   await page.setViewportSize({ width: 120, height: 90 });
-  await page.waitForTimeout(150);
+  await settled();
   await page.setViewportSize({ width: 1400, height: 900 });
-  await page.waitForTimeout(150);
-  const grown = await box();
+  const grown = await settled();
   await page.evaluate(() => bb.fit());
   assert.equal(grown, await box());
   // zoomed by hand: not fitted again
   await page.evaluate(() => bb.zoom(0.5));
   const zoomed = (await box()).split(" ").map(Number);
   await page.setViewportSize({ width: 1200, height: 900 });
-  await page.waitForTimeout(150);
-  const after = (await box()).split(" ").map(Number);
+  const after = (await settled()).split(" ").map(Number);
   assert.equal(after[2], zoomed[2]);
   assert.deepEqual(problems, []);
   await page.close();

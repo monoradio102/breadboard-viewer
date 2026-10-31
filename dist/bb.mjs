@@ -8,8 +8,8 @@ import { isAbsolute, join as join3 } from "node:path";
 
 // src/board.js
 var BOARD_TYPES = {
-  full: { cols: 63, rails: true, label: "\u30D5\u30EB\u30B5\u30A4\u30BA (830\u7A74)" },
-  half: { cols: 30, rails: true, label: "\u30CF\u30FC\u30D5\u30B5\u30A4\u30BA (400\u7A74)" },
+  full: { cols: 63, rails: true, railStart: 3, railGroups: 10, label: "\u30D5\u30EB\u30B5\u30A4\u30BA (830\u7A74)" },
+  half: { cols: 30, rails: true, railStart: 2, railGroups: 5, label: "\u30CF\u30FC\u30D5\u30B5\u30A4\u30BA (400\u7A74)" },
   mini: { cols: 17, rails: false, label: "\u30DF\u30CB (170\u7A74)" }
 };
 var ROWS = "abcdefghij";
@@ -20,12 +20,21 @@ var HOLE_RE = /^([a-j])(\d+)$|^([TB][+-])(\d+)$/;
 function colX(col) {
   return col + 1;
 }
-function railCols(cols) {
+function railCols({ cols, railStart, railGroups }) {
   const out = [];
-  for (let start = 3; start <= cols - 1; start += 6) {
-    for (let c = start; c < start + 5 && c <= cols - 1; c++) out.push(c);
+  for (let g2 = 0; g2 < railGroups; g2++) {
+    for (let c = railStart + g2 * 6; c < railStart + g2 * 6 + 5 && c <= cols; c++) out.push(c);
   }
   return out;
+}
+function railGroupsText(rcols) {
+  const groups = [];
+  for (const c of rcols) {
+    const g2 = groups.at(-1);
+    if (g2 && c === g2[1] + 1) g2[1] = c;
+    else groups.push([c, c]);
+  }
+  return groups.map(([a, b]) => `${a}-${b}`).join(", ");
 }
 function parseHole(id) {
   const m = HOLE_RE.exec(String(id));
@@ -45,7 +54,7 @@ function createBoard(type = "half") {
   for (let col = 1; col <= spec.cols; col++) {
     for (const row of ROWS) add(`${row}${col}`, colX(col), ROW_Y[row]);
   }
-  const rcols = spec.rails ? railCols(spec.cols) : [];
+  const rcols = spec.rails ? railCols(spec) : [];
   for (const rail of spec.rails ? RAILS : []) {
     for (const col of rcols) add(`${rail}${col}`, colX(col), RAIL_Y[rail]);
   }
@@ -67,7 +76,7 @@ function createBoard(type = "half") {
       if (h.kind === "main") return h.col > spec.cols ? `\u3053\u306E\u30DC\u30FC\u30C9 (${type}) \u306E\u5217\u306F 1\u301C${spec.cols} \u3067\u3059` : "";
       if (!spec.rails) return `\u3053\u306E\u30DC\u30FC\u30C9 (${type}) \u306B\u306F\u96FB\u6E90\u30EC\u30FC\u30EB\u304C\u3042\u308A\u307E\u305B\u3093`;
       const near = rcols.reduce((a, c) => Math.abs(c - h.col) < Math.abs(a - h.col) ? c : a);
-      return `\u96FB\u6E90\u30EC\u30FC\u30EB\u306E\u7A74\u306F\u5217 ${rcols[0]} \u304B\u30895\u500B\u305A\u3064\u30016\u5217\u3054\u3068\u3067\u3059 (\u3053\u306E\u30DC\u30FC\u30C9\u3067\u306F ${rcols[0]}\u301C${rcols.at(-1)})\u3002\u8FD1\u3044\u7A74: ${h.rail}${near}`;
+      return `\u96FB\u6E90\u30EC\u30FC\u30EB\u306E\u7A74\u306F\u5217 ${rcols[0]} \u304B\u30895\u500B\u305A\u3064\u30016\u5217\u3054\u3068\u3067\u3059 (\u3053\u306E\u30DC\u30FC\u30C9\u3067\u306F ${rcols[0]}\u301C${rcols.at(-1)}\u3002${railGroupsText(rcols)})\u3002\u8FD1\u3044\u7A74: ${h.rail}${near}`;
     },
     holeAt(x, y) {
       const rx = Math.round(x * 1e3) / 1e3;
