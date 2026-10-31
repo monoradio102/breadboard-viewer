@@ -59,8 +59,11 @@
           <button id="btn-redo" type="button" title="やり直し (Ctrl+Shift+Z)">↷</button>
           <label>ボード <select id="board-type"></select></label>
           <label>配線の色 <select id="wire-color"></select></label>
+          <button id="btn-assembly" type="button" aria-pressed="false" title="組み立て手順モード: 部品を並べたところから順に配置していく様子を表示">組み立て</button>
           <span id="player" class="player" hidden>
+            <button id="btn-step-prev" type="button" title="前の手順" hidden>◀ 前</button>
             <button id="btn-play" type="button" title="再生 / 一時停止 (Space)">⏸</button>
+            <button id="btn-step-next" type="button" title="次の手順" hidden>次 ▶</button>
             <input id="anim-time" type="range" min="0" max="1000" value="0" aria-label="アニメーションの時刻" />
             <span id="anim-label" class="anim-label">0.0s</span>
             <label title="アニメーション1周の長さ (秒)">長さ <input id="anim-duration" type="number" min="0.1" step="0.1" value="2" />秒</label>

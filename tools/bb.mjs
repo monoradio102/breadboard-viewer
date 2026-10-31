@@ -19,13 +19,16 @@ import { describe, resolveCircuit } from "../src/circuit.js";
 import { emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "../src/io.js";
 import { OpError, applyOps } from "../src/ops.js";
 import { createRegistry, fromJson } from "../src/parts/registry.js";
+import { planAssembly } from "../src/assembly.js";
 import { renderSvg } from "../src/render.js";
 import { openCapture } from "./capture.mjs";
 
 const USAGE = `usage:
   bb.mjs check  <circuit.json>
   bb.mjs render <circuit.json> [-o out.svg|out.png] [--time ms] [--transparent] [--scale n] [--no-captions]
+                [--assembly] [--step k]
   bb.mjs frames <circuit.json> -o <dir> [--fps 30] [--from ms] [--to ms] [--transparent] [--scale 1] [--no-captions]
+                [--assembly]
   bb.mjs apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json] [--lib lib.json]
   bb.mjs parts  [circuit.json] [--lib lib.json]
   bb.mjs lib    <out.json> <circuit.json|library.json ...>
@@ -41,10 +44,12 @@ const flag = (name) => {
   return i >= 0 && Boolean(args.splice(i, 1));
 };
 const timeArg = option("--time");
-const time = timeArg === undefined ? undefined : Number(timeArg);
+const timeArgValue = timeArg === undefined ? undefined : Number(timeArg);
 const out = option("-o");
 const transparent = flag("--transparent");
 const captions = !flag("--no-captions");
+const assembly = flag("--assembly");
+const stepArg = option("--step");
 const scale = option("--scale");
 const fps = Number(option("--fps") ?? 30);
 const libFiles = [];
@@ -81,13 +86,16 @@ async function main() {
       need(file);
       const circuit = readCircuit(file);
       const result = resolveCircuit(circuit);
+      // --step k: the assembly after step k (implies --assembly)
+      const time = stepArg !== undefined ? planAssembly(result).timeOfStep(Number(stepArg)) : timeArgValue;
+      const mode = { captions, assembly: assembly || stepArg !== undefined };
       if (out?.endsWith(".png")) {
         // a PNG is one frame: the animated SVG paused at --time (default 0)
-        const cap = await openCapture(renderSvg(result, { captions }), { scale: Number(scale ?? 2), transparent });
+        const cap = await openCapture(renderSvg(result, mode), { scale: Number(scale ?? 2), transparent });
         await cap.frame(time ?? 0, out);
         await cap.close();
       } else {
-        const svg = renderSvg(result, { embed: circuit, captions, ...(time !== undefined ? { time } : {}) });
+        const svg = renderSvg(result, { embed: circuit, ...mode, ...(time !== undefined ? { time } : {}) });
         if (out) writeFileSync(out, svg);
         else process.stdout.write(svg);
       }
@@ -97,12 +105,12 @@ async function main() {
     case "frames": {
       need(file && out);
       const result = resolveCircuit(readCircuit(file));
-      const duration = result.timeline.duration;
+      const duration = assembly ? planAssembly(result).duration : result.timeline.duration;
       const start = Number(from ?? 0);
       const end = Number(to ?? duration);
       const count = Math.max(1, Math.round(((end - start) / 1000) * fps));
       mkdirSync(out, { recursive: true });
-      const cap = await openCapture(renderSvg(result, { captions }), { scale: Number(scale ?? 1), transparent });
+      const cap = await openCapture(renderSvg(result, { captions, assembly }), { scale: Number(scale ?? 1), transparent });
       for (let i = 0; i < count; i++) {
         await cap.frame(start + (i * 1000) / fps, join(out, `frame_${String(i).padStart(5, "0")}.png`));
       }

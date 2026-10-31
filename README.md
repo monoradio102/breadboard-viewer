@@ -35,6 +35,9 @@ SVGを保存してエディタにドロップすると、そのまま回路を�
 - 動作のアニメーション (LEDの点滅、モーターの回転、サーボ、ボタン操作、信号の流れ、キャプション) を台本として書けます。書き出したSVGは、ファイル単体でもアニメーションします
 - 煙や矢印などの演出は、任意のSVGアニメーションとして流し込めます (安全のため画像として描画し、スクリプトは実行しません)
 - アニメーションは、フレームを指定して透過PNGの連番で書き出せるので、ffmpeg で GIF / MP4 にできます
+- 組み立て手順モード: ボードの外に部品を並べたところから、手順ごとに配置していく様子を見せられます
+
+![組み立て手順 (Lチカ)](docs/images/blink-nano-assembly.svg)
 
 ## 使い方
 
@@ -52,7 +55,8 @@ npm run serve   # http://localhost:8000 で開く
   - `R` で回転 (`Shift+R` で逆回転)、`Delete` で削除、矢印キーで1マス移動、`Ctrl+Z` / `Ctrl+Shift+Z` で元に戻す / やり直し
   - 穴にカーソルを合わせると、その穴と導通している穴が光り、穴の名前とネットが表示されます
 - ツールバー: 元に戻す / やり直し、ボードの種類、配線の色、アニメーションの再生・一時停止・シーク (`Space` でも再生 / 一時停止)・長さ・ループ・キャプションの表示 (書き出す画像にも反映)、拡大・縮小
-- 「画像を書き出す」: 透過PNG / 白背景PNG / 静止画SVG (いま表示している瞬間)、アニメーションSVG
+- 「組み立て」: 組み立て手順モード。部品がボードの下に並び、手順ごとに配置されていきます (「◀ 前」「次 ▶」で1手順ずつ)。右のパネルで手順の説明と対象を編集でき、「自動で作る」で手順を自動生成できます
+- 「画像を書き出す」: 透過PNG / 白背景PNG / 静止画SVG (いま表示している瞬間)、アニメーションSVG。組み立てモードのときは組み立て手順を書き出します
 - 右: 選択中の部品のプロパティと、回路のJSON。JSONを編集すると、すぐに図に反映されます
 - JSON / SVG ファイルは、ページにドロップしても読み込めます
 
@@ -71,6 +75,8 @@ node tools/bb.mjs render examples/blink-nano.json -o out.svg # SVGに描画
 node tools/bb.mjs render examples/blink-nano.json -o out.png # PNGに描画 (Playwrightが必要)
 node tools/bb.mjs render examples/motor-servo.json -o f.png --time 1500 --transparent  # 1.5秒時点の透過PNG
 node tools/bb.mjs frames examples/motor-servo.json -o frames --fps 30 --transparent    # 1周分の連番PNG (GIF / MP4 用)
+node tools/bb.mjs render examples/blink-nano.json -o step2.png --step 2                 # 組み立て手順2の状態
+node tools/bb.mjs frames examples/blink-nano.json -o asm --assembly                     # 組み立て手順の連番PNG
 npm test
 ```
 

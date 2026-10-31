@@ -4,7 +4,8 @@ import { describe, resolveCircuit, stripOf } from "./circuit.js";
 import { emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "./io.js";
 import { fromJson } from "./parts/registry.js";
 import { OP_NAMES, OpError, applyOps, normalize } from "./ops.js";
-import { WIRE_COLORS, contentBounds, renderSvg } from "./render.js";
+import { planAssembly } from "./assembly.js";
+import { WIRE_COLORS, renderBounds, renderSvg } from "./render.js";
 
 const STORAGE_KEY = "breadboard-viewer:last";
 const CAPTIONS_KEY = "breadboard-viewer:captions";
@@ -36,6 +37,9 @@ const el = {
   animDuration: $("anim-duration"),
   animLoop: $("anim-loop"),
   captionsToggle: $("anim-captions"),
+  assembly: $("btn-assembly"),
+  stepPrev: $("btn-step-prev"),
+  stepNext: $("btn-step-next"),
   caption: $("caption"),
   exportMenu: $("export"),
 };
@@ -61,6 +65,7 @@ function commit(next, { record = true, updateEditor = true } = {}) {
   }
   circuit = next;
   result = resolveCircuit(circuit);
+  asmPlan = null;
   const exists = (id) => result.parts.some((p) => p.id === id) || result.wires.some((w) => w.id === id) || result.overlays?.some((o) => o.id === id);
   if (selection && !exists(selection)) {
     selection = null;
@@ -123,7 +128,13 @@ function select(id) {
 // Captions are not drawn into the editor's SVG but shown in an HTML layer over the stage.
 function draw(previewResult = result, extra = {}) {
   if (!view) fitView();
-  el.stage.innerHTML = renderSvg(previewResult, { selection, viewBox: viewBoxText(), captions: false, ...extra });
+  el.stage.innerHTML = renderSvg(previewResult, {
+    selection: assemblyMode ? null : selection,
+    viewBox: viewBoxText(),
+    captions: false,
+    assembly: assemblyMode,
+    ...extra,
+  });
   syncPlayer();
 }
 
@@ -136,7 +147,8 @@ function stageSize() {
 
 // Shows the whole circuit, keeping the stage's aspect ratio.
 function fitView() {
-  const b = contentBounds(result, 1.5);
+  const r = renderBounds(result, { assembly: assemblyMode });
+  const b = { x: r.x - 1.5, y: r.y - 1.5, w: r.w + 3, h: r.h + 3 };
   const { w: sw, h: sh } = stageSize();
   const k = Math.min(sw / b.w, sh / b.h); // px per pitch unit
   const w = sw / k;
@@ -199,7 +211,7 @@ function playerTime() {
 }
 
 function syncPlayer() {
-  const tl = result.timeline;
+  const tl = activeTimeline();
   el.player.hidden = !tl?.animated;
   if (!tl?.animated) return;
   const t = playerTime();
@@ -208,13 +220,92 @@ function syncPlayer() {
     if (!player.playing) a.pause();
   }
   el.play.textContent = player.playing ? "⏸" : "▶";
+  // length / loop belong to the circuit's animation; step buttons to assembly mode
+  for (const n of [el.animDuration.parentElement, el.animLoop.parentElement]) n.hidden = assemblyMode;
+  for (const n of [el.stepPrev, el.stepNext]) n.hidden = !assemblyMode;
+  if (assemblyMode) return;
   if (document.activeElement !== el.animDuration) el.animDuration.value = String(tl.duration / 1000);
   el.animLoop.checked = tl.loop;
 }
 
+// ---- assembly mode ----
+// Parts start in a tray and move into place step by step (assembly.js). View only.
+
+let assemblyMode = false;
+let asmPlan = null; // computed lazily for the current circuit
+
+function activeTimeline() {
+  if (!assemblyMode) return result.timeline;
+  asmPlan ??= planAssembly(result);
+  return { duration: asmPlan.duration, loop: true, animated: true, captions: asmPlan.captions };
+}
+
+function setAssemblyMode(on) {
+  assemblyMode = on;
+  asmPlan = null;
+  el.assembly.classList.toggle("active", on);
+  el.assembly.setAttribute("aria-pressed", String(on));
+  selection = null;
+  view = null;
+  seek(0);
+  setPlaying(true);
+  draw();
+  renderInspector();
+}
+
+function goToStep(k) {
+  activeTimeline();
+  setPlaying(false);
+  seek(asmPlan.timeOfStep(Math.max(0, Math.min(asmPlan.steps.length, k))));
+}
+
+el.assembly.addEventListener("click", () => setAssemblyMode(!assemblyMode));
+function currentStep() {
+  activeTimeline(); // makes sure asmPlan exists
+  return asmPlan.stepAt(localTime());
+}
+
+el.stepPrev.addEventListener("click", () => goToStep(currentStep() - 1));
+el.stepNext.addEventListener("click", () => goToStep(currentStep() + 1));
+
+function renderStepsEditor(box) {
+  const steps = circuit.steps ?? [];
+  const setSteps = (next) => tryApply([{ op: "setSteps", steps: next }]);
+  box.append(node("h3", "組み立て手順"));
+  if (!steps.length) {
+    box.append(node("p", "手順が未設定なので、自動の手順で表示しています。「自動で作る」で編集できる手順になります。", "hint"));
+  }
+  steps.forEach((step, i) => {
+    const row = node("div", undefined, "step-row");
+    const textInput = Object.assign(document.createElement("input"), { value: step.text ?? "", placeholder: "説明" });
+    textInput.addEventListener("change", () => setSteps(steps.map((s, j) => (j === i ? { ...s, text: textInput.value } : s))));
+    const itemsInput = Object.assign(document.createElement("input"), { value: (step.items ?? []).join(", "), placeholder: "部品・配線のID", className: "step-items" });
+    itemsInput.addEventListener("change", () => {
+      const items = itemsInput.value.split(/[\s,、]+/).filter(Boolean);
+      setSteps(steps.map((s, j) => (j === i ? { ...s, items } : s)));
+    });
+    const moveUp = button("↑", () => i > 0 && setSteps(steps.map((s, j) => (j === i - 1 ? steps[i] : j === i ? steps[i - 1] : s))));
+    moveUp.title = "前へ";
+    const remove = button("×", () => setSteps(steps.filter((_, j) => j !== i)), "danger");
+    remove.title = "この手順を消す";
+    const show = button(`${i + 1}`, () => goToStep(i + 1));
+    show.title = "この手順を表示";
+    row.append(show, textInput, moveUp, remove, itemsInput);
+    box.append(row);
+  });
+  const actions = node("div", undefined, "row");
+  actions.append(
+    button("自動で作る", () => tryApply([{ op: "autoSteps" }])),
+    button("手順を追加", () => setSteps([...steps, { text: "", items: [] }])),
+  );
+  if (steps.length) actions.append(button("すべて消す", () => setSteps(null), "danger"));
+  box.append(actions);
+  box.append(node("p", "まだ置いていない部品はボードの下に並び、手順ごとに移動します。手順にない部品・配線は最初から置かれています。", "hint"));
+}
+
 // Current position within one loop of the animation (ms).
 function localTime() {
-  const tl = result.timeline;
+  const tl = activeTimeline();
   if (!tl?.animated) return 0;
   const t = playerTime();
   return tl.loop ? t % tl.duration : Math.min(t, tl.duration);
@@ -235,12 +326,14 @@ function seek(t) {
 }
 
 function tickPlayer() {
-  const tl = result.timeline;
+  const tl = activeTimeline();
   if (tl?.animated) {
     const local = localTime();
     el.animTime.max = String(tl.duration);
     if (document.activeElement !== el.animTime) el.animTime.value = String(local);
-    el.animLabel.textContent = `${(local / 1000).toFixed(1)}s / ${(tl.duration / 1000).toFixed(1)}s`;
+    el.animLabel.textContent = assemblyMode
+      ? `手順 ${asmPlan.stepAt(local)} / ${asmPlan.steps.length}`
+      : `${(local / 1000).toFixed(1)}s / ${(tl.duration / 1000).toFixed(1)}s`;
   }
   updateCaption();
   requestAnimationFrame(tickPlayer);
@@ -312,6 +405,12 @@ el.stage.addEventListener("pointerdown", (ev) => {
     return;
   }
   if (ev.button !== 0) return;
+  if (assemblyMode) {
+    drag = { kind: "pan", x: ev.clientX, y: ev.clientY, view: { ...view } };
+    el.stage.setPointerCapture(ev.pointerId);
+    ev.preventDefault();
+    return;
+  }
   const pt = svgPoint(ev);
   const handleEl = ev.target.closest("[data-handle]");
   const pinEl = ev.target.closest("[data-pin]");
@@ -503,7 +602,7 @@ window.addEventListener("keydown", (ev) => {
   } else if (mod && ev.key.toLowerCase() === "y") {
     ev.preventDefault();
     redo();
-  } else if (ev.key === " " && result.timeline?.animated) {
+  } else if (ev.key === " " && activeTimeline()?.animated) {
     ev.preventDefault();
     setPlaying(!player.playing);
   } else if (!selection) {
@@ -543,6 +642,7 @@ function nudge(key) {
 function renderInspector() {
   const box = el.inspector;
   box.replaceChildren();
+  if (assemblyMode) return renderStepsEditor(box);
   const part = result.parts.find((p) => p.id === selection);
   const wire = circuit.wires.find((w) => w.id === selection);
   const overlay = circuit.overlays?.find((o) => o.id === selection);
@@ -838,7 +938,7 @@ el.captionsToggle.addEventListener("change", () => {
 
 // HTML caption layer over the stage, following the animation clock
 function updateCaption() {
-  const tl = result.timeline;
+  const tl = activeTimeline();
   const t = localTime();
   const current = tl?.animated ? [...tl.captions].reverse().find((c) => c.t <= t) : null;
   el.caption.hidden = !showCaptions || !current;
@@ -863,10 +963,10 @@ $("btn-save").addEventListener("click", () => download(`${baseName()}.json`, str
 el.exportMenu.addEventListener("change", async () => {
   const kind = el.exportMenu.value;
   el.exportMenu.value = "";
-  const captions = showCaptions;
-  if (kind === "svg-anim") return download(`${baseName()}.svg`, renderSvg(result, { embed: circuit, captions }), "image/svg+xml");
-  // still frames show the animation at the moment currently on screen
-  const svg = renderSvg(result, { embed: circuit, time: localTime(), captions });
+  const mode = { captions: showCaptions, assembly: assemblyMode };
+  if (kind === "svg-anim") return download(`${baseName()}.svg`, renderSvg(result, { embed: circuit, ...mode }), "image/svg+xml");
+  // still frames show the animation (or assembly) at the moment currently on screen
+  const svg = renderSvg(result, { embed: circuit, time: localTime(), ...mode });
   if (kind === "svg-still") return download(`${baseName()}.svg`, svg, "image/svg+xml");
   if (kind) download(`${baseName()}.png`, await svgToPng(svg, { background: kind === "png-white" ? "#fff" : null }), "image/png");
 });
@@ -1021,9 +1121,13 @@ window.bb = {
       pins: d.pins(Object.fromEntries(Object.entries(d.params ?? {}).map(([k, s]) => [k, s.default]))).map((p) => p.name),
     })),
   /** SVG with the circuit embedded; { time: ms } gives a still frame. */
-  svg: (opts = {}) => renderSvg(result, { embed: circuit, captions: showCaptions, ...opts }),
+  svg: (opts = {}) => renderSvg(result, { embed: circuit, captions: showCaptions, assembly: assemblyMode, ...opts }),
   /** PNG (Blob) of the frame at { time } (default: now); background null = transparent. */
-  png: (opts = {}) => svgToPng(renderSvg(result, { time: opts.time ?? localTime(), captions: opts.captions ?? showCaptions }), opts),
+  png: (opts = {}) =>
+    svgToPng(renderSvg(result, { time: opts.time ?? localTime(), captions: opts.captions ?? showCaptions, assembly: opts.assembly ?? assemblyMode }), opts),
+  /** Assembly mode on / off; step(k) shows step k (0 = all parts in the tray). */
+  assembly: (on = true) => setAssemblyMode(Boolean(on)),
+  step: (k) => goToStep(k),
   /** Show the whole circuit / zoom (factor < 1 zooms in). */
   fit: () => {
     fitView();

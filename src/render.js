@@ -1,5 +1,6 @@
 // Renders a resolved circuit (see circuit.js) to an SVG string.
 import { EFFECT_CSS, captionTrack, compileCss, cssDecl, initialState, stateAtTime, stillEffectCss, valuesOf } from "./animation.js";
+import { TIMING, drawnAt, highlightAt, keyframesCss, offsetAt, planAssembly, rampTimes } from "./assembly.js";
 import { rotate } from "./circuit.js";
 import { circle, esc, g, line, n, rect, spriteImage, tag, text } from "./svg.js";
 
@@ -28,7 +29,9 @@ export const WIRE_COLORS = {
 //   viewBox   = "x y w h"  view to show (the editor's pan / zoom); default fits the content
 //   time      = ms         draw a still frame at this time of the animation (no CSS animation)
 //   captions  = true       draw animation captions as a band over the bottom of the view
+//   assembly  = false      draw the assembly steps (see assembly.js) instead of the animation
 export function renderSvg(result, options = {}) {
+  if (options.assembly) return renderAssemblySvg(result, options);
   const { board } = result;
   const labels = options.labels ?? true;
   const tl = result.timeline;
@@ -237,9 +240,13 @@ export function wirePath(w) {
   return d;
 }
 
-function drawWire(w, ctx) {
+// drawIn: { offset } makes the wire paths drawable from 0 (offset 1) to fully drawn (offset 0)
+function drawWire(w, ctx, drawIn = null) {
   const color = WIRE_COLORS[w.color] ?? w.color ?? WIRE_COLORS.blue;
   const common = { d: wirePath(w), fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" };
+  const drawable = drawIn
+    ? { pathLength: 1, class: "asm-path", style: `stroke-dasharray:1 1;stroke-dashoffset:${n(drawIn.offset)}` }
+    : {};
   const flows = ctx.state.flow || ctx.values("flow").includes("true");
   // the timeline toggles the group; the dashes inside run their own endless animation
   const flow = flows
@@ -249,8 +256,8 @@ function drawWire(w, ctx) {
       })
     : "";
   return g(
-    tag("path", { ...common, stroke: "rgba(0,0,0,.35)", "stroke-width": 0.36 }) +
-      tag("path", { ...common, stroke: color, "stroke-width": 0.26 }) +
+    tag("path", { ...common, stroke: "rgba(0,0,0,.35)", "stroke-width": 0.36, ...drawable }) +
+      tag("path", { ...common, stroke: color, "stroke-width": 0.26, ...drawable }) +
       flow +
       circle(w.a.x, w.a.y, 0.13, { fill: "#a7adb3" }) +
       circle(w.b.x, w.b.y, 0.13, { fill: "#a7adb3" }),
@@ -358,5 +365,126 @@ function drawTempWire({ a, b, color }) {
     line(a.x, a.y, b.x, b.y, { stroke: c, "stroke-width": 0.26, "stroke-linecap": "round", opacity: 0.8 }) +
     circle(a.x, a.y, 0.18, { fill: c }) +
     circle(b.x, b.y, 0.18, { fill: c })
+  );
+}
+
+// ---- assembly steps ----
+
+// Bounds of everything drawn, including the parts tray in assembly mode.
+export function renderBounds(result, { assembly = false } = {}) {
+  const b = contentBounds(result);
+  const tray = assembly ? planAssembly(result).trayBounds : null;
+  if (!tray) return b;
+  const x = Math.min(b.x, tray.x);
+  const y = Math.min(b.y, tray.y);
+  return { x, y, w: Math.max(b.x + b.w, tray.x + tray.w) - x, h: Math.max(b.y + b.h, tray.y + tray.h) - y };
+}
+
+// Parts start in a tray below the board and move into place step by step; wires are drawn in.
+// Same options as renderSvg (time = still frame of the assembly). Parts show their t=0 state.
+function renderAssemblySvg(result, options) {
+  const plan = planAssembly(result);
+  const still = options.time !== undefined;
+  const t = still ? ((Number(options.time) % plan.duration) + plan.duration) % plan.duration : 0;
+  const tl = result.timeline;
+  const svgId = `bb-${hash(JSON.stringify(["asm", result.parts.map((p) => p.inst), result.wires.map((w) => w.id), plan.steps]))}`;
+  const labels = options.labels ?? true;
+  const r = (v) => Math.round(v * 1000) / 1000;
+  let k = 0;
+  const css = [];
+  const animated = (id, times, decl, selector = `#${svgId} [data-asm="${cssString(id)}"]`) => {
+    if (!still && plan.stepOf.has(id)) css.push(keyframesCss(`${svgId}-a${k++}`, selector, [...times, plan.duration], decl, plan.duration));
+  };
+  const ctxStatic = (id, animateDef, params) => {
+    const track = tl.tracks.get(id);
+    const values = (name) => valuesOf(track, name);
+    const maps = animateDef?.({ params, values }) ?? {};
+    // parts being assembled show their default state, not the animation's
+    const state = { ...track.defaults, ...Object.fromEntries(track.rates.map((name) => [`${name}Angle`, 0])) };
+    return { state, values, anim: (name) => (maps[name] ? { "data-anim": `${id}:${name}`, style: cssDecl(maps[name](state)) } : {}) };
+  };
+
+  const parts = result.parts.map((p) => {
+    const move = (tt) => {
+      const o = offsetAt(plan, p.id, tt);
+      return `transform:translate(${r(o.dx)}px,${r(o.dy)}px)`;
+    };
+    const s = plan.stepOf.has(p.id) ? plan.start(plan.stepOf.get(p.id)) + TIMING.lead : 0;
+    animated(p.id, rampTimes(s, TIMING.move), move);
+    const inner = drawPart(p, ctxStatic(p.id, p.def.animate, p.params)) + (labels ? drawLabel(p) : "") + (p.offboard ? drawTerminals(p) : "");
+    return g(inner, { "data-asm": p.id, style: move(t) });
+  });
+
+  const wires = result.wires.map((w) => {
+    const shown = (tt) => `opacity:${drawnAt(plan, w.id, tt) > 0 ? 1 : 0}`;
+    const s = plan.stepOf.has(w.id) ? plan.start(plan.stepOf.get(w.id)) + TIMING.lead : 0;
+    animated(w.id, [0, s, s + 1], shown);
+    animated(w.id, rampTimes(s, TIMING.draw), (tt) => `stroke-dashoffset:${r(1 - drawnAt(plan, w.id, tt))}`, `#${svgId} [data-asm="${cssString(w.id)}"] .asm-path`);
+    return g(drawWire(w, ctxStatic(w.id, wireAnimate), { offset: 1 - drawnAt(plan, w.id, t) }), { "data-asm": w.id, style: shown(t) });
+  });
+
+  const overlays = result.overlays.map((o) => {
+    const fade = (tt) => `opacity:${r(drawnAt(plan, o.id, tt))}`;
+    const s = plan.stepOf.has(o.id) ? plan.start(plan.stepOf.get(o.id)) + TIMING.lead : 0;
+    animated(o.id, rampTimes(s, TIMING.draw, 4), fade);
+    return g(spriteImage(o), { "data-asm": o.id, style: fade(t) });
+  });
+
+  // a frame around the parts of the current step, at their final place
+  const highlights = result.parts
+    .filter((p) => plan.stepOf.has(p.id))
+    .map((p) => {
+      const box = plan.boxes.get(p.id);
+      const glow = (tt) => `opacity:${r(highlightAt(plan, p.id, tt))}`;
+      return rect(box.x - 0.3, box.y - 0.3, box.w + 0.6, box.h + 0.6, {
+        rx: 0.4,
+        fill: "rgba(255,152,0,.10)",
+        stroke: "#ff9800",
+        "stroke-width": 0.14,
+        "data-asm-hl": p.id,
+        style: glow(t),
+      });
+    });
+  for (const p of still ? [] : result.parts.filter((x) => plan.stepOf.has(x.id))) {
+    const s = plan.start(plan.stepOf.get(p.id));
+    css.push(
+      keyframesCss(
+        `${svgId}-h${k++}`,
+        `#${svgId} [data-asm-hl="${cssString(p.id)}"]`,
+        [0, s - 1, s, s + 200, s + TIMING.step - 450, s + TIMING.step - 150, plan.duration],
+        (tt) => `opacity:${r(highlightAt(plan, p.id, tt))}`,
+        plan.duration,
+      ),
+    );
+  }
+
+  const pad = 1;
+  const b = renderBounds(result, { assembly: true });
+  const withCaptions = options.captions ?? true;
+  const capRoom = withCaptions ? 2.4 : 0; // keep the caption band off the tray
+  const vb = options.viewBox ? String(options.viewBox).split(/[\s,]+/).map(Number) : [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2 + capRoom];
+  const capTl = { captions: plan.captions, duration: plan.duration, loop: true };
+  const animEls = [];
+  const capState = (track) => (still ? stateAtTime(track, t) : initialState(track));
+  const captions = withCaptions ? drawCaptions(capTl, vb, animEls, svgId, !still, capState) : "";
+  const body = [
+    g(drawBoard(result.board), { class: "board" }),
+    g(parts.join(""), { class: "parts" }),
+    g(wires.join(""), { class: "wires" }),
+    g(overlays.join(""), { class: "overlays" }),
+    g(highlights.join(""), { class: "highlights", "pointer-events": "none" }),
+    captions,
+  ].join("");
+  const meta = options.embed
+    ? `<metadata id="breadboard-circuit" data-format="breadboard-viewer/v1">${esc(JSON.stringify(options.embed))}</metadata>`
+    : "";
+  const style = still ? `<style>${stillEffectCss(0)}</style>` : `<style>${EFFECT_CSS}${css.join("")}${compileCss(animEls, capTl, svgId)}</style>`;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" id="${svgId}" viewBox="${vb.map(n).join(" ")}" ` +
+    `width="${n(vb[2] * SCALE)}" height="${n(vb[3] * SCALE)}">` +
+    meta +
+    style +
+    body +
+    `</svg>`
   );
 }

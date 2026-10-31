@@ -17,7 +17,9 @@
 //   { "op": "setAnimation", "duration": 1000, "captions": [{ "t": 0, "text": "..." }] }
 //   { "op": "addOverlay", "svg": "<svg ...>...</svg>", "x": 10, "y": -4, "w": 6, "h": 6 }
 //   { "op": "definePart", "def": { "type": "my-sensor", "pins": [...], "shapes": [...] } }
+//   { "op": "setSteps", "steps": [{ "text": "Nano を挿す", "items": ["U1"] }] }  /  { "op": "autoSteps" }
 // See docs/OPS.md for the full list.
+import { autoSteps } from "./assembly.js";
 import { createBoard } from "./board.js";
 import { findFreeSpot, resolveCircuit, rotate } from "./circuit.js";
 import { BUILTIN_PARTS } from "./parts/builtin.js";
@@ -257,6 +259,23 @@ const OPS = {
     return { circuit: { ...c, title: String(title ?? "") } };
   },
 
+  // Assembly steps: [{ text, items: [ids] }] (see assembly.js); [] or null removes them.
+  setSteps(c, { steps }) {
+    if (steps == null || (Array.isArray(steps) && !steps.length)) {
+      const { steps: _, ...rest } = c;
+      return { circuit: rest };
+    }
+    if (!Array.isArray(steps) || steps.some((s) => !s || !Array.isArray(s.items))) fail("steps は { text, items: [ID...] } の配列です");
+    const ids = usedIds(c);
+    for (const s of steps) for (const id of s.items) if (!ids.has(id)) fail(`"${id}" という部品・配線はありません`);
+    return { circuit: { ...c, steps } };
+  },
+
+  // Generates steps: modules / ICs first, then the other parts, then wires a few at a time.
+  autoSteps(c) {
+    return { circuit: { ...c, steps: autoSteps(resolveCircuit(c)) } };
+  },
+
   // Adds a JSON part definition to the circuit (replaces one with the same type).
   definePart(c, { def }) {
     try {
@@ -372,10 +391,19 @@ function checkEnd(c, ref) {
 }
 
 // Keeps animation tracks pointing at renamed targets; to = null drops the target's track.
+// Also keeps assembly steps pointing at renamed items (to = null drops the item).
 function retarget(c, from, to) {
-  if (!c.animation?.tracks || from === to) return c;
-  const tracks = c.animation.tracks.flatMap((t) => (t.target !== from ? [t] : to === null ? [] : [{ ...t, target: to }]));
-  return { ...c, animation: { ...c.animation, tracks } };
+  if (from === to) return c;
+  let out = c;
+  if (c.animation?.tracks) {
+    const tracks = c.animation.tracks.flatMap((t) => (t.target !== from ? [t] : to === null ? [] : [{ ...t, target: to }]));
+    out = { ...out, animation: { ...c.animation, tracks } };
+  }
+  if (Array.isArray(c.steps)) {
+    const steps = c.steps.map((s) => ({ ...s, items: (s.items ?? []).flatMap((id) => (id !== from ? [id] : to === null ? [] : [to])) }));
+    out = { ...out, steps };
+  }
+  return out;
 }
 
 // `null` in an update means "remove this key".

@@ -8,8 +8,8 @@
     { "id": "D1", "type": "led", "color": "red", "pins": { "A": "b21", "K": "b22" } }
   ],
   "wires": [
-    { "from": "c22", "to": "T-22", "color": "black" },
-    { "from": "a4", "to": "T-4", "color": "black" }
+    { "id": "W1", "from": "c22", "to": "T-22", "color": "black" },
+    { "id": "W2", "from": "a4", "to": "T-4", "color": "black" }
   ],
   "animation": {
     "duration": 2000,
@@ -39,5 +39,37 @@
         "text": "digitalWrite(13, LOW) → LED 消灯"
       }
     ]
-  }
+  },
+  "steps": [
+    {
+      "text": "Arduino Nano を、中央の溝をまたぐように h3〜h17 / d3〜d17 に挿す",
+      "items": [
+        "U1"
+      ]
+    },
+    {
+      "text": "Nano の GND2 (d4 の列) から上の − レールへ黒のジャンパ線",
+      "items": [
+        "W2"
+      ]
+    },
+    {
+      "text": "220Ω の抵抗を a17 (D13 の列) と a21 に挿す",
+      "items": [
+        "R1"
+      ]
+    },
+    {
+      "text": "LED の長い足 (A) を b21、短い足 (K) を b22 に挿す",
+      "items": [
+        "D1"
+      ]
+    },
+    {
+      "text": "c22 から − レールへ黒のジャンパ線。これで完成",
+      "items": [
+        "W1"
+      ]
+    }
+  ]
 }

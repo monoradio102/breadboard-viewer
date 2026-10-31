@@ -104,7 +104,14 @@ export function resolveCircuit(circuit) {
   });
 
   const timeline = buildTimeline(parts, wires, circuit.animation, warnings, overlays);
-  return { board, registry, parts, wires, overlays, nets, netOf, netOfHole: netOf, occupied, timeline, errors, warnings };
+
+  // assembly steps (see assembly.js)
+  const known = new Set([...parts.map((p) => p.id), ...wires.map((w) => w.id), ...overlays.map((o) => o.id)]);
+  const steps = Array.isArray(circuit.steps) ? circuit.steps : [];
+  steps.forEach((s, i) => {
+    for (const id of s?.items ?? []) if (!known.has(id)) warnings.push(`steps[${i}]: "${id}" という部品・配線はありません`);
+  });
+  return { board, registry, parts, wires, overlays, steps, nets, netOf, netOfHole: netOf, occupied, timeline, errors, warnings };
 }
 
 function placePart(board, def, inst, id, errors, warnings) {

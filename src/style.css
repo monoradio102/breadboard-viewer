@@ -509,3 +509,29 @@ button.danger {
   gap: 6px;
   flex-wrap: wrap;
 }
+
+#btn-assembly.active {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.player [hidden] {
+  display: none;
+}
+
+.step-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.step-row .step-items {
+  grid-column: 2 / 5;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.step-row button {
+  padding: 2px 6px;
+}

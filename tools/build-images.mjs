@@ -16,4 +16,8 @@ for (const file of readdirSync(new URL("examples/", root)).filter((f) => f.endsW
   const name = file.replace(/\.json$/, "");
   writeFileSync(new URL(`${name}.svg`, outDir), renderSvg(result, { embed: circuit }));
   console.log(`docs/images/${name}.svg`);
+  if (circuit.steps?.length) {
+    writeFileSync(new URL(`${name}-assembly.svg`, outDir), renderSvg(result, { embed: circuit, assembly: true }));
+    console.log(`docs/images/${name}-assembly.svg`);
+  }
 }
