@@ -1,6 +1,6 @@
 // Renders a resolved circuit (see circuit.js) to an SVG string.
 import { EFFECT_CSS, captionTrack, compileCss, cssDecl, initialState, stateAtTime, stillEffectCss, valuesOf } from "./animation.js";
-import { TIMING, drawnAt, highlightAt, keyframesCss, offsetAt, planAssembly, rampTimes } from "./assembly.js";
+import { drawnAt, highlightAt, keyframesCss, offsetAt, planAssembly, rampTimes } from "./assembly.js";
 import { rotate } from "./circuit.js";
 import { circle, esc, g, line, n, rect, spriteImage, tag, text } from "./svg.js";
 
@@ -409,24 +409,24 @@ function renderAssemblySvg(result, options) {
       const o = offsetAt(plan, p.id, tt);
       return `transform:translate(${r(o.dx)}px,${r(o.dy)}px)`;
     };
-    const s = plan.stepOf.has(p.id) ? plan.start(plan.stepOf.get(p.id)) + TIMING.lead : 0;
-    animated(p.id, rampTimes(s, TIMING.move), move);
+    const s = plan.stepOf.has(p.id) ? plan.start(plan.stepOf.get(p.id)) + plan.T.lead : 0;
+    animated(p.id, rampTimes(s, plan.T.move), move);
     const inner = drawPart(p, ctxStatic(p.id, p.def.animate, p.params)) + (labels ? drawLabel(p) : "") + (p.offboard ? drawTerminals(p) : "");
     return g(inner, { "data-asm": p.id, style: move(t) });
   });
 
   const wires = result.wires.map((w) => {
     const shown = (tt) => `opacity:${drawnAt(plan, w.id, tt) > 0 ? 1 : 0}`;
-    const s = plan.stepOf.has(w.id) ? plan.start(plan.stepOf.get(w.id)) + TIMING.lead : 0;
+    const s = plan.stepOf.has(w.id) ? plan.start(plan.stepOf.get(w.id)) + plan.T.lead : 0;
     animated(w.id, [0, s, s + 1], shown);
-    animated(w.id, rampTimes(s, TIMING.draw), (tt) => `stroke-dashoffset:${r(1 - drawnAt(plan, w.id, tt))}`, `#${svgId} [data-asm="${cssString(w.id)}"] .asm-path`);
+    animated(w.id, rampTimes(s, plan.T.draw), (tt) => `stroke-dashoffset:${r(1 - drawnAt(plan, w.id, tt))}`, `#${svgId} [data-asm="${cssString(w.id)}"] .asm-path`);
     return g(drawWire(w, ctxStatic(w.id, wireAnimate), { offset: 1 - drawnAt(plan, w.id, t) }), { "data-asm": w.id, style: shown(t) });
   });
 
   const overlays = result.overlays.map((o) => {
     const fade = (tt) => `opacity:${r(drawnAt(plan, o.id, tt))}`;
-    const s = plan.stepOf.has(o.id) ? plan.start(plan.stepOf.get(o.id)) + TIMING.lead : 0;
-    animated(o.id, rampTimes(s, TIMING.draw, 4), fade);
+    const s = plan.stepOf.has(o.id) ? plan.start(plan.stepOf.get(o.id)) + plan.T.lead : 0;
+    animated(o.id, rampTimes(s, plan.T.draw, 4), fade);
     return g(spriteImage(o), { "data-asm": o.id, style: fade(t) });
   });
 
@@ -446,12 +446,14 @@ function renderAssemblySvg(result, options) {
       });
     });
   for (const p of still ? [] : result.parts.filter((x) => plan.stepOf.has(x.id))) {
-    const s = plan.start(plan.stepOf.get(p.id));
+    const i = plan.stepOf.get(p.id);
+    const s = plan.start(i);
+    const end = s + plan.length(i) - 150;
     css.push(
       keyframesCss(
         `${svgId}-h${k++}`,
         `#${svgId} [data-asm-hl="${cssString(p.id)}"]`,
-        [0, s - 1, s, s + 200, s + TIMING.step - 450, s + TIMING.step - 150, plan.duration],
+        [0, s - 1, s, s + 200, end - 300, end, plan.duration],
         (tt) => `opacity:${r(highlightAt(plan, p.id, tt))}`,
         plan.duration,
       ),

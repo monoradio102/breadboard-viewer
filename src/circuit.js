@@ -111,7 +111,12 @@ export function resolveCircuit(circuit) {
   steps.forEach((s, i) => {
     for (const id of s?.items ?? []) if (!known.has(id)) warnings.push(`steps[${i}]: "${id}" という部品・配線はありません`);
   });
-  return { board, registry, parts, wires, overlays, steps, nets, netOf, netOfHole: netOf, occupied, timeline, errors, warnings };
+  const assembly = circuit.assembly && typeof circuit.assembly === "object" ? circuit.assembly : {};
+  for (const id of Object.keys(assembly.tray ?? {})) {
+    if (!parts.some((p) => p.id === id)) warnings.push(`assembly.tray: "${id}" という部品はありません`);
+    else if (!Array.isArray(assembly.tray[id]) || assembly.tray[id].length !== 2) warnings.push(`assembly.tray.${id} は [x, y] です`);
+  }
+  return { board, registry, parts, wires, overlays, steps, assembly, nets, netOf, netOfHole: netOf, occupied, timeline, errors, warnings };
 }
 
 function placePart(board, def, inst, id, errors, warnings) {

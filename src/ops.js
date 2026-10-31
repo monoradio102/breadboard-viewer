@@ -18,6 +18,7 @@
 //   { "op": "addOverlay", "svg": "<svg ...>...</svg>", "x": 10, "y": -4, "w": 6, "h": 6 }
 //   { "op": "definePart", "def": { "type": "my-sensor", "pins": [...], "shapes": [...] } }
 //   { "op": "setSteps", "steps": [{ "text": "Nano を挿す", "items": ["U1"] }] }  /  { "op": "autoSteps" }
+//   { "op": "setAssembly", "tray": { "U1": [5, 24] }, "timing": { "step": 3000 } }
 // See docs/OPS.md for the full list.
 import { autoSteps } from "./assembly.js";
 import { createBoard } from "./board.js";
@@ -271,6 +272,25 @@ const OPS = {
     return { circuit: { ...c, steps } };
   },
 
+  // Merges assembly settings (tray, trayOrigin, trayWidth, timing, introText, outroText,
+  // numbering). tray and timing merge per key; null removes a key; clear: true removes all.
+  setAssembly(c, { op, clear, ...fields }) {
+    if (clear) {
+      const { assembly, ...rest } = c;
+      return { circuit: rest };
+    }
+    const cur = c.assembly ?? {};
+    const next = { ...cur };
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === null) delete next[k];
+      else if ((k === "tray" || k === "timing") && typeof v === "object") next[k] = clean({ ...(cur[k] ?? {}), ...v });
+      else next[k] = v;
+    }
+    for (const id of Object.keys(next.tray ?? {})) if (!c.parts.some((p) => p.id === id)) fail(`tray: "${id}" という部品はありません`);
+    for (const [id, pos] of Object.entries(next.tray ?? {})) if (!Array.isArray(pos) || pos.length !== 2 || !pos.every(Number.isFinite)) fail(`tray.${id} は [x, y] です`);
+    return { circuit: { ...c, assembly: next } };
+  },
+
   // Generates steps: modules / ICs first, then the other parts, then wires a few at a time.
   autoSteps(c) {
     return { circuit: { ...c, steps: autoSteps(resolveCircuit(c)) } };
@@ -402,6 +422,10 @@ function retarget(c, from, to) {
   if (Array.isArray(c.steps)) {
     const steps = c.steps.map((s) => ({ ...s, items: (s.items ?? []).flatMap((id) => (id !== from ? [id] : to === null ? [] : [to])) }));
     out = { ...out, steps };
+  }
+  if (c.assembly?.tray && from in c.assembly.tray) {
+    const { [from]: pos, ...tray } = c.assembly.tray;
+    out = { ...out, assembly: { ...c.assembly, tray: to === null ? tray : { ...tray, [to]: pos } } };
   }
   return out;
 }

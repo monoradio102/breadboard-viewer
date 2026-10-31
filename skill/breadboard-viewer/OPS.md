@@ -52,6 +52,7 @@ await bb.png({ background: null })     // その瞬間の透過PNG (Blob)
 | `addOverlay` | `svg`, `x`, `y`, `w`, `h`, (`id`, `fit`) | 任意のSVGを演出レイヤーとして追加します (`docs/FORMAT.md` 参照)。`move` の `pos` で位置を、`update` で大きさなどを変えられます |
 | `setSteps` | `steps` | 組み立て手順を設定します (`docs/FORMAT.md` の「組み立て手順」)。`null` で削除 |
 | `autoSteps` | なし | 組み立て手順を自動で作って設定します (モジュール・IC → ほかの部品 → 配線) |
+| `setAssembly` | `tray`, `trayOrigin`, `trayWidth`, `timing`, `introText`, `outroText`, `numbering` のうち必要なもの / `clear: true` | 組み立ての設定をマージします。`tray` と `timing` はキーごとにマージされ、値に `null` を書くとそのキーを消します |
 | `definePart` | `def` | 独自部品の定義 (`partDefs` の1件) を追加します。同じ `type` があれば差し替えます |
 | `animate` | `target`, `keys`, (`replace` = true) | 部品または配線のアニメーションのキーを設定します。`replace: false` にすると、既存のキーに追加します |
 | `setAnimation` | `duration`, `loop`, `captions`, `tracks` のうち必要なもの / `clear: true` | アニメーションの設定を上書きでマージします。`clear: true` でアニメーションを削除します |

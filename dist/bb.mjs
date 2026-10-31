@@ -1363,7 +1363,12 @@ function resolveCircuit(circuit) {
   steps.forEach((s, i) => {
     for (const id of s?.items ?? []) if (!known.has(id)) warnings.push(`steps[${i}]: "${id}" \u3068\u3044\u3046\u90E8\u54C1\u30FB\u914D\u7DDA\u306F\u3042\u308A\u307E\u305B\u3093`);
   });
-  return { board, registry, parts, wires, overlays, steps, nets, netOf, netOfHole: netOf, occupied, timeline, errors, warnings };
+  const assembly2 = circuit.assembly && typeof circuit.assembly === "object" ? circuit.assembly : {};
+  for (const id of Object.keys(assembly2.tray ?? {})) {
+    if (!parts.some((p) => p.id === id)) warnings.push(`assembly.tray: "${id}" \u3068\u3044\u3046\u90E8\u54C1\u306F\u3042\u308A\u307E\u305B\u3093`);
+    else if (!Array.isArray(assembly2.tray[id]) || assembly2.tray[id].length !== 2) warnings.push(`assembly.tray.${id} \u306F [x, y] \u3067\u3059`);
+  }
+  return { board, registry, parts, wires, overlays, steps, assembly: assembly2, nets, netOf, netOfHole: netOf, occupied, timeline, errors, warnings };
 }
 function placePart(board, def, inst, id, errors, warnings) {
   const params = {};
@@ -1629,11 +1634,16 @@ function autoSteps(result) {
   return steps;
 }
 function planAssembly(result, steps = result.steps?.length ? result.steps : autoSteps(result)) {
-  const T = TIMING;
+  const settings = result.assembly ?? {};
+  const T = { ...TIMING, ...pickNumbers(settings.timing) };
   const stepOf = /* @__PURE__ */ new Map();
   steps.forEach((s, i) => (s.items ?? []).forEach((id) => stepOf.has(id) || stepOf.set(id, i + 1)));
-  const start = (i) => T.intro + (i - 1) * T.step;
-  const duration = T.intro + steps.length * T.step + T.outro;
+  const lengths = steps.map((s) => Number(s.duration) > 0 ? Number(s.duration) : T.step);
+  const starts = [T.intro];
+  for (const len of lengths) starts.push(starts[starts.length - 1] + len);
+  const start = (i) => starts[Math.max(0, Math.min(steps.length, i - 1))];
+  const length = (i) => lengths[i - 1] ?? T.step;
+  const duration = starts[steps.length] + T.outro;
   const boxes = /* @__PURE__ */ new Map();
   for (const p of result.parts) {
     const pad = p.def.mount === "leads" ? 1.3 : 0.9;
@@ -1660,63 +1670,95 @@ function planAssembly(result, steps = result.steps?.length ? result.steps : auto
   const b = result.board.bounds;
   let bottom = b.y + b.h;
   for (const box of boxes.values()) bottom = Math.max(bottom, box.y + box.h);
-  const rowWidth = Math.max(b.w, 40);
+  const fixed = settings.tray && typeof settings.tray === "object" ? settings.tray : {};
+  const [ox, oy] = isPoint(settings.trayOrigin) ? settings.trayOrigin : [b.x, bottom + 2.5];
+  const rowWidth = Number(settings.trayWidth) > 0 ? Number(settings.trayWidth) : Math.max(b.w, 40);
   const offsets = /* @__PURE__ */ new Map();
-  let x = b.x;
-  let y = bottom + 2.5;
+  const trayPos = /* @__PURE__ */ new Map();
+  const trayBoxes = /* @__PURE__ */ new Map();
+  let x = ox;
+  let y = oy;
   let rowH = 0;
   let trayBounds = null;
   const trayParts = result.parts.filter((p) => stepOf.has(p.id)).sort((p, q) => stepOf.get(p.id) - stepOf.get(q.id));
   for (const p of trayParts) {
     const box = boxes.get(p.id);
-    if (x > b.x && x + box.w > b.x + rowWidth) {
-      x = b.x;
-      y += rowH + 1.5;
-      rowH = 0;
+    let dx;
+    let dy;
+    if (isPoint(fixed[p.id])) {
+      dx = fixed[p.id][0] - p.pins[0].x;
+      dy = fixed[p.id][1] - p.pins[0].y;
+    } else {
+      if (x > ox && x + box.w > ox + rowWidth) {
+        x = ox;
+        y += rowH + 1.5;
+        rowH = 0;
+      }
+      dx = x - box.x;
+      dy = y - box.y;
+      x += box.w + 1.5;
+      rowH = Math.max(rowH, box.h);
     }
-    offsets.set(p.id, { dx: x - box.x, dy: y - box.y });
-    trayBounds = union(trayBounds, { x, y, w: box.w, h: box.h });
-    x += box.w + 1.5;
-    rowH = Math.max(rowH, box.h);
+    offsets.set(p.id, { dx, dy });
+    trayPos.set(p.id, [round(p.pins[0].x + dx), round(p.pins[0].y + dy)]);
+    trayBoxes.set(p.id, { x: box.x + dx, y: box.y + dy, w: box.w, h: box.h });
+    trayBounds = union(trayBounds, trayBoxes.get(p.id));
   }
+  const number = (i) => settings.numbering === false ? "" : `${i}. `;
   const captions2 = [
-    { t: 0, text: "\u90E8\u54C1\u3092\u4E26\u3079\u308B" },
-    ...steps.map((s, i) => ({ t: start(i + 1), text: `${i + 1}. ${s.text ?? ""}` })),
-    { t: start(steps.length + 1), text: "\u5B8C\u6210" }
+    { t: 0, text: settings.introText ?? "\u90E8\u54C1\u3092\u4E26\u3079\u308B" },
+    ...steps.map((s, i) => ({ t: start(i + 1), text: `${number(i + 1)}${s.text ?? ""}` })),
+    { t: start(steps.length + 1), text: settings.outroText ?? "\u5B8C\u6210" }
   ];
   return {
+    T,
     steps,
     stepOf,
     boxes,
     offsets,
+    trayPos,
+    trayBoxes,
     trayBounds,
     duration,
     captions: captions2,
     start,
+    length,
     // a moment that shows step k done, its parts still highlighted (0 = everything in the tray)
-    timeOfStep: (k) => k <= 0 ? T.intro - 100 : start(Math.min(k, steps.length)) + T.lead + Math.max(T.move, T.draw) + 300,
-    stepAt: (t) => Math.max(0, Math.min(steps.length, Math.floor((t - T.intro) / T.step) + 1))
+    timeOfStep: (k) => k <= 0 ? Math.max(0, T.intro - 100) : start(Math.min(k, steps.length)) + Math.min(length(Math.min(k, steps.length)) - 150, T.lead + Math.max(T.move, T.draw) + 300),
+    stepAt: (t) => {
+      let k = 0;
+      while (k < steps.length && t >= starts[k]) k++;
+      return k;
+    }
   };
 }
 var ease = (f) => f <= 0 ? 0 : f >= 1 ? 1 : f * f * (3 - 2 * f);
+var round = (v) => Math.round(v * 1e3) / 1e3;
+var isPoint = (v) => Array.isArray(v) && v.length === 2 && v.every(Number.isFinite);
+function pickNumbers(obj) {
+  const out2 = {};
+  for (const [k, v] of Object.entries(obj ?? {})) if (k in TIMING && Number(v) >= 0) out2[k] = Number(v);
+  return out2;
+}
 function offsetAt(plan, id, t) {
   const o = plan.offsets.get(id);
   if (!o) return { dx: 0, dy: 0 };
-  const s = plan.start(plan.stepOf.get(id)) + TIMING.lead;
-  const k = 1 - ease((t - s) / TIMING.move);
+  const s = plan.start(plan.stepOf.get(id)) + plan.T.lead;
+  const k = 1 - ease((t - s) / plan.T.move);
   return { dx: o.dx * k, dy: o.dy * k };
 }
 function drawnAt(plan, id, t) {
   if (!plan.stepOf.has(id)) return 1;
-  const s = plan.start(plan.stepOf.get(id)) + TIMING.lead;
-  return ease((t - s) / TIMING.draw);
+  const s = plan.start(plan.stepOf.get(id)) + plan.T.lead;
+  return ease((t - s) / plan.T.draw);
 }
 function highlightAt(plan, id, t) {
   if (!plan.stepOf.has(id)) return 0;
-  const s = plan.start(plan.stepOf.get(id));
-  const local = t - s;
-  if (local < 0 || local > TIMING.step - 150) return 0;
-  return Math.min(1, local / 200, (TIMING.step - 150 - local) / 300);
+  const i = plan.stepOf.get(id);
+  const end = plan.length(i) - 150;
+  const local = t - plan.start(i);
+  if (local < 0 || local > end) return 0;
+  return Math.min(1, local / 200, (end - local) / 300);
 }
 function keyframesCss(name, selector, times, css, duration) {
   const frames = [...new Set(times.map((t) => Math.max(0, Math.min(duration, Math.round(t)))))].sort((a, b) => a - b);
@@ -1976,6 +2018,24 @@ var OPS = {
     for (const s of steps) for (const id of s.items) if (!ids.has(id)) fail(`"${id}" \u3068\u3044\u3046\u90E8\u54C1\u30FB\u914D\u7DDA\u306F\u3042\u308A\u307E\u305B\u3093`);
     return { circuit: { ...c, steps } };
   },
+  // Merges assembly settings (tray, trayOrigin, trayWidth, timing, introText, outroText,
+  // numbering). tray and timing merge per key; null removes a key; clear: true removes all.
+  setAssembly(c, { op, clear, ...fields }) {
+    if (clear) {
+      const { assembly: assembly2, ...rest } = c;
+      return { circuit: rest };
+    }
+    const cur = c.assembly ?? {};
+    const next = { ...cur };
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === null) delete next[k];
+      else if ((k === "tray" || k === "timing") && typeof v === "object") next[k] = clean({ ...cur[k] ?? {}, ...v });
+      else next[k] = v;
+    }
+    for (const id of Object.keys(next.tray ?? {})) if (!c.parts.some((p) => p.id === id)) fail(`tray: "${id}" \u3068\u3044\u3046\u90E8\u54C1\u306F\u3042\u308A\u307E\u305B\u3093`);
+    for (const [id, pos] of Object.entries(next.tray ?? {})) if (!Array.isArray(pos) || pos.length !== 2 || !pos.every(Number.isFinite)) fail(`tray.${id} \u306F [x, y] \u3067\u3059`);
+    return { circuit: { ...c, assembly: next } };
+  },
   // Generates steps: modules / ICs first, then the other parts, then wires a few at a time.
   autoSteps(c) {
     return { circuit: { ...c, steps: autoSteps(resolveCircuit(c)) } };
@@ -2080,6 +2140,10 @@ function retarget(c, from2, to2) {
   if (Array.isArray(c.steps)) {
     const steps = c.steps.map((s) => ({ ...s, items: (s.items ?? []).flatMap((id) => id !== from2 ? [id] : to2 === null ? [] : [to2]) }));
     out2 = { ...out2, steps };
+  }
+  if (c.assembly?.tray && from2 in c.assembly.tray) {
+    const { [from2]: pos, ...tray } = c.assembly.tray;
+    out2 = { ...out2, assembly: { ...c.assembly, tray: to2 === null ? tray : { ...tray, [to2]: pos } } };
   }
   return out2;
 }
@@ -2410,22 +2474,22 @@ function renderAssemblySvg(result, options) {
       const o = offsetAt(plan, p.id, tt);
       return `transform:translate(${r(o.dx)}px,${r(o.dy)}px)`;
     };
-    const s = plan.stepOf.has(p.id) ? plan.start(plan.stepOf.get(p.id)) + TIMING.lead : 0;
-    animated(p.id, rampTimes(s, TIMING.move), move);
+    const s = plan.stepOf.has(p.id) ? plan.start(plan.stepOf.get(p.id)) + plan.T.lead : 0;
+    animated(p.id, rampTimes(s, plan.T.move), move);
     const inner = drawPart(p, ctxStatic(p.id, p.def.animate, p.params)) + (labels ? drawLabel(p) : "") + (p.offboard ? drawTerminals(p) : "");
     return g(inner, { "data-asm": p.id, style: move(t) });
   });
   const wires = result.wires.map((w) => {
     const shown = (tt) => `opacity:${drawnAt(plan, w.id, tt) > 0 ? 1 : 0}`;
-    const s = plan.stepOf.has(w.id) ? plan.start(plan.stepOf.get(w.id)) + TIMING.lead : 0;
+    const s = plan.stepOf.has(w.id) ? plan.start(plan.stepOf.get(w.id)) + plan.T.lead : 0;
     animated(w.id, [0, s, s + 1], shown);
-    animated(w.id, rampTimes(s, TIMING.draw), (tt) => `stroke-dashoffset:${r(1 - drawnAt(plan, w.id, tt))}`, `#${svgId} [data-asm="${cssString(w.id)}"] .asm-path`);
+    animated(w.id, rampTimes(s, plan.T.draw), (tt) => `stroke-dashoffset:${r(1 - drawnAt(plan, w.id, tt))}`, `#${svgId} [data-asm="${cssString(w.id)}"] .asm-path`);
     return g(drawWire(w, ctxStatic(w.id, wireAnimate), { offset: 1 - drawnAt(plan, w.id, t) }), { "data-asm": w.id, style: shown(t) });
   });
   const overlays = result.overlays.map((o) => {
     const fade = (tt) => `opacity:${r(drawnAt(plan, o.id, tt))}`;
-    const s = plan.stepOf.has(o.id) ? plan.start(plan.stepOf.get(o.id)) + TIMING.lead : 0;
-    animated(o.id, rampTimes(s, TIMING.draw, 4), fade);
+    const s = plan.stepOf.has(o.id) ? plan.start(plan.stepOf.get(o.id)) + plan.T.lead : 0;
+    animated(o.id, rampTimes(s, plan.T.draw, 4), fade);
     return g(spriteImage(o), { "data-asm": o.id, style: fade(t) });
   });
   const highlights = result.parts.filter((p) => plan.stepOf.has(p.id)).map((p) => {
@@ -2441,12 +2505,14 @@ function renderAssemblySvg(result, options) {
     });
   });
   for (const p of still ? [] : result.parts.filter((x) => plan.stepOf.has(x.id))) {
-    const s = plan.start(plan.stepOf.get(p.id));
+    const i = plan.stepOf.get(p.id);
+    const s = plan.start(i);
+    const end = s + plan.length(i) - 150;
     css.push(
       keyframesCss(
         `${svgId}-h${k++}`,
         `#${svgId} [data-asm-hl="${cssString(p.id)}"]`,
-        [0, s - 1, s, s + 200, s + TIMING.step - 450, s + TIMING.step - 150, plan.duration],
+        [0, s - 1, s, s + 200, end - 300, end, plan.duration],
         (tt) => `opacity:${r(highlightAt(plan, p.id, tt))}`,
         plan.duration
       )
@@ -2570,6 +2636,7 @@ var USAGE = `usage:
   bb.mjs apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json] [--lib lib.json]
   bb.mjs parts  [circuit.json] [--lib lib.json]
   bb.mjs lib    <out.json> <circuit.json|library.json ...>
+  bb.mjs plan   <circuit.json>
   bb.mjs new    <circuit.json> [full|half|mini]`;
 var args = process.argv.slice(2);
 var option = (name) => {
@@ -2681,6 +2748,40 @@ async function main() {
     pins: ${pins.join(", ")}${paramText ? `
     params: ${paramText}` : ""}`);
       }
+      break;
+    }
+    case "plan": {
+      need(file);
+      const result = resolveCircuit(readCircuit(file));
+      const plan = planAssembly(result);
+      const box = (b) => b && Object.fromEntries(Object.entries(b).map(([k, v]) => [k, Math.round(v * 100) / 100]));
+      const out2 = {
+        duration: plan.duration,
+        timing: plan.T,
+        steps: plan.steps.map((s, i) => ({
+          step: i + 1,
+          text: s.text,
+          items: s.items,
+          start: plan.start(i + 1),
+          end: plan.start(i + 1) + plan.length(i + 1),
+          snapshot: plan.timeOfStep(i + 1)
+        })),
+        auto: !result.steps.length,
+        tray: Object.fromEntries(plan.trayPos),
+        trayBoxes: Object.fromEntries([...plan.trayBoxes].map(([id, b]) => [id, box(b)])),
+        trayBounds: box(plan.trayBounds),
+        board: box(result.board.bounds)
+      };
+      console.log(JSON.stringify(out2, null, 2));
+      const entries = [...plan.trayBoxes];
+      for (let i = 0; i < entries.length; i++) {
+        for (let j = i + 1; j < entries.length; j++) {
+          const [a, p] = entries[i];
+          const [b, q] = entries[j];
+          if (p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h) console.error(`WARN:  \u30C8\u30EC\u30A4\u3067 ${a} \u3068 ${b} \u304C\u91CD\u306A\u3063\u3066\u3044\u307E\u3059`);
+        }
+      }
+      for (const w of result.warnings.filter((w2) => /steps|assembly/.test(w2))) console.error(`WARN:  ${w}`);
       break;
     }
     case "lib": {

@@ -24,7 +24,8 @@
 3. 必ず `check` を実行し、エラーがなく、ネットリストが意図どおりか確かめる
 4. `render` で画像にして、見た目を確かめる
 5. 動作を説明するときは `animate` / `setAnimation` でアニメーションを付ける。部品の状態で表せない演出は SVG を書いて `addOverlay` で流し込む
-6. 組み方を説明するときは `setSteps` で組み立て手順を書く (`autoSteps` で自動生成もできる)。部品を並べたところから順に配置していく様子を描ける
+6. 組み方を説明するときは `setSteps` で組み立て手順を書く (`autoSteps` で自動生成もできる)。部品を並べたところから順に配置していく様子を描ける。
+   トレイの位置や時間は `setAssembly` で指定し、`{{CLI}} plan circuit.json` で各手順の時刻・トレイの位置と重なりを確かめる
 
 SVG の出力と、parts / new / apply / check は Node.js 18 以上だけで動きます。
 PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx playwright install chromium`)。

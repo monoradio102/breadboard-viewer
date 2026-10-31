@@ -12,6 +12,7 @@
 //                                                                parts from --lib are copied in when used
 //   node tools/bb.mjs parts  [circuit.json] [--lib lib.json]     list part types, pins and params
 //   node tools/bb.mjs lib    <out.json> <circuit|library.json...> collect custom part definitions
+//   node tools/bb.mjs plan   <circuit.json>                      assembly plan as JSON (steps, times, tray positions)
 //   node tools/bb.mjs new    <circuit.json> [board]               create an empty circuit
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -32,6 +33,7 @@ const USAGE = `usage:
   bb.mjs apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json] [--lib lib.json]
   bb.mjs parts  [circuit.json] [--lib lib.json]
   bb.mjs lib    <out.json> <circuit.json|library.json ...>
+  bb.mjs plan   <circuit.json>
   bb.mjs new    <circuit.json> [full|half|mini]`;
 
 const args = process.argv.slice(2);
@@ -146,6 +148,41 @@ async function main() {
         const paramText = Object.entries(params).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
         console.log(`${def.type}  [${def.mount}]  ${def.name}\n    pins: ${pins.join(", ")}${paramText ? `\n    params: ${paramText}` : ""}`);
       }
+      break;
+    }
+    case "plan": {
+      need(file);
+      const result = resolveCircuit(readCircuit(file));
+      const plan = planAssembly(result);
+      const box = (b) => b && Object.fromEntries(Object.entries(b).map(([k, v]) => [k, Math.round(v * 100) / 100]));
+      const out = {
+        duration: plan.duration,
+        timing: plan.T,
+        steps: plan.steps.map((s, i) => ({
+          step: i + 1,
+          text: s.text,
+          items: s.items,
+          start: plan.start(i + 1),
+          end: plan.start(i + 1) + plan.length(i + 1),
+          snapshot: plan.timeOfStep(i + 1),
+        })),
+        auto: !result.steps.length,
+        tray: Object.fromEntries(plan.trayPos),
+        trayBoxes: Object.fromEntries([...plan.trayBoxes].map(([id, b]) => [id, box(b)])),
+        trayBounds: box(plan.trayBounds),
+        board: box(result.board.bounds),
+      };
+      console.log(JSON.stringify(out, null, 2));
+      // parts that would overlap while waiting in the tray
+      const entries = [...plan.trayBoxes];
+      for (let i = 0; i < entries.length; i++) {
+        for (let j = i + 1; j < entries.length; j++) {
+          const [a, p] = entries[i];
+          const [b, q] = entries[j];
+          if (p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h) console.error(`WARN:  トレイで ${a} と ${b} が重なっています`);
+        }
+      }
+      for (const w of result.warnings.filter((w) => /steps|assembly/.test(w))) console.error(`WARN:  ${w}`);
       break;
     }
     case "lib": {

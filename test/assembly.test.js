@@ -53,3 +53,33 @@ test("setSteps validates ids; steps follow renames and removals", () => {
   assert.match(r.warnings.join(), /GHOST/);
   assert.equal(applyOps(circuit, [{ op: "setSteps", steps: null }]).circuit.steps, undefined);
 });
+
+test("assembly settings: fixed tray positions, timing, per-step duration, captions", () => {
+  const c = {
+    ...load("blink-nano"),
+    assembly: { tray: { U1: [3, -9] }, timing: { step: 3000, intro: 1000 }, introText: "用意するもの", numbering: false },
+  };
+  c.steps = c.steps.map((s, i) => (i === 1 ? { ...s, duration: 5000 } : s));
+  const plan = planAssembly(resolveCircuit(c));
+  assert.deepEqual(plan.trayPos.get("U1"), [3, -9]);
+  assert.equal(plan.start(1), 1000);
+  assert.equal(plan.start(2), 4000);
+  assert.equal(plan.start(3), 9000); // step 2 lasts 5000
+  assert.equal(plan.stepAt(8999), 2);
+  assert.equal(plan.captions[0].text, "用意するもの");
+  assert.doesNotMatch(plan.captions[1].text, /^1\./);
+  assert.equal(plan.duration, 1000 + 3000 * 4 + 5000 + TIMING.outro);
+});
+
+test("setAssembly merges, validates, and follows renames", () => {
+  let { circuit } = applyOps(load("blink-nano"), [
+    { op: "setAssembly", tray: { U1: [3, -9] }, timing: { step: 3000 } },
+    { op: "setAssembly", tray: { R1: [24, -5] }, introText: "用意" },
+  ]);
+  assert.deepEqual(circuit.assembly, { tray: { U1: [3, -9], R1: [24, -5] }, timing: { step: 3000 }, introText: "用意" });
+  circuit = applyOps(circuit, [{ op: "update", id: "R1", set: { id: "R7" } }, { op: "setAssembly", tray: { U1: null } }]).circuit;
+  assert.deepEqual(circuit.assembly.tray, { R7: [24, -5] });
+  assert.throws(() => applyOps(circuit, [{ op: "setAssembly", tray: { NOPE: [0, 0] } }]), /NOPE/);
+  assert.throws(() => applyOps(circuit, [{ op: "setAssembly", tray: { R7: [0] } }]), /\[x, y\]/);
+  assert.equal(applyOps(circuit, [{ op: "setAssembly", clear: true }]).circuit.assembly, undefined);
+});
