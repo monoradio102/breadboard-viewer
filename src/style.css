@@ -333,45 +333,6 @@ button.danger {
   display: none;
 }
 
-@media (max-width: 1000px) {
-  body {
-    height: auto;
-  }
-
-  /* in a single column the stage cannot grow into the remaining space: give it a height,
-     and show it before the long parts list */
-  .stage-area {
-    flex: none;
-    height: 60vh;
-    height: 60svh;
-  }
-
-  /* the bottom of the stage can be below the fold: show captions at the top */
-  .caption-layer {
-    top: 8px;
-    bottom: auto;
-    font-size: 13px;
-  }
-
-  .stage-wrap {
-    order: -1;
-  }
-
-  .layout,
-  .layout.no-left,
-  .layout.no-right,
-  .layout.no-left.no-right {
-    grid-template-columns: 1fr;
-  }
-
-  .parts-panel,
-  .editor-panel {
-    border: none;
-    border-top: 1px solid var(--border);
-  }
-
-}
-
 .stage .part {
   cursor: move;
 }
@@ -490,6 +451,8 @@ button.danger {
   left: 50%;
   bottom: 14px;
   transform: translateX(-50%);
+  /* as wide as the text (left: 50% alone would wrap it at half the stage) */
+  width: max-content;
   max-width: calc(100% - 32px);
   padding: 6px 14px;
   border-radius: 8px;
@@ -592,4 +555,44 @@ button.danger {
 
 .msg.advice::before {
   content: "参考: ";
+}
+
+/* narrow screens (phones): kept last, so that it wins over the rules above */
+@media (max-width: 1000px) {
+  body {
+    height: auto;
+  }
+
+  /* in a single column the stage cannot grow into the remaining space: give it a height,
+     and show it before the long parts list */
+  .stage-area {
+    flex: none;
+    height: 60vh;
+    height: 60svh;
+  }
+
+  /* the bottom of the stage can be below the fold: show captions at the top */
+  .caption-layer {
+    top: 8px;
+    bottom: auto;
+    font-size: 13px;
+  }
+
+  .stage-wrap {
+    order: -1;
+  }
+
+  .layout,
+  .layout.no-left,
+  .layout.no-right,
+  .layout.no-left.no-right {
+    grid-template-columns: 1fr;
+  }
+
+  .parts-panel,
+  .editor-panel {
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+
 }
