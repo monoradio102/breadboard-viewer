@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { test } from "node:test";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { resolveCircuit } from "../src/circuit.js";
 import { coordsOf, layoutIssues, previewPlacement } from "../src/inspect.js";
@@ -123,6 +124,26 @@ test("PNG without a browser (--raster cairosvg)", { skip: hasCairo ? false : "ca
     const png = readFileSync(out);
     assert.equal(png.subarray(1, 4).toString(), "PNG");
     assert.ok(png.length > 10000);
+  } finally {
+    rmSync(out, { force: true });
+  }
+});
+
+const chromeBin = (() => {
+  try {
+    const { chromium } = createRequire(import.meta.url)("playwright");
+    return existsSync(chromium.executablePath()) ? chromium.executablePath() : null;
+  } catch {
+    return null;
+  }
+})();
+test("PNG from an installed Chromium run headless (--raster chrome)", { skip: chromeBin ? false : "Chromium がないので省略" }, () => {
+  const out = new URL(`../.test-chrome-${process.pid}.png`, import.meta.url);
+  try {
+    const r = bb("render", "examples/blink-nano.json", "-o", fileURLToPath(out), "--raster", "chrome", "--browser-path", chromeBin, "--scale", "1");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /ヘッドレス/);
+    assert.equal(readFileSync(out).subarray(1, 4).toString(), "PNG");
   } finally {
     rmSync(out, { force: true });
   }

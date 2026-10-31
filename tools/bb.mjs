@@ -11,7 +11,7 @@ import { circuitLink, emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, s
 import { OpError, applyOps } from "../src/ops.js";
 import { createRegistry, fromJson } from "../src/parts/registry.js";
 import { renderSvg } from "../src/render.js";
-import { hasBrowser, launchBrowser, openCapture } from "./capture.mjs";
+import { hasBrowser, hasPlaywright, launchBrowser, openCapture } from "./capture.mjs";
 import { NO_RASTERIZER, findRasterizer, rasterize } from "./raster.mjs";
 
 const VIEW = {
@@ -32,7 +32,7 @@ const COMMANDS = {
   check: ["check  <circuit.json> [--json] [--layout]", 1, 1, { "--json": "flag", "--layout": "flag" }],
   render: [
     "render <circuit.json> [-o out.svg|out.png] [--time ms | --step k] [--assembly] [--transparent] [--scale n]\n" +
-      "              [--no-captions] [--viewbox \"x y w h\" | --focus ID,ID [--margin n]] [--chrome | --browser-path path | --raster rsvg|cairosvg]",
+      "              [--no-captions] [--viewbox \"x y w h\" | --focus ID,ID [--margin n]] [--chrome | --browser-path path | --raster browser|chrome|rsvg|cairosvg]",
     1,
     1,
     { "-o": "value", "--time": "value", "--step": "value", ...VIEW },
@@ -366,16 +366,21 @@ function printFrames(count, fps, start, end, jobs, out) {
   console.log(`gif: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -vf "split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse" out.gif`);
 }
 
-// What makes the PNGs: the browser (Playwright) when it is there, else rsvg-convert or Python's
-// cairosvg (--raster browser|rsvg|cairosvg to choose). Without a browser, the CSS / SMIL inside
-// overlay SVGs stays at its first frame and the soft shadows are left out.
+// What makes the PNGs (--raster to choose):
+//   browser   Playwright (its Chromium, or --chrome / --browser-path)
+//   chrome    an installed Chromium / Chrome run headless (PATH, or --browser-path), no Playwright needed
+//   rsvg / cairosvg   rsvg-convert / Python's cairosvg: no shadows
+// auto takes them in that order. Without Playwright the CSS / SMIL inside overlay SVGs shows
+// its first moment rather than the frame's.
 function pngEngine() {
   const want = opts["--raster"] ?? "auto";
-  if (!["auto", "browser", "rsvg", "cairosvg"].includes(want)) fail("--raster は auto / browser / rsvg / cairosvg です");
-  if (want === "browser" || opts["--chrome"] || opts["--browser-path"] || (want === "auto" && hasBrowser())) return "browser";
-  const engine = findRasterizer(want);
+  if (!["auto", "browser", "chrome", "rsvg", "cairosvg"].includes(want)) fail("--raster は auto / browser / chrome / rsvg / cairosvg です");
+  const playwright = hasPlaywright();
+  if (want === "browser" || (want === "auto" && playwright && (opts["--chrome"] || opts["--browser-path"] || hasBrowser()))) return "browser";
+  const engine = findRasterizer(want, opts["--browser-path"] ?? (opts["--chrome"] ? "google-chrome" : null));
   if (!engine) fail(want === "auto" ? NO_RASTERIZER : `${want} が見つかりません。\n${NO_RASTERIZER}`, 1);
-  console.error(`PNG: ${engine.split(":")[0]} で描画します (ブラウザなし。演出 SVG のアニメーションと影は描かれません)`);
+  const name = engine.split(":")[0];
+  console.error(name === "chrome" ? `PNG: ${engine.slice(7)} (ヘッドレス) で描画します` : `PNG: ${name} で描画します (影は描かれません)`);
   return engine;
 }
 

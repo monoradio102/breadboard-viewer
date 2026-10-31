@@ -37,7 +37,7 @@
 
 SVG の出力と、parts / new / apply / check は Node.js 18 以上だけで動きます。
 PNG と連番 PNG は、Playwright (`npm i playwright && npx playwright install chromium`) があればブラウザで描きます。
-ない環境では、Python の cairosvg (`pip install cairosvg`) か rsvg-convert で自動的に描きます (影と、演出 SVG の中のアニメーションは省かれます)。`--raster browser|cairosvg|rsvg` で選べます。
+ない環境では、インストール済みの Chromium / Chrome (PATH にあるか `--browser-path`) をヘッドレスで使い、それもなければ rsvg-convert か Python の cairosvg (`pip install cairosvg`) で描きます (この2つでは影が省かれます)。`--raster browser|chrome|rsvg|cairosvg` で選べます。
 インストール済みの Google Chrome を使うなら `--chrome`、ほかのブラウザなら `--browser-path <実行ファイル>` (このときブラウザのダウンロードは不要で、`npm i playwright-core` だけで動きます)。
 `render` / `frames` は `--viewbox "x y w h"` か `--focus U1,MIC1 [--margin 2]` で表示範囲を絞れます。`frames --jobs 4` で並列に書き出します。
 知らないオプションはエラーになります。

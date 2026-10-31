@@ -34,23 +34,28 @@ curl -fsSLO ${BASE}dist/bb.mjs
 
 ## コードの実行環境からインターネットに出られない場合 (ChatGPT など)
 
-ChatGPT のコード実行環境 (コンテナ) では、\`curl\` や Python / Node.js からの通信は失敗します (DNS エラー)。\`bb.mjs\` は次のどちらかで入れます。
+ChatGPT のコード実行環境 (コンテナ) からは、\`curl\` などでこのサイトに届きません (DNS エラー)。\`container.download\` でも取れないことがあります。\`bb.mjs\` は次のどれかで入れます。
 
-1. ブラウジングツールで ${BASE}dist/bb.mjs を開いてから、\`container.download\` でコンテナに保存する (例: \`/mnt/data/bb.mjs\`)
-2. ユーザーに \`bb.mjs\` をアップロードしてもらう (${BASE}dist/bb.mjs を保存したもの、または ${BASE}skill/${SKILL}.zip の中のもの)
+1. **GitHub 連携があれば**: リポジトリ \`monoradio102/breadboard-viewer\` の \`dist/bb.mjs\` (依存なしの1ファイル) を読んで、そのままコンテナにファイルとして書き出す (例: \`/mnt/data/bb.mjs\`)
+2. ユーザーに \`bb.mjs\` をアップロードしてもらう (${BASE}dist/bb.mjs を保存したもの)
+3. ブラウジングで ${BASE}dist/bb.mjs を開いてから \`container.download\` で保存する (環境によっては失敗します)
 
-入ったら、回路の JSON をファイルに書いて描画します。ブラウザ (Playwright) がなければ、PNG は Python の cairosvg か rsvg-convert で自動的に描きます (\`pip install cairosvg\` で入ります)。
+\`bb.mjs\` を書き出せないときは、\`src/\` 以下をそのまま置けば、描画エンジンを直接呼べます:
+\`import { resolveCircuit } from "./src/circuit.js"; import { renderSvg } from "./src/render.js"; renderSvg(resolveCircuit(circuit), { time: 1500 })\` (SVG 文字列が返ります)。
+
+入ったら、回路の JSON をファイルに書いて描画します。
 
 \`\`\`bash
 node /mnt/data/bb.mjs check circuit.json
-node /mnt/data/bb.mjs render circuit.json -o circuit.png --time 1500   # PNG (ブラウザなしでも可)
+node /mnt/data/bb.mjs render circuit.json -o circuit.png --time 1500   # PNG
 node /mnt/data/bb.mjs render circuit.json -o circuit.svg               # SVG (Node.js だけで動く)
 node /mnt/data/bb.mjs url circuit.json                                 # ユーザーがエディタで開けるリンク
 \`\`\`
 
-- ブラウザなしの PNG では、影と、演出 SVG の中のアニメーションは描かれません (配線・部品・LED の状態などは同じに描かれます)
-- 日本語のフォントがない環境では、キャプションや部品の日本語が □ になります。そのときは \`--no-captions\` を付けるか、文字を英語にします
-- どうしても \`bb.mjs\` を入れられないときは、\`url\` と同じリンク (\`${BASE}#data=<回路 JSON の Base64URL>\`) をユーザーに渡します。開けば本家の描画で表示され、「画像を書き出す」で PNG / SVG を保存できます
+PNG は、使えるものを自動で選んで描きます: Playwright → インストール済みの Chromium / Chrome (\`chromium\` などが PATH にあればヘッドレスで実行。ChatGPT のコンテナには \`/usr/bin/chromium\` があります) → rsvg-convert → Python の cairosvg。
+Chromium で描けば、エディタと同じ見た目になります (rsvg-convert / cairosvg では影が省かれます)。\`--raster chrome --browser-path /usr/bin/chromium\` のように指定もできます。
+
+どうしても描けないときは、\`url\` と同じリンク (\`${BASE}#data=<回路 JSON の Base64URL>\`) をユーザーに渡します。開けば本家の描画で表示され、「画像を書き出す」で PNG / SVG を保存できます。
 
 ## よく使う場合: Claude のスキルとしてインストール
 

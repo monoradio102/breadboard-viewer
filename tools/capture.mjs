@@ -9,6 +9,16 @@ import { createRequire } from "node:module";
 
 const SPRITE_PREFIX = "data:image/svg+xml;charset=utf-8,";
 
+// True when the Playwright package can be loaded (with or without its own Chromium).
+export function hasPlaywright() {
+  try {
+    loadPlaywright();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // True when Playwright and its Chromium are installed (otherwise PNGs go through tools/raster.mjs).
 export function hasBrowser() {
   try {
