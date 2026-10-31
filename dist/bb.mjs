@@ -395,7 +395,7 @@ function bandColors(ohms) {
   return [COLORS[d1], COLORS[d2], m, GOLD];
 }
 function uprightText(x, y, s, rot, attrs2) {
-  return text(x, y, s, rot === 180 ? { ...attrs2, transform: `rotate(180 ${n(x)} ${n(y)})` } : attrs2);
+  return text(x, y, s, rot ? { ...attrs2, transform: `rotate(${-rot} ${n(x)} ${n(y)})` } : attrs2);
 }
 
 // src/parts/builtin.js
@@ -1211,7 +1211,12 @@ function fromJson(def) {
   }
   const scale2 = def.units === "mm" ? MM : 1;
   const o = def.pins[0];
-  const pins = def.pins.map((p) => ({ name: String(p.name), x: (p.x - o.x) * scale2, y: (p.y - o.y) * scale2 }));
+  const pins = def.pins.map((p) => ({
+    name: String(p.name),
+    x: (p.x - o.x) * scale2,
+    y: (p.y - o.y) * scale2,
+    ...p.insert === false ? { insert: false } : {}
+  }));
   const mount = def.mount === "leads" ? "leads" : "rigid";
   const shapes = def.shapes ?? [];
   const sprites = def.sprites ?? [];
@@ -1291,7 +1296,7 @@ function genericLeads(pins, label) {
 }
 
 // src/circuit.js
-var RESERVED = /* @__PURE__ */ new Set(["id", "type", "at", "pos", "rot", "pins", "note", "state"]);
+var RESERVED = /* @__PURE__ */ new Set(["id", "type", "at", "pos", "rot", "pins", "note", "state", "idLabel"]);
 var ROTATIONS = [0, 90, 180, 270];
 function resolveCircuit(circuit) {
   const errors = [];
@@ -1387,7 +1392,23 @@ function resolveCircuit(circuit) {
     if (!parts.some((p) => p.id === id)) warnings.push(`assembly.tray: "${id}" \u3068\u3044\u3046\u90E8\u54C1\u306F\u3042\u308A\u307E\u305B\u3093`);
     else if (!Array.isArray(assembly2.tray[id]) || assembly2.tray[id].length !== 2) warnings.push(`assembly.tray.${id} \u306F [x, y] \u3067\u3059`);
   }
-  return { board, registry, parts, wires, overlays, steps, assembly: assembly2, nets, netOf, netOfHole: netOf, occupied, timeline, errors, warnings };
+  const unique = (list) => [...new Set(list)];
+  return {
+    board,
+    registry,
+    parts,
+    wires,
+    overlays,
+    steps,
+    assembly: assembly2,
+    nets,
+    netOf,
+    netOfHole: netOf,
+    occupied,
+    timeline,
+    errors: unique(errors),
+    warnings: unique(warnings)
+  };
 }
 function placePart(board, def, inst, id, errors, warnings) {
   const params = {};
@@ -1443,6 +1464,7 @@ function placePart(board, def, inst, id, errors, warnings) {
       const [dx, dy] = rotate(p.x, p.y, rot);
       const x = origin.x + dx;
       const y = origin.y + dy;
+      if (p.insert === false) return { name: p.name, hole: null, node: `${id}.${p.name}`, x, y, terminal: true };
       const hole = board.holeAt(x, y);
       if (!hole) errors.push(`${id}.${p.name}: \u30D4\u30F3\u304C\u7A74\u306E\u4F4D\u7F6E\u306B\u6765\u307E\u305B\u3093 (\u30DC\u30FC\u30C9\u5916\u304B\u6E9D\u306E\u4E0A)`);
       return { name: p.name, hole, node: hole, x, y };
@@ -1515,7 +1537,7 @@ function describe(result) {
   for (const w of result.warnings) lines.push(`WARN:  ${w}`);
   lines.push(`\u90E8\u54C1 ${result.parts.length} \u500B, \u914D\u7DDA ${result.wires.length} \u672C`);
   for (const p of result.parts) {
-    const where = (pin) => pin.hole ?? (p.offboard ? "\u30DC\u30FC\u30C9\u5916" : "?");
+    const where = (pin) => pin.hole ?? (p.offboard ? "\u30DC\u30FC\u30C9\u5916" : pin.terminal ? "\u7AEF\u5B50" : "?");
     lines.push(`  ${p.id} (${p.type}): ${p.pins.map((pin) => `${pin.name}=${where(pin)}`).join(" ")}`);
   }
   lines.push("\u30CD\u30C3\u30C8 (2\u30D4\u30F3\u4EE5\u4E0A\u304C\u3064\u306A\u304C\u3063\u3066\u3044\u308B\u3082\u306E):");
@@ -1541,9 +1563,9 @@ function findFreeSpot(result, def, params = {}) {
   const covered = coveredHoles(result);
   for (const [hole, origin] of result.board.holes) {
     if (!/^[a-j]/.test(hole)) continue;
-    const holes = layout.map((p) => result.board.holeAt(origin.x + p.x, origin.y + p.y));
-    if (holes.some((h) => !h || result.occupied.has(h) || covered.has(h))) continue;
-    const strips = holes.filter((_, i) => !internal.has(layout[i].name)).map(stripOf);
+    const holes = layout.map((p) => p.insert === false ? void 0 : result.board.holeAt(origin.x + p.x, origin.y + p.y));
+    if (holes.some((h) => h === null || h && (result.occupied.has(h) || covered.has(h)))) continue;
+    const strips = holes.filter((h, i) => h && !internal.has(layout[i].name)).map(stripOf);
     if (new Set(strips).size !== strips.length) continue;
     return { at: hole, pins: holes };
   }
@@ -1552,9 +1574,10 @@ function findFreeSpot(result, def, params = {}) {
 function coveredHoles(result) {
   const covered = /* @__PURE__ */ new Set();
   for (const part of result.parts) {
-    if (part.def.mount !== "rigid" || part.pins.length < 2 || part.offboard) continue;
-    const xs = part.pins.map((p) => p.x);
-    const ys = part.pins.map((p) => p.y);
+    const inserted = part.pins.filter((p) => !p.terminal);
+    if (part.def.mount !== "rigid" || inserted.length < 2 || part.offboard) continue;
+    const xs = inserted.map((p) => p.x);
+    const ys = inserted.map((p) => p.y);
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
     for (const [hole, p] of result.board.holes) {
       if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) covered.add(hole);
@@ -1802,7 +1825,7 @@ var fail = (msg) => {
 };
 var ID_PREFIX = {
   resistor: "R",
-  led: "D",
+  led: "LED",
   diode: "D",
   capacitor: "C",
   electrolytic: "C",
@@ -1819,7 +1842,7 @@ var ID_PREFIX = {
   dht11: "U",
   hcsr04: "U",
   relay: "K",
-  rgbled: "D",
+  rgbled: "LED",
   pot: "VR",
   lcd1602: "LCD",
   speaker: "SP",
@@ -2214,13 +2237,14 @@ function renderSvg(result, options = {}) {
   };
   const pad = 1;
   const b = contentBounds(result, options.margin ?? 0);
-  const vb = options.viewBox ? String(options.viewBox).split(/[\s,]+/).map(Number) : [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2];
   const captions2 = (options.captions ?? true) && tl?.captions.length > 0;
+  const capRoom = captions2 ? 2.4 : 0;
+  const vb = options.viewBox ? String(options.viewBox).split(/[\s,]+/).map(Number) : [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2 + capRoom];
   const body = [
     g(drawBoard(board), { class: "board" }),
     g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params))).join(""), { class: "parts" }),
     g(result.wires.map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
-    g(result.parts.filter((p) => p.offboard).map(drawTerminals).join(""), { class: "terminals" }),
+    g(result.parts.map(drawTerminals).join(""), { class: "terminals" }),
     g(result.overlays.map((o) => drawOverlay(o, ctxFor(o.id, overlayAnimate))).join(""), { class: "overlays" }),
     labels ? g(result.parts.map(drawLabel).join(""), { class: "labels", "pointer-events": "none" }) : "",
     captions2 ? drawCaptions(tl, vb, animEls, svgId, animate, stateOf) : "",
@@ -2259,7 +2283,7 @@ function contentBounds(result, margin = 0) {
   return { x: x0 - margin, y: y0 - margin, w: x1 - x0 + 2 * margin, h: y1 - y0 + 2 * margin };
 }
 function drawTerminals(part) {
-  return part.pins.map(
+  return part.pins.filter((p) => part.offboard || p.terminal).map(
     (p) => circle(p.x, p.y, 0.26, {
       fill: "#e0c060",
       stroke: "#7a6420",
@@ -2377,10 +2401,12 @@ function drawWire(w, ctx, drawIn = null) {
   );
 }
 function drawLabel(part) {
+  const opt = part.inst.idLabel;
+  if (opt === false) return "";
   const xs = part.pins.map((p) => p.x);
   const ys = part.pins.map((p) => p.y);
-  const x = part.def.mount === "leads" ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs);
-  const y = part.def.mount === "leads" ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95;
+  const x = (part.def.mount === "leads" ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs)) + (Number(opt?.dx) || 0);
+  const y = (part.def.mount === "leads" ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95) + (Number(opt?.dy) || 0);
   return text(x, y, part.id, {
     "font-size": 0.5,
     "font-weight": "bold",
@@ -2397,7 +2423,7 @@ function drawProblems(result) {
   for (const part of result.parts) {
     if (part.offboard) continue;
     for (const p of part.pins) {
-      if (!p.hole) out2.push(circle(p.x, p.y, 0.35, { fill: "none", stroke: "#d50000", "stroke-width": 0.1 }));
+      if (!p.hole && !p.terminal) out2.push(circle(p.x, p.y, 0.35, { fill: "none", stroke: "#d50000", "stroke-width": 0.1 }));
     }
   }
   return out2.join("");
@@ -2495,7 +2521,7 @@ function renderAssemblySvg(result, options) {
     };
     const s = plan.stepOf.has(p.id) ? plan.start(plan.stepOf.get(p.id)) + plan.T.lead : 0;
     animated(p.id, rampTimes(s, plan.T.move), move);
-    const inner = drawPart(p, ctxStatic(p.id, p.def.animate, p.params)) + (labels ? drawLabel(p) : "") + (p.offboard ? drawTerminals(p) : "");
+    const inner = drawPart(p, ctxStatic(p.id, p.def.animate, p.params)) + (labels ? drawLabel(p) : "") + drawTerminals(p);
     return g(inner, { "data-asm": p.id, style: move(t) });
   });
   const wires = result.wires.map((w) => {

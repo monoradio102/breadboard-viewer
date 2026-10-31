@@ -29,6 +29,7 @@ bb.apply([{ op: "addPart", type: "led", at: "a20", color: "green" }])  // → ["
 bb.addPart("resistor", { pins: ["a10", "a14"], value: "1k" })          // → "R1"
 bb.move("R1", "b10")
 bb.addWire("c14", "T-14", "black")
+bb.load(json)       // → { ok, errors, warnings, parts, wires }
 bb.check()          // 検証結果とネットリスト
 bb.inspect("a10")   // { hole, occupant, net }
 bb.parts()          // 使える部品

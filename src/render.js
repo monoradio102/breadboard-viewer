@@ -61,13 +61,14 @@ export function renderSvg(result, options = {}) {
 
   const pad = 1;
   const b = contentBounds(result, options.margin ?? 0);
-  const vb = options.viewBox ? String(options.viewBox).split(/[\s,]+/).map(Number) : [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2];
   const captions = (options.captions ?? true) && tl?.captions.length > 0;
+  const capRoom = captions ? 2.4 : 0; // the caption band sits below the content, not on it
+  const vb = options.viewBox ? String(options.viewBox).split(/[\s,]+/).map(Number) : [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2 + capRoom];
   const body = [
     g(drawBoard(board), { class: "board" }),
     g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params))).join(""), { class: "parts" }),
     g(result.wires.map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
-    g(result.parts.filter((p) => p.offboard).map(drawTerminals).join(""), { class: "terminals" }),
+    g(result.parts.map(drawTerminals).join(""), { class: "terminals" }),
     g(result.overlays.map((o) => drawOverlay(o, ctxFor(o.id, overlayAnimate))).join(""), { class: "overlays" }),
     labels ? g(result.parts.map(drawLabel).join(""), { class: "labels", "pointer-events": "none" }) : "",
     captions ? drawCaptions(tl, vb, animEls, svgId, animate, stateOf) : "",
@@ -118,9 +119,11 @@ export function contentBounds(result, margin = 0) {
   return { x: x0 - margin, y: y0 - margin, w: x1 - x0 + 2 * margin, h: y1 - y0 + 2 * margin };
 }
 
-// Connector marks on the pins of off-board parts; wires can be dragged from / to them.
+// Connector marks on the pins of off-board parts and on terminals (insert: false);
+// wires can be dragged from / to them.
 function drawTerminals(part) {
   return part.pins
+    .filter((p) => part.offboard || p.terminal)
     .map((p) =>
       circle(p.x, p.y, 0.26, {
         fill: "#e0c060",
@@ -265,11 +268,14 @@ function drawWire(w, ctx, drawIn = null) {
   );
 }
 
+// The part id next to the part. inst.idLabel: false hides it, { dx, dy } moves it (pitch units).
 function drawLabel(part) {
+  const opt = part.inst.idLabel;
+  if (opt === false) return "";
   const xs = part.pins.map((p) => p.x);
   const ys = part.pins.map((p) => p.y);
-  const x = part.def.mount === "leads" ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs);
-  const y = part.def.mount === "leads" ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95;
+  const x = (part.def.mount === "leads" ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs)) + (Number(opt?.dx) || 0);
+  const y = (part.def.mount === "leads" ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95) + (Number(opt?.dy) || 0);
   return text(x, y, part.id, {
     "font-size": 0.5,
     "font-weight": "bold",
@@ -287,7 +293,7 @@ function drawProblems(result) {
   for (const part of result.parts) {
     if (part.offboard) continue;
     for (const p of part.pins) {
-      if (!p.hole) out.push(circle(p.x, p.y, 0.35, { fill: "none", stroke: "#d50000", "stroke-width": 0.1 }));
+      if (!p.hole && !p.terminal) out.push(circle(p.x, p.y, 0.35, { fill: "none", stroke: "#d50000", "stroke-width": 0.1 }));
     }
   }
   return out.join("");
@@ -411,7 +417,7 @@ function renderAssemblySvg(result, options) {
     };
     const s = plan.stepOf.has(p.id) ? plan.start(plan.stepOf.get(p.id)) + plan.T.lead : 0;
     animated(p.id, rampTimes(s, plan.T.move), move);
-    const inner = drawPart(p, ctxStatic(p.id, p.def.animate, p.params)) + (labels ? drawLabel(p) : "") + (p.offboard ? drawTerminals(p) : "");
+    const inner = drawPart(p, ctxStatic(p.id, p.def.animate, p.params)) + (labels ? drawLabel(p) : "") + drawTerminals(p);
     return g(inner, { "data-asm": p.id, style: move(t) });
   });
 

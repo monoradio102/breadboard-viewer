@@ -23,8 +23,8 @@ test("addPart picks an id and a free spot when no position is given", () => {
 
 test("addPart with at turns leads parts into explicit pins", () => {
   const { circuit } = applyOps({ board: "half" }, [{ op: "addPart", type: "led", at: "a10", rot: 90 }]);
-  assert.deepEqual(part(circuit, "D1").pins, ["a10", "b10"]);
-  assert.equal(part(circuit, "D1").at, undefined);
+  assert.deepEqual(part(circuit, "LED1").pins, ["a10", "b10"]);
+  assert.equal(part(circuit, "LED1").at, undefined);
 });
 
 test("move shifts leads parts and keeps the pins style", () => {
@@ -104,10 +104,10 @@ test("off-board parts: pos placement, pin-reference wires, nets", () => {
 test("off-board parts move back onto the board and take their wires along on rename / remove", () => {
   let { circuit } = applyOps({ board: "half" }, [
     { op: "addPart", type: "led", pos: [3, -5] },
-    { op: "addWire", from: "D1.A", to: "a5" },
+    { op: "addWire", from: "LED1.A", to: "a5" },
     { op: "animate", target: "W1", keys: [{ t: 0, flow: true }] },
   ]);
-  circuit = applyOps(circuit, [{ op: "update", id: "D1", set: { id: "LED" } }]).circuit;
+  circuit = applyOps(circuit, [{ op: "update", id: "LED1", set: { id: "LED" } }]).circuit;
   assert.equal(circuit.wires[0].from, "LED.A");
   const onBoard = applyOps(circuit, [{ op: "move", id: "LED", to: "c10" }]).circuit;
   assert.deepEqual(onBoard.parts[0].pins, ["c10", "c11"]);

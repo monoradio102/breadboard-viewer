@@ -35,7 +35,13 @@ export function fromJson(def) {
   }
   const scale = def.units === "mm" ? MM : 1;
   const o = def.pins[0];
-  const pins = def.pins.map((p) => ({ name: String(p.name), x: (p.x - o.x) * scale, y: (p.y - o.y) * scale }));
+  // insert: false = a terminal (screw terminal, solder pad, lead) that is not pushed into a hole
+  const pins = def.pins.map((p) => ({
+    name: String(p.name),
+    x: (p.x - o.x) * scale,
+    y: (p.y - o.y) * scale,
+    ...(p.insert === false ? { insert: false } : {}),
+  }));
   const mount = def.mount === "leads" ? "leads" : "rigid";
   const shapes = def.shapes ?? [];
   const sprites = def.sprites ?? [];

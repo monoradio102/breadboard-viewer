@@ -34,9 +34,9 @@ const fail = (msg) => {
 };
 
 const ID_PREFIX = {
-  resistor: "R", led: "D", diode: "D", capacitor: "C", electrolytic: "C", cds: "CDS", transistor: "Q",
+  resistor: "R", led: "LED", diode: "D", capacitor: "C", electrolytic: "C", cds: "CDS", transistor: "Q",
   regulator: "U", button: "SW", trimmer: "VR", buzzer: "BZ", header: "J", motor: "M", servo: "SV", seg7: "DS",
-  dht11: "U", hcsr04: "U", relay: "K", rgbled: "D", pot: "VR", lcd1602: "LCD",
+  dht11: "U", hcsr04: "U", relay: "K", rgbled: "LED", pot: "VR", lcd1602: "LCD",
   speaker: "SP", battery: "BT",
 };
 

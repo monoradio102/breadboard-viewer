@@ -10,6 +10,7 @@ import { WIRE_COLORS, renderBounds, renderSvg } from "./render.js";
 const STORAGE_KEY = "breadboard-viewer:last";
 const CAPTIONS_KEY = "breadboard-viewer:captions";
 const LIBRARY_KEY = "breadboard-viewer:library";
+const PANELS_KEY = "breadboard-viewer:panels";
 const PART_MIME = "application/x-breadboard-part";
 
 const $ = (id) => document.getElementById(id);
@@ -70,12 +71,18 @@ function commit(next, { record = true, updateEditor = true } = {}) {
   if (selection && !exists(selection)) {
     selection = null;
   }
-  draw();
+  // text first, so a drawing problem never leaves the title / JSON / nets stale
   if (updateEditor) el.editor.value = stringifyCircuit(circuit);
   if (document.activeElement !== el.title) el.title.value = circuit.title ?? "";
   el.board.value = circuit.board ?? "half";
   showMessages(result.errors, result.warnings);
   el.nets.textContent = describe({ ...result, errors: [], warnings: [] });
+  try {
+    draw();
+  } catch (e) {
+    showMessages(result.errors, result.warnings, `描画できませんでした: ${e.message}`);
+    console.error(e);
+  }
   el.undo.disabled = !undoStack.past.length;
   el.redo.disabled = !undoStack.future.length;
   renderPartList();
@@ -85,6 +92,11 @@ function commit(next, { record = true, updateEditor = true } = {}) {
   } catch {
     // storage unavailable (private mode etc.)
   }
+}
+
+// Summary for agents: { ok, errors, warnings, parts, wires }.
+function report() {
+  return { ok: result.errors.length === 0, errors: [...result.errors], warnings: [...result.warnings], parts: result.parts.length, wires: result.wires.length };
 }
 
 // Applies ops and records one undo step. Returns the ids the ops created / touched.
@@ -150,10 +162,12 @@ function fitView() {
   const r = renderBounds(result, { assembly: assemblyMode });
   const b = { x: r.x - 1.5, y: r.y - 1.5, w: r.w + 3, h: r.h + 3 };
   const { w: sw, h: sh } = stageSize();
-  const k = Math.min(sw / b.w, sh / b.h); // px per pitch unit
+  // keep the bottom free for the caption layer
+  const capPx = showCaptions && activeTimeline()?.captions?.length ? Math.min(70, sh * 0.2) : 0;
+  const k = Math.min(sw / b.w, (sh - capPx) / b.h); // px per pitch unit
   const w = sw / k;
   const h = sh / k;
-  view = { x: b.x + b.w / 2 - w / 2, y: b.y + b.h / 2 - h / 2, w, h };
+  view = { x: b.x + b.w / 2 - w / 2, y: b.y + b.h / 2 - (sh - capPx) / k / 2, w, h };
 }
 
 // Updates the view without re-rendering (pan / zoom must stay smooth).
@@ -260,6 +274,35 @@ function goToStep(k) {
 }
 
 el.assembly.addEventListener("click", () => setAssemblyMode(!assemblyMode));
+
+// ---- side panels ----
+
+const layoutEl = document.querySelector(".layout");
+
+function setPanels({ left, right }) {
+  layoutEl.classList.toggle("no-left", !left);
+  layoutEl.classList.toggle("no-right", !right);
+  $("btn-toggle-left").classList.toggle("off", !left);
+  $("btn-toggle-right").classList.toggle("off", !right);
+  try {
+    localStorage.setItem(PANELS_KEY, JSON.stringify({ left, right }));
+  } catch {
+    // storage unavailable
+  }
+}
+
+function panels() {
+  return { left: !layoutEl.classList.contains("no-left"), right: !layoutEl.classList.contains("no-right") };
+}
+
+$("btn-toggle-left").addEventListener("click", () => setPanels({ ...panels(), left: !panels().left }));
+$("btn-toggle-right").addEventListener("click", () => setPanels({ ...panels(), right: !panels().right }));
+try {
+  const saved = JSON.parse(localStorage.getItem(PANELS_KEY) ?? "null");
+  if (saved) setPanels({ left: saved.left !== false, right: saved.right !== false });
+} catch {
+  // keep both panels
+}
 function currentStep() {
   activeTimeline(); // makes sure asmPlan exists
   return asmPlan.stepAt(localTime());
@@ -375,17 +418,17 @@ function holeNear(pt, radius = 0.5) {
   return Math.hypot(pt.x - x, pt.y - y) <= radius ? result.board.holeAt(x, y) : null;
 }
 
-// A wire end under the pointer: a hole, or a pin of an off-board part ("SV1.SIG").
+// A wire end under the pointer: a terminal ("SV1.SIG": pin of an off-board part, or a pin
+// with insert: false) or a hole. Terminals win, since one may sit between two holes.
 function endNear(pt) {
-  const hole = holeNear(pt);
-  if (hole) return { ref: hole, pos: result.board.pos(hole) };
   for (const part of result.parts) {
-    if (!part.offboard) continue;
     for (const p of part.pins) {
-      if (Math.hypot(pt.x - p.x, pt.y - p.y) <= 0.45) return { ref: `${part.id}.${p.name}`, pos: { x: p.x, y: p.y } };
+      if (!part.offboard && !p.terminal) continue;
+      if (Math.hypot(pt.x - p.x, pt.y - p.y) <= 0.4) return { ref: `${part.id}.${p.name}`, pos: { x: p.x, y: p.y } };
     }
   }
-  return null;
+  const hole = holeNear(pt);
+  return hole ? { ref: hole, pos: result.board.pos(hole) } : null;
 }
 
 function onBoard(x, y) {
@@ -675,7 +718,7 @@ function renderInspector() {
       const set = (v) => tryApply([{ op: "update", id, set: { [key]: typeof spec.default === "number" ? Number(v) : v } }]);
       box.append(field(key, part.params[key] ?? "", set, spec.options, spec.description));
     }
-    box.append(node("p", part.pins.map((p) => `${p.name}=${p.hole ?? (part.offboard ? "ボード外" : "?")}`).join("  "), "pins"));
+    box.append(node("p", part.pins.map((p) => `${p.name}=${p.hole ?? (part.offboard ? "ボード外" : p.terminal ? "端子" : "?")}`).join("  "), "pins"));
   } else {
     const colors = Object.keys(WIRE_COLORS);
     box.append(field("color", wire.color ?? "blue", (v) => tryApply([{ op: "update", id, set: { color: v } }]), colors));
@@ -1082,7 +1125,12 @@ window.bb = {
   /** Current circuit JSON (a copy). */
   get: () => structuredClone(circuit),
   /** Replace the circuit (object, JSON text, or exported SVG text). */
-  load: (c) => commit(typeof c === "string" ? parseCircuitText(c) : c),
+  load: (c) => {
+    selection = null;
+    view = null;
+    commit(typeof c === "string" ? parseCircuitText(c) : c);
+    return report();
+  },
   /** My parts library: list / add definitions (kept in this browser). */
   library: () => structuredClone(library),
   addToLibrary: (defs) => addToLibrary(Array.isArray(defs) ? defs : [defs]),

@@ -338,11 +338,21 @@ button.danger {
     height: auto;
   }
 
+  /* in a single column the stage cannot grow into the remaining space: give it a height,
+     and show it before the long parts list */
   .stage-area {
-    height: 60vh;
+    flex: none;
+    height: 65vh;
   }
 
-  .layout {
+  .stage-wrap {
+    order: -1;
+  }
+
+  .layout,
+  .layout.no-left,
+  .layout.no-right,
+  .layout.no-left.no-right {
     grid-template-columns: 1fr;
   }
 
@@ -431,6 +441,11 @@ button.danger {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+}
+
+.player label {
+  white-space: nowrap;
 }
 
 .player[hidden] {
@@ -534,4 +549,26 @@ button.danger {
 
 .step-row button {
   padding: 2px 6px;
+}
+
+/* collapsible side panels */
+.layout.no-left {
+  grid-template-columns: 1fr 380px;
+}
+
+.layout.no-right {
+  grid-template-columns: 240px 1fr;
+}
+
+.layout.no-left.no-right {
+  grid-template-columns: 1fr;
+}
+
+.layout.no-left .parts-panel,
+.layout.no-right .editor-panel {
+  display: none;
+}
+
+.panel-toggle.off {
+  opacity: 0.55;
 }

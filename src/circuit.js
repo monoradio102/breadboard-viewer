@@ -5,7 +5,7 @@ import { spriteError } from "./svg.js";
 import { createRegistry } from "./parts/registry.js";
 
 export const FORMAT_VERSION = 1;
-const RESERVED = new Set(["id", "type", "at", "pos", "rot", "pins", "note", "state"]);
+const RESERVED = new Set(["id", "type", "at", "pos", "rot", "pins", "note", "state", "idLabel"]);
 const ROTATIONS = [0, 90, 180, 270];
 
 // Returns { board, registry, parts, wires, errors, warnings, nets }.
@@ -116,7 +116,24 @@ export function resolveCircuit(circuit) {
     if (!parts.some((p) => p.id === id)) warnings.push(`assembly.tray: "${id}" という部品はありません`);
     else if (!Array.isArray(assembly.tray[id]) || assembly.tray[id].length !== 2) warnings.push(`assembly.tray.${id} は [x, y] です`);
   }
-  return { board, registry, parts, wires, overlays, steps, assembly, nets, netOf, netOfHole: netOf, occupied, timeline, errors, warnings };
+  // the same problem can be found more than once (e.g. one per animation key): report it once
+  const unique = (list) => [...new Set(list)];
+  return {
+    board,
+    registry,
+    parts,
+    wires,
+    overlays,
+    steps,
+    assembly,
+    nets,
+    netOf,
+    netOfHole: netOf,
+    occupied,
+    timeline,
+    errors: unique(errors),
+    warnings: unique(warnings),
+  };
 }
 
 function placePart(board, def, inst, id, errors, warnings) {
@@ -175,6 +192,8 @@ function placePart(board, def, inst, id, errors, warnings) {
       const [dx, dy] = rotate(p.x, p.y, rot);
       const x = origin.x + dx;
       const y = origin.y + dy;
+      // a terminal is wired by "PartId.PinName", not inserted into a hole
+      if (p.insert === false) return { name: p.name, hole: null, node: `${id}.${p.name}`, x, y, terminal: true };
       const hole = board.holeAt(x, y);
       if (!hole) errors.push(`${id}.${p.name}: ピンが穴の位置に来ません (ボード外か溝の上)`);
       return { name: p.name, hole, node: hole, x, y };
@@ -256,7 +275,7 @@ export function describe(result) {
   for (const w of result.warnings) lines.push(`WARN:  ${w}`);
   lines.push(`部品 ${result.parts.length} 個, 配線 ${result.wires.length} 本`);
   for (const p of result.parts) {
-    const where = (pin) => pin.hole ?? (p.offboard ? "ボード外" : "?");
+    const where = (pin) => pin.hole ?? (p.offboard ? "ボード外" : pin.terminal ? "端子" : "?");
     lines.push(`  ${p.id} (${p.type}): ${p.pins.map((pin) => `${pin.name}=${where(pin)}`).join(" ")}`);
   }
   lines.push("ネット (2ピン以上がつながっているもの):");
@@ -288,9 +307,10 @@ export function findFreeSpot(result, def, params = {}) {
   const covered = coveredHoles(result);
   for (const [hole, origin] of result.board.holes) {
     if (!/^[a-j]/.test(hole)) continue;
-    const holes = layout.map((p) => result.board.holeAt(origin.x + p.x, origin.y + p.y));
-    if (holes.some((h) => !h || result.occupied.has(h) || covered.has(h))) continue;
-    const strips = holes.filter((_, i) => !internal.has(layout[i].name)).map(stripOf);
+    // terminals (insert: false) need no hole
+    const holes = layout.map((p) => (p.insert === false ? undefined : result.board.holeAt(origin.x + p.x, origin.y + p.y)));
+    if (holes.some((h) => h === null || (h && (result.occupied.has(h) || covered.has(h))))) continue;
+    const strips = holes.filter((h, i) => h && !internal.has(layout[i].name)).map(stripOf);
     if (new Set(strips).size !== strips.length) continue;
     return { at: hole, pins: holes };
   }
@@ -301,9 +321,10 @@ export function findFreeSpot(result, def, params = {}) {
 function coveredHoles(result) {
   const covered = new Set();
   for (const part of result.parts) {
-    if (part.def.mount !== "rigid" || part.pins.length < 2 || part.offboard) continue;
-    const xs = part.pins.map((p) => p.x);
-    const ys = part.pins.map((p) => p.y);
+    const inserted = part.pins.filter((p) => !p.terminal);
+    if (part.def.mount !== "rigid" || inserted.length < 2 || part.offboard) continue;
+    const xs = inserted.map((p) => p.x);
+    const ys = inserted.map((p) => p.y);
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
     for (const [hole, p] of result.board.holes) {
       if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) covered.add(hole);
