@@ -572,3 +572,16 @@ button.danger {
 .panel-toggle.off {
   opacity: 0.55;
 }
+
+.msg.advice-head {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.msg.advice {
+  color: var(--accent);
+}
+
+.msg.advice::before {
+  content: "参考: ";
+}

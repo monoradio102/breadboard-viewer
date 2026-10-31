@@ -3,11 +3,17 @@
 import { esc, g, n, rect, shapesToSvg, spriteError, spriteImage, tag, text } from "../svg.js";
 import { BUILTIN_PARTS } from "./builtin.js";
 import { centroid, leg } from "./common.js";
+import { builtinRoles, jsonRole } from "./roles.js";
 
 const MM = 1 / 2.54;
 
 export function createRegistry(partDefs = []) {
-  const parts = new Map(BUILTIN_PARTS.map((p) => [p.type, { ...p, builtin: true }]));
+  const parts = new Map(
+    BUILTIN_PARTS.map((p) => [
+      p.type,
+      { ...p, builtin: true, roles: (params) => builtinRoles(p.type, params, p.pins(params).map((x) => x.name)) },
+    ]),
+  );
   const errors = [];
   for (const def of partDefs) {
     try {
@@ -72,6 +78,8 @@ export function fromJson(def) {
       ...(display ? Object.fromEntries(values("text").map((v, i) => [`text:${i}`, (s) => ({ opacity: String(s.text) === v ? 1 : 0 })])) : {}),
     }),
     pins: () => pins,
+    // electrical roles for the advisory checks ("role" on JSON pins)
+    roles: () => Object.fromEntries(def.pins.map((p) => [String(p.name), jsonRole(p)]).filter(([, r]) => r)),
     // drawing bounds relative to the first pin, in pitch units (only needed when it leaves the board)
     extent: def.extent ? [def.extent[0] - o.x, def.extent[1] - o.y, def.extent[2] - o.x, def.extent[3] - o.y].map((v) => v * scale) : undefined,
     internal: () => def.internal ?? [],

@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "title": "XIAO ESP32S3 で音声入出力 (I2S マイク + アンプ)",
+  "board": "full",
+  "parts": [
+    { "id": "U1", "type": "xiao", "at": "h5", "model": "ESP32S3" },
+    { "id": "MIC1", "type": "inmp441", "at": "f14", "idLabel": { "dx": -2.2, "dy": -1.2 } },
+    { "id": "AMP1", "type": "max98357a", "at": "a20" },
+    { "id": "SP1", "type": "speaker", "pos": [23, -9], "label": "4Ω 3W" },
+    { "id": "LED1", "type": "ws2812b", "at": "a30" },
+    { "id": "DISP1", "type": "ssd1306", "at": "j38" }
+  ],
+  "wires": [
+    { "id": "W1", "from": "a7", "to": "T+7", "color": "red", "note": "3V3 → 上の + レール" },
+    { "id": "W2", "from": "a6", "to": "T-5", "color": "black", "note": "GND" },
+    { "id": "W3", "from": "b5", "to": "B+3", "color": "orange", "shape": "curve", "via": [[1.1, 5], [1.1, 16.5]], "note": "5V → 下の + レール" },
+    { "id": "W4", "from": "T-3", "to": "B-3", "color": "black", "note": "GND どうし" },
+    { "id": "W5", "from": "a15", "to": "T+15", "color": "red" },
+    { "id": "W6", "from": "b14", "to": "T-13", "color": "black" },
+    { "id": "W7", "from": "g14", "to": "B-12", "color": "black", "note": "L/R = GND (左チャンネル)" },
+    { "id": "WS", "from": "i6", "to": "i15", "color": "purple", "bend": 0.05, "note": "D1 → WS" },
+    { "id": "SCK", "from": "j7", "to": "j16", "color": "green", "bend": 0.05, "note": "D2 → SCK" },
+    { "id": "SD", "from": "i8", "to": "c16", "color": "blue", "bend": -0.25, "note": "SD → D3" },
+    { "id": "W8", "from": "h15", "to": "b20", "color": "purple", "bend": -0.1, "note": "LRC (D1 と共通)" },
+    { "id": "W9", "from": "h16", "to": "b21", "color": "green", "bend": -0.1, "note": "BCLK (D2 と共通)" },
+    { "id": "DIN", "from": "j5", "to": "c22", "color": "yellow", "bend": 0.22, "note": "DIN ← D0" },
+    { "id": "W10", "from": "c24", "to": "c26", "color": "white", "note": "SD を Vin へ (有効)" },
+    { "id": "W11", "from": "e25", "to": "B-25", "color": "black" },
+    { "id": "W12", "from": "e26", "to": "B+27", "color": "orange" },
+    { "id": "W13", "from": "AMP1.SPK+", "to": "SP1.+", "color": "red" },
+    { "id": "W14", "from": "AMP1.SPK-", "to": "SP1.-", "color": "black" },
+    { "id": "W15", "from": "i11", "to": "b30", "color": "brown", "bend": -0.12, "note": "DIN ← D6" },
+    { "id": "W16", "from": "e31", "to": "B+31", "color": "orange" },
+    { "id": "W17", "from": "e32", "to": "B-33", "color": "black" },
+    { "id": "W18", "from": "f38", "to": "T-37", "color": "black" },
+    { "id": "W19", "from": "f39", "to": "T+39", "color": "red" },
+    { "id": "W20", "from": "g40", "to": "j10", "color": "yellow", "bend": 0.08, "note": "SCL ← D5" },
+    { "id": "W21", "from": "h41", "to": "j9", "color": "blue", "bend": 0.1, "note": "SDA ← D4" }
+  ],
+  "animation": {
+    "duration": 4000,
+    "loop": true,
+    "tracks": [
+      {
+        "target": "DISP1",
+        "keys": [
+          {
+            "t": 0,
+            "text": "Listening..."
+          },
+          {
+            "t": 2000,
+            "text": "Speaking\nHello!"
+          }
+        ]
+      },
+      {
+        "target": "LED1",
+        "keys": [
+          {
+            "t": 0,
+            "r": 0,
+            "g": 0.2,
+            "b": 1
+          },
+          {
+            "t": 2000,
+            "r": 0,
+            "g": 1,
+            "b": 0.2
+          }
+        ]
+      },
+      {
+        "target": "SD",
+        "keys": [
+          {
+            "t": 0,
+            "flow": true
+          },
+          {
+            "t": 2000,
+            "flow": false
+          }
+        ]
+      },
+      {
+        "target": "DIN",
+        "keys": [
+          {
+            "t": 0,
+            "flow": false
+          },
+          {
+            "t": 2000,
+            "flow": true
+          }
+        ]
+      },
+      {
+        "target": "SP1",
+        "keys": [
+          {
+            "t": 0,
+            "on": false
+          },
+          {
+            "t": 2000,
+            "on": true
+          }
+        ]
+      }
+    ],
+    "captions": [
+      {
+        "t": 0,
+        "text": "マイク (INMP441) から I2S で音声を取り込む"
+      },
+      {
+        "t": 2000,
+        "text": "アンプ (MAX98357A) へ I2S で送ってスピーカーから再生"
+      }
+    ]
+  }
+}

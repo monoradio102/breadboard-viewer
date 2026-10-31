@@ -96,7 +96,14 @@ function commit(next, { record = true, updateEditor = true } = {}) {
 
 // Summary for agents: { ok, errors, warnings, parts, wires }.
 function report() {
-  return { ok: result.errors.length === 0, errors: [...result.errors], warnings: [...result.warnings], parts: result.parts.length, wires: result.wires.length };
+  return {
+    ok: result.errors.length === 0,
+    errors: [...result.errors],
+    warnings: [...result.warnings],
+    advice: [...(result.advice ?? [])],
+    parts: result.parts.length,
+    wires: result.wires.length,
+  };
 }
 
 // Applies ops and records one undo step. Returns the ids the ops created / touched.
@@ -383,13 +390,15 @@ function tickPlayer() {
 }
 requestAnimationFrame(tickPlayer);
 
-function showMessages(errors, warnings, extra) {
+// advice: the advisory electrical checks (参考), shown apart from errors and warnings
+function showMessages(errors, warnings, extra, advice = result.advice ?? []) {
   const items = [...(extra ? [["error", extra]] : []), ...errors.map((m) => ["error", m]), ...warnings.map((m) => ["warn", m])];
-  el.messages.replaceChildren(
-    ...(items.length
-      ? items.map(([kind, m]) => node("div", m, `msg ${kind}`))
-      : [node("div", "問題は見つかりません", "msg ok")]),
-  );
+  const nodes = items.length ? items.map(([kind, m]) => node("div", m, `msg ${kind}`)) : [node("div", "配線の構造に問題は見つかりません", "msg ok")];
+  if (advice.length) {
+    nodes.push(node("div", "参考 (電気的なよくあるミス。出ないことは回路が正しいことを意味しません):", "msg advice-head"));
+    nodes.push(...advice.map((m) => node("div", m, "msg advice")));
+  }
+  el.messages.replaceChildren(...nodes);
 }
 
 function flash(message) {

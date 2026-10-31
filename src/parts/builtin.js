@@ -624,6 +624,20 @@ const relay = {
   },
 };
 
+// r / g / b (0..1) -> fill colour and brightness of a glow group
+function rgbGlow(s) {
+  const [r, gg, b] = [s.r, s.g, s.b].map((v) => clamp(Number(v) || 0, 0, 1));
+  const max = Math.max(r, gg, b);
+  const c = (v) => Math.round((max ? v / max : 0) * 255);
+  return { fill: `rgb(${c(r)},${c(gg)},${c(b)})`, opacity: Math.round(max * 1000) / 1000 };
+}
+
+const RGB_STATES = {
+  r: { type: "number", default: 0, description: "赤の明るさ 0〜1" },
+  g: { type: "number", default: 0, description: "緑の明るさ 0〜1" },
+  b: { type: "number", default: 0, description: "青の明るさ 0〜1" },
+};
+
 const rgbled = {
   type: "rgbled",
   name: "フルカラーLED (カソードコモン)",
@@ -636,14 +650,7 @@ const rgbled = {
     g: { type: "number", default: 0, description: "緑の明るさ 0〜1" },
     b: { type: "number", default: 0, description: "青の明るさ 0〜1" },
   },
-  animate: () => ({
-    glow: (s) => {
-      const [r, gg, b] = [s.r, s.g, s.b].map((v) => clamp(Number(v) || 0, 0, 1));
-      const max = Math.max(r, gg, b);
-      const c = (v) => Math.round((max ? v / max : 0) * 255);
-      return { fill: `rgb(${c(r)},${c(gg)},${c(b)})`, opacity: Math.round(max * 1000) / 1000 };
-    },
-  }),
+  animate: () => ({ glow: rgbGlow }),
   pins: () => inline(["R", "K", "G", "B"]),
   render({ pins, anim }) {
     const c = centroid(pins);
@@ -751,6 +758,163 @@ const xiao = {
       text(2.9, mid + 0.45, params.model, { "font-size": 0.42, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central" }) +
       headerPins(pins) +
       pinLabels(pins, w)
+    );
+  },
+};
+
+// ---- modules often used with ESP32 ----
+// Pin order differs between sellers for several of these: the descriptions say so, and
+// pinOrder / width parameters let the circuit match the actual board.
+
+const CHECK_BOARD = "販売元によってピンの並びや寸法が違う場合があります。購入した製品の表記を確認してください。";
+
+// "GND,VCC,SCL,SDA" -> names, falling back to the default when it is not a permutation of it
+function pinOrder(value, fallback) {
+  const names = String(value ?? "").split(/\s*,\s*/).filter(Boolean);
+  const ok = names.length === fallback.length && fallback.every((n) => names.includes(n));
+  return ok ? names : fallback;
+}
+
+const inmp441 = {
+  type: "inmp441",
+  name: "I2Sマイク INMP441",
+  category: "センサ",
+  description: `I2S MEMSマイクの丸型モジュール。3本ずつ2列: SCK の向かいが SD、WS の向かいが VDD、L/R の向かいが GND。VDD は 3.3V。L/R は GND で左チャンネル。${CHECK_BOARD}`,
+  mount: "rigid",
+  params: { width: { default: 4, description: "列間隔 (ピッチ単位)" } },
+  pins: (p) => dualRow(6, Number(p.width) || 4, ["L/R", "WS", "SCK", "SD", "VDD", "GND"]),
+  extent: [-1.9, -5.9, 3.9, 1.9],
+  render({ pins, params, rot }) {
+    const w = Number(params.width) || 4;
+    return (
+      circle(1, -w / 2, Math.max(2.8, w / 2 + 0.9), { fill: "#5b2c86", stroke: "#3a1b58", "stroke-width": 0.08 }) +
+      circle(1, -w / 2, 0.75, { fill: "#d0d4d8", stroke: "#8b9399", "stroke-width": 0.05 }) +
+      circle(1, -w / 2, 0.2, { fill: "#222" }) +
+      headerPins(pins) +
+      pins.map((p) => uprightText(p.x, p.y === 0 ? 0.75 : -w - 0.75, p.name, rot, { "font-size": 0.38, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" })).join("") +
+      uprightText(1, -w / 2 + 1.4, "INMP441", rot, { "font-size": 0.42, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" })
+    );
+  },
+};
+
+const max98357a = {
+  type: "max98357a",
+  name: "I2Sアンプ MAX98357A",
+  category: "出力",
+  description: `I2S D級アンプのモジュール。ヘッダー7本 (LRC, BCLK, DIN, GAIN, SD, GND, Vin) をボードに挿し、スピーカー端子 SPK+ / SPK- はボードに挿さない端子 (配線は "AMP1.SPK+" のように)。Vin は 2.5〜5.5V。${CHECK_BOARD}`,
+  mount: "rigid",
+  params: {},
+  pins: () => [
+    ...inline(["LRC", "BCLK", "DIN", "GAIN", "SD", "GND", "Vin"]),
+    { name: "SPK+", x: 2.3, y: -6.6, insert: false },
+    { name: "SPK-", x: 3.7, y: -6.6, insert: false },
+  ],
+  extent: [-0.9, -7.6, 6.9, 0.7],
+  render({ pins, rot }) {
+    const header = pins.filter((p) => p.y === 0);
+    return (
+      rect(-0.85, -7.5, 7.7, 8.15, { rx: 0.3, fill: "#1f5fa8", stroke: "#164477", "stroke-width": 0.06 }) +
+      rect(1.2, -7.4, 3.6, 1.6, { rx: 0.15, fill: "#2e7d32", stroke: "#1b5e20", "stroke-width": 0.05 }) +
+      rect(2.3, -4.3, 1.4, 1.4, { fill: "#1b1b1b" }) +
+      headerPins(header) +
+      header.map((p) => text(p.x, -0.85, p.name, { "font-size": 0.3, fill: "#fff", "text-anchor": "end", "dominant-baseline": "central", transform: `rotate(90 ${n(p.x)} -0.85)` })).join("") +
+      uprightText(3, -1.9, "MAX98357A", rot, { "font-size": 0.5, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" })
+    );
+  },
+};
+
+const WS2812_PINS = ["DIN", "VCC", "GND"];
+
+const ws2812b = {
+  type: "ws2812b",
+  name: "フルカラーLED WS2812B (1灯基板)",
+  category: "半導体",
+  description: `アドレス指定できるフルカラーLED (NeoPixel) の1灯基板。入力側 (DIN, VCC, GND) をボードに挿し、出力側 (DOUT, VCC2, GND2) は次のLEDへつなぐ端子。r / g / b (0〜1) で発光色をアニメーション。${CHECK_BOARD}`,
+  mount: "rigid",
+  params: { pinOrder: { default: "DIN,VCC,GND", description: "入力側のピンの並び (例: GND,VCC,DIN)" } },
+  states: RGB_STATES,
+  animate: () => ({ glow: rgbGlow }),
+  pins: (p) => [
+    ...inline(pinOrder(p.pinOrder, WS2812_PINS)),
+    ...pinOrder(p.pinOrder, WS2812_PINS).map((name, i) => ({ name: name === "DIN" ? "DOUT" : `${name}2`, x: i, y: -4, insert: false })),
+  ],
+  internal: () => [
+    ["VCC", "VCC2"],
+    ["GND", "GND2"],
+  ],
+  extent: [-0.8, -4.6, 2.8, 0.6],
+  render({ pins, anim }) {
+    return (
+      rect(-0.75, -4.55, 3.5, 5.1, { rx: 0.3, fill: "#1b1b1b", stroke: "#000", "stroke-width": 0.05 }) +
+      headerPins(pins.filter((p) => p.y === 0)) +
+      rect(0.1, -3.1, 1.8, 1.8, { rx: 0.1, fill: "#f2f2f2" }) +
+      circle(1, -2.2, 0.6, { fill: "#d9d9d9" }) +
+      g(circle(1, -2.2, 2.2, { opacity: 0.2 }) + circle(1, -2.2, 1.4, { opacity: 0.4 }) + circle(1, -2.2, 0.7) + circle(1, -2.2, 0.35, { fill: "#fff", opacity: 0.8 }), {
+        ...anim("glow"),
+        "pointer-events": "none",
+      })
+    );
+  },
+};
+
+const SSD1306_PINS = ["GND", "VCC", "SCL", "SDA"];
+
+const ssd1306 = {
+  type: "ssd1306",
+  name: "OLED 0.96インチ SSD1306 (I2C)",
+  category: "表示",
+  description: `128x64 の I2C OLED。ピンの並びは製品により GND,VCC,SCL,SDA と VCC,GND,SCL,SDA があるので pinOrder で合わせる。画面はピンの下側に描く。text でアニメーション。${CHECK_BOARD}`,
+  mount: "rigid",
+  params: {
+    pinOrder: { default: "GND,VCC,SCL,SDA", options: ["GND,VCC,SCL,SDA", "VCC,GND,SCL,SDA"], description: "ピンの並び" },
+  },
+  states: { text: { type: "string", default: "", description: "画面の文字 (\\n で改行)" } },
+  animate: ({ values }) => Object.fromEntries(values("text").map((v, i) => [`text:${i}`, (s) => ({ opacity: String(s.text) === v ? 1 : 0 })])),
+  pins: (p) => inline(pinOrder(p.pinOrder, SSD1306_PINS)),
+  extent: [-3.9, -0.9, 6.9, 10.2],
+  render({ pins, anim, values }) {
+    const size = 0.8;
+    const texts = values("text")
+      .map((v, i) =>
+        tag(
+          "text",
+          { x: -2.9, y: 2.3, "font-size": size, "font-family": "monospace", fill: "#9fe8ff", ...anim(`text:${i}`) },
+          v
+            .split("\n")
+            .slice(0, 6)
+            .map((l, j) => tag("tspan", { x: -2.9, dy: j === 0 ? size : size * 1.2 }, esc(l.slice(0, 18))))
+            .join(""),
+        ),
+      )
+      .join("");
+    return (
+      rect(-3.875, -0.85, 10.75, 10.95, { rx: 0.4, fill: "#1b3a6b", stroke: "#0f2445", "stroke-width": 0.06 }) +
+      rect(-3.3, 1.65, 9.6, 5.7, { fill: "#0b0b0b", stroke: "#333", "stroke-width": 0.08 }) +
+      headerPins(pins) +
+      pins.map((p) => text(p.x, 0.75, p.name, { "font-size": 0.38, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" })).join("") +
+      texts
+    );
+  },
+};
+
+const qwiic = {
+  type: "qwiic",
+  name: "Qwiic 変換ケーブル",
+  category: "コネクタ",
+  description: "Qwiic (JST SH 4ピン) からピンヘッダへの変換ケーブル。GND (黒), 3V3 (赤), SDA (青), SCL (黄)。Qwiic は 3.3V。ケーブルの先のコネクタはピンの上側に描く。",
+  mount: "rigid",
+  params: {},
+  pins: () => inline(["GND", "3V3", "SDA", "SCL"]),
+  extent: [-1.2, -6.6, 4.2, 0.6],
+  render({ rot }) {
+    const cable = ["#263238", "#e53935", "#1e88e5", "#fdd835"]
+      .map((c, i) => tag("path", { d: `M ${i} 0 C ${i} -2 ${1 + i * 0.33} -2.5 ${1 + i * 0.33} -4.4`, fill: "none", stroke: c, "stroke-width": 0.18 }))
+      .join("");
+    return (
+      rect(-0.5, -0.5, 4, 1, { fill: "#222", rx: 0.1 }) +
+      cable +
+      rect(0.4, -6.4, 2.2, 2.0, { rx: 0.2, fill: "#f0f0f0", stroke: "#9e9e9e", "stroke-width": 0.06 }) +
+      uprightText(1.5, -5.4, "Qwiic", rot, { "font-size": 0.42, fill: "#333", "text-anchor": "middle", "dominant-baseline": "central" })
     );
   },
 };
@@ -908,4 +1072,9 @@ export const BUILTIN_PARTS = [
   pico,
   esp32,
   xiao,
+  inmp441,
+  max98357a,
+  ws2812b,
+  ssd1306,
+  qwiic,
 ];

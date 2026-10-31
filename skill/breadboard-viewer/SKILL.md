@@ -40,7 +40,7 @@ node "$SKILL_DIR/bb.mjs" frames circuit.json -o asm --assembly --fps 30         
 
 1. `parts` で部品の `type` とピン名を確かめる
 2. `apply` で部品を置き、配線する (操作の一覧は このフォルダの `OPS.md`)。JSON を直接書いてもよい
-3. 必ず `check` を実行し、エラーがなく、ネットリストが意図どおりか確かめる
+3. 必ず `check` を実行し、エラーがなく、ネットリストが意図どおりか確かめる。`NOTE` (参考) は電気的なよくあるミス (電源どうしのショート、抵抗なしの LED、GND 未接続、電圧の過不足など) なので、意図したものでなければ直す
 4. `render` で画像にして、見た目を確かめる
 5. 動作を説明するときは `animate` / `setAnimation` でアニメーションを付ける。部品の状態で表せない演出は SVG を書いて `addOverlay` で流し込む
 6. 組み方を説明するときは `setSteps` で組み立て手順を書く (`autoSteps` で自動生成もできる)。部品を並べたところから順に配置していく様子を描ける。
@@ -55,6 +55,7 @@ PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx pl
 - 電源レール: `T+5`, `T-5` (上), `B+5`, `B-5` (下)。各レールは端から端まで導通。穴は列 3 から 5 個ずつ、6 列ごと (3-7, 9-13, 15-19, …)
 - 部品の置き方: `at` (1 番ピンの穴) + `rot`、`pins` (抵抗や LED など足を曲げられる部品の穴を個別に)、`pos: [x, y]` (ボードの外)
 - 配線の端: 穴の名前、または `"部品ID.ピン名"` (ボード外の部品のピンや、端子)
+- 独自部品のピンに `"role"` (`gnd` / `supply` + `volts` / `vin` + `vmax` など) を書くと、電気的なチェックに使われる
 - 独自部品のピンに `"insert": false` を付けると、ボードに挿さない端子 (端子台、パッド、リード線) になる。ボードに挿した部品のスピーカー端子などに使う
 - 部品IDのラベルが重なるときは、部品に `"idLabel": {"dx": 1, "dy": -0.5}` (ずらす) か `"idLabel": false` (隠す) を付ける
 - DIP の IC は 1 番ピンを f 行に置くと溝をまたぐ (例: `"at": "f10"`)
@@ -76,5 +77,6 @@ PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx pl
 - [スピーカーで音を鳴らす (ボード外配置)](https://monoradio102.github.io/breadboard-viewer/examples/tone-speaker.json)
 - [独自部品の定義例 (I2C OLED)](https://monoradio102.github.io/breadboard-viewer/examples/oled-custom-part.json)
 - [演出 SVG の例 (抵抗なしで LED をつなぐと…)](https://monoradio102.github.io/breadboard-viewer/examples/led-burnout.json)
+- [XIAO ESP32S3 で音声入出力 (I2S マイク + アンプ + WS2812B + OLED)](https://monoradio102.github.io/breadboard-viewer/examples/xiao-voice.json)
 
 エディタで開くには `https://monoradio102.github.io/breadboard-viewer/?example=<名前>` (例: `?example=motor-servo`)。

@@ -37,7 +37,7 @@ const ID_PREFIX = {
   resistor: "R", led: "LED", diode: "D", capacitor: "C", electrolytic: "C", cds: "CDS", transistor: "Q",
   regulator: "U", button: "SW", trimmer: "VR", buzzer: "BZ", header: "J", motor: "M", servo: "SV", seg7: "DS",
   dht11: "U", hcsr04: "U", relay: "K", rgbled: "LED", pot: "VR", lcd1602: "LCD",
-  speaker: "SP", battery: "BT",
+  speaker: "SP", battery: "BT", inmp441: "MIC", max98357a: "AMP", ws2812b: "LED", ssd1306: "DISP", qwiic: "J",
 };
 
 // Gives every wire an id, so wires can be addressed by ops.

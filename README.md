@@ -22,16 +22,19 @@ claude.ai では [skill/breadboard-viewer.zip](skill/breadboard-viewer.zip) を�
 | [Pico でボタン入力とLED](examples/pico-button.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=pico-button)) | [独自部品 (OLED) の定義例](examples/oled-custom-part.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-custom-part)) |
 | ![スピーカーで音を鳴らす](docs/images/tone-speaker.svg) | ![抵抗なしで LED をつなぐと…](docs/images/led-burnout.svg) |
 | [スピーカー (ボード外に配置)](examples/tone-speaker.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=tone-speaker)) | [演出レイヤー (煙のSVG) の例](examples/led-burnout.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=led-burnout)) |
+| ![XIAO ESP32S3 で音声入出力](docs/images/xiao-voice.svg) | |
+| [XIAO ESP32S3 + I2S マイク・アンプ](examples/xiao-voice.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=xiao-voice)) | |
 
 上の画像は、それぞれ1つのSVGファイルです。アニメーションはSVGの中のCSSで動いていて、回路データも埋め込まれています。
 SVGを保存してエディタにドロップすると、そのまま回路を編集できます。
 画像は `npm run images` で `examples/` から作り直せます。
 
 - 静的ページのみで動きます (GitHub Pagesにそのまま置けます)
-- 秋月電子などで手に入る、定番部品を31種類内蔵しています (抵抗、LED、フルカラーLED、DIP IC、7セグ、LCD1602、DHT11、HC-SR04、リレー、モーター、サーボ、スピーカー、電池ボックス、Arduino Nano、Raspberry Pi Pico、ESP32、XIAO ESP32 など)
+- 秋月電子などで手に入る、定番部品を36種類内蔵しています (抵抗、LED、フルカラーLED、DIP IC、7セグ、LCD1602、DHT11、HC-SR04、リレー、モーター、サーボ、スピーカー、電池ボックス、Arduino Nano、Raspberry Pi Pico、ESP32、XIAO ESP32、I2Sマイク INMP441、I2Sアンプ MAX98357A、WS2812B、OLED SSD1306、Qwiic など)
 - 内蔵されていない部品は、回路ファイルの中にJSONで定義できます ([形式](docs/FORMAT.md))。定義した部品は「マイ部品」ライブラリとして保存・流し込みができます
 - 回路ファイル1つ (JSON) で、独自部品も含めて共有できます。書き出したSVGにも回路データが入っているので、SVGをドロップすれば元の回路に戻せます
 - 回路の検証と、ネットリスト (どのピン同士がつながっているか) の表示ができます
+- 電源どうしのショート、抵抗なしのLED、GNDの未接続、電圧の過不足など、よくあるミスを **参考の警告** として表示します (回路の正しさを保証するものではありません)
 - 動作のアニメーション (LEDの点滅、モーターの回転、サーボ、ボタン操作、信号の流れ、キャプション) を台本として書けます。書き出したSVGは、ファイル単体でもアニメーションします
 - 煙や矢印などの演出は、任意のSVGアニメーションとして流し込めます (安全のため画像として描画し、スクリプトは実行しません)
 - アニメーションは、フレームを指定して透過PNGの連番で書き出せるので、ffmpeg で GIF / MP4 にできます

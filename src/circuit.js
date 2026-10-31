@@ -1,6 +1,7 @@
 // Resolves a circuit JSON into placed parts, validates it and computes the netlist.
 import { boardStrips, createBoard, parseHole } from "./board.js";
 import { buildTimeline } from "./animation.js";
+import { electricalAdvice } from "./erc.js";
 import { spriteError } from "./svg.js";
 import { createRegistry } from "./parts/registry.js";
 
@@ -14,7 +15,7 @@ export function resolveCircuit(circuit) {
   const errors = [];
   const warnings = [];
   if (!circuit || typeof circuit !== "object") {
-    return { errors: ["回路データがオブジェクトではありません"], warnings, parts: [], wires: [], overlays: [], nets: [], netOf: () => null, netOfHole: () => null };
+    return { errors: ["回路データがオブジェクトではありません"], warnings, advice: [], parts: [], wires: [], overlays: [], nets: [], netOf: () => null, netOfHole: () => null };
   }
   let board;
   try {
@@ -133,6 +134,8 @@ export function resolveCircuit(circuit) {
     timeline,
     errors: unique(errors),
     warnings: unique(warnings),
+    // advisory electrical checks (参考): common mistakes, not a guarantee
+    advice: electricalAdvice(parts),
   };
 }
 
@@ -273,6 +276,8 @@ export function describe(result) {
   const lines = [];
   for (const e of result.errors) lines.push(`ERROR: ${e}`);
   for (const w of result.warnings) lines.push(`WARN:  ${w}`);
+  for (const a of result.advice ?? []) lines.push(`NOTE:  (参考) ${a}`);
+  if (result.advice?.length) lines.push("       NOTE は電気的なよくあるミスの参考です。出ないことは回路が正しいことを意味しません");
   lines.push(`部品 ${result.parts.length} 個, 配線 ${result.wires.length} 本`);
   for (const p of result.parts) {
     const where = (pin) => pin.hole ?? (p.offboard ? "ボード外" : pin.terminal ? "端子" : "?");

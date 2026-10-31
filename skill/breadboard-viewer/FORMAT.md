@@ -95,6 +95,11 @@
 | `nano` | TX1, RX0, ..., D13, A0..A7, 5V, VIN | rigid | |
 | `pico` | GP0.., GND.., 3V3, VSYS, VBUS | rigid | |
 | `esp32` | 3V3, EN, IO36.., GND.., 5V | rigid | `width` (列間隔, 既定値10) |
+| `inmp441` | L/R, WS, SCK, SD, VDD, GND | rigid | `width` (列間隔, 既定値4)。I2S マイク |
+| `max98357a` | LRC, BCLK, DIN, GAIN, SD, GND, Vin + 端子 SPK+, SPK- | rigid | I2S アンプ。スピーカー端子はボードに挿さない端子 |
+| `ws2812b` | DIN, VCC, GND + 端子 DOUT, VCC2, GND2 | rigid | `pinOrder` (例: `"GND,VCC,DIN"`)。1灯基板 |
+| `ssd1306` | GND, VCC, SCL, SDA | rigid | `pinOrder` (`"GND,VCC,SCL,SDA"` / `"VCC,GND,SCL,SDA"`)。0.96インチ OLED。画面はピンの下側 |
+| `qwiic` | GND, 3V3, SDA, SCL | rigid | Qwiic 変換ケーブル |
 | `xiao` | D0〜D10, 3V3, GND, 5V | rigid | `model` (ESP32C3 / ESP32S3 / ESP32C6), `width` (列間隔, 既定値6)。D番号とGPIOの対応は種類ごとに公式Wikiで確認 |
 
 同じ名前のピンが複数ある場合は、`GND`, `GND2`, `GND3`… のように番号を付けて区別します。
@@ -160,6 +165,20 @@ DIPパッケージ (`dip`, `ne555` など) は、1番ピンを `f` 行に置く�
 ブレッドボードに挿すピンは、2.54mmの格子上に並んでいる必要があります。
 ピンが穴の位置からずれると「ピンが穴の位置に来ません」というエラーになります。
 表面実装 (SMD) の部品は、変換基板に載せた状態の、2.54mmピッチのピン配置で定義してください。
+
+### ピンの役割 (電気的なチェック用)
+
+ピンに `"role"` を書くと、`check` の参考の警告 (下記「電気的なチェック」) に使われます。
+
+| role | 意味 | 追加のキー |
+|---|---|---|
+| `gnd` | GND | |
+| `supply` | 電源を出すピン (電源出力) | `volts` |
+| `vin` | 電源入力 | `vmin`, `vmax`, `optional` (つながなくてもよい) |
+| `io` | 入出力ピン | `vmax` (耐えられる電圧) |
+| `out` | 信号の出力 | `volts` (出力の電圧) |
+
+例: `{ "name": "VCC", "x": 0, "y": 0, "role": "vin", "vmax": 3.6 }`
 
 ### 部品ライブラリ (マイ部品)
 
@@ -313,6 +332,8 @@ CSSアニメーションに変換してSVGに埋め込むので、書き出し�
 | `hcsr04` | `ping` (bool) |
 | `relay` | `on` (bool) |
 | `lcd1602` | `text` (`\n` で2行目), `backlight` (bool) |
+| `ssd1306` | `text` (`\n` で改行) |
+| `ws2812b` | `r`, `g`, `b` (それぞれ 0〜1) |
 | `button` | `pressed` (bool) |
 | `buzzer` | `on` (bool) |
 | `speaker` | `on` (bool) |
@@ -322,6 +343,20 @@ CSSアニメーションに変換してSVGに埋め込むので、書き出し�
 | 配線 | `flow` (bool。from → to の向きに信号が流れる表示) |
 | 演出レイヤー | `show` (bool, 既定値 true), `opacity` (0〜1) |
 | 独自部品 | `when` で使った状態名、`display` があれば `text`、`states` で定義したもの |
+
+## 電気的なチェック (参考)
+
+`check` とエディタは、ピンの役割をもとに、電子工作でよくあるミスを **参考の警告** (`NOTE`) として表示します。
+
+- 電圧の違う電源どうしがつながっている (3.3V と 5V など)
+- 電源と GND がつながっている (ショート)
+- LED が抵抗なしで電源や GPIO と GND の間にある
+- 配線されているモジュールの GND や電源入力が、どこにもつながっていない
+- 電源入力の電圧が範囲外 (3.3V 用の部品に 5V、5V が必要な部品に 3.3V など)
+- 5V の信号が 3.3V の入出力ピンに直接つながっている (HC-SR04 の ECHO など)
+
+組み込み部品の役割は一般的な値で、製品によっては合わないことがあります。
+**回路の動作を計算するものではないので、警告が出ないことは、回路が正しく安全であることを意味しません。**
 
 ## 検証
 

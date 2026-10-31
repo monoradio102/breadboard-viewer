@@ -228,6 +228,65 @@ function stateAtTime(track, t) {
   return sampleTrack(track, t).at(-1).s;
 }
 
+// src/erc.js
+function electricalAdvice(parts) {
+  const out2 = [];
+  const byNet = /* @__PURE__ */ new Map();
+  const rolesOf = new Map(parts.map((p) => [p, p.def.roles?.(p.params) ?? {}]));
+  for (const part of parts) {
+    for (const pin of part.pins) {
+      if (!pin.node || !pin.net) continue;
+      if (!byNet.has(pin.net)) byNet.set(pin.net, []);
+      byNet.get(pin.net).push({ ref: `${part.id}.${pin.name}`, part, pin, role: rolesOf.get(part)[pin.name] ?? null });
+    }
+  }
+  const is = (kind) => (m) => m.role?.kind === kind;
+  const volts = (m) => m.role?.volts;
+  for (const members of byNet.values()) {
+    const supplies = members.filter(is("supply"));
+    const gnds2 = members.filter(is("gnd"));
+    const levels = [...new Set(supplies.map(volts).filter((v) => v !== void 0))];
+    if (levels.length > 1) {
+      out2.push(`\u96FB\u5727\u306E\u9055\u3046\u96FB\u6E90\u3069\u3046\u3057\u304C\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059: ${supplies.map((s) => `${s.ref} (${volts(s) ?? "?"}V)`).join(", ")}`);
+    }
+    if (supplies.length && gnds2.length) out2.push(`\u96FB\u6E90\u3068 GND \u304C\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059 (\u30B7\u30E7\u30FC\u30C8): ${supplies[0].ref} \u3068 ${gnds2[0].ref}`);
+    const drivers = members.filter((m) => (is("supply")(m) || is("out")(m)) && volts(m) !== void 0);
+    for (const m of members) {
+      const r = m.role;
+      if (r?.kind === "vin") {
+        for (const s of supplies.filter((s2) => volts(s2) !== void 0)) {
+          if (r.vmax !== void 0 && volts(s) > r.vmax) out2.push(`${m.ref} \u306F ${r.vmax}V \u307E\u3067\u3067\u3059\u304C\u3001${s.ref} (${volts(s)}V) \u306B\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059`);
+          if (r.vmin !== void 0 && volts(s) < r.vmin) out2.push(`${m.ref} \u306F ${r.vmin}V \u4EE5\u4E0A\u304C\u5FC5\u8981\u3067\u3059\u304C\u3001${s.ref} (${volts(s)}V) \u306B\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059`);
+        }
+      }
+      if (r?.kind === "io" && r.vmax !== void 0) {
+        for (const d of drivers.filter((d2) => volts(d2) > r.vmax)) out2.push(`${m.ref} (${r.vmax}V \u307E\u3067) \u306B ${d.ref} \u306E ${volts(d)}V \u304C\u76F4\u63A5\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059`);
+      }
+    }
+  }
+  for (const part of parts) {
+    const roles = rolesOf.get(part);
+    const pins = part.pins.filter((p) => p.node && p.net);
+    const linked = (p) => byNet.get(p.net).some((m) => m.part !== part);
+    if (!pins.some(linked)) continue;
+    const gndPins = pins.filter((p) => roles[p.name]?.kind === "gnd");
+    if (gndPins.length && !gndPins.some(linked)) out2.push(`${part.id} \u306E GND \u304C\u3069\u3053\u306B\u3082\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u305B\u3093`);
+    for (const p of pins.filter((p2) => roles[p2.name]?.kind === "vin" && !roles[p2.name].optional && !linked(p2))) {
+      out2.push(`${part.id}.${p.name} (\u96FB\u6E90\u5165\u529B) \u304C\u3069\u3053\u306B\u3082\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u305B\u3093`);
+    }
+  }
+  const netOf = (part, name) => part.pins.find((p) => p.name === name)?.net;
+  for (const part of parts.filter((p) => p.type === "led" || p.type === "rgbled")) {
+    const k = netOf(part, "K");
+    if (!k || !byNet.get(k)?.some(is("gnd"))) continue;
+    for (const a of part.type === "led" ? ["A"] : ["R", "G", "B"]) {
+      const driver = byNet.get(netOf(part, a))?.find((m) => ["supply", "io", "out"].includes(m.role?.kind));
+      if (driver) out2.push(`${part.id} \u304C\u62B5\u6297\u306A\u3057\u3067 ${driver.ref} \u3068 GND \u306E\u9593\u306B\u3042\u308A\u307E\u3059 (\u96FB\u6D41\u5236\u9650\u62B5\u6297\u3092\u5165\u308C\u307E\u3057\u3087\u3046)`);
+    }
+  }
+  return [...new Set(out2)];
+}
+
 // src/svg.js
 function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -940,6 +999,17 @@ var relay = {
     }) + text(-2, -2.2, "VCC GND IN", { "font-size": 0.4, fill: "#fff", "text-anchor": "start", "dominant-baseline": "central" });
   }
 };
+function rgbGlow(s) {
+  const [r, gg, b] = [s.r, s.g, s.b].map((v) => clamp(Number(v) || 0, 0, 1));
+  const max = Math.max(r, gg, b);
+  const c = (v) => Math.round((max ? v / max : 0) * 255);
+  return { fill: `rgb(${c(r)},${c(gg)},${c(b)})`, opacity: Math.round(max * 1e3) / 1e3 };
+}
+var RGB_STATES = {
+  r: { type: "number", default: 0, description: "\u8D64\u306E\u660E\u308B\u3055 0\u301C1" },
+  g: { type: "number", default: 0, description: "\u7DD1\u306E\u660E\u308B\u3055 0\u301C1" },
+  b: { type: "number", default: 0, description: "\u9752\u306E\u660E\u308B\u3055 0\u301C1" }
+};
 var rgbled = {
   type: "rgbled",
   name: "\u30D5\u30EB\u30AB\u30E9\u30FCLED (\u30AB\u30BD\u30FC\u30C9\u30B3\u30E2\u30F3)",
@@ -952,14 +1022,7 @@ var rgbled = {
     g: { type: "number", default: 0, description: "\u7DD1\u306E\u660E\u308B\u3055 0\u301C1" },
     b: { type: "number", default: 0, description: "\u9752\u306E\u660E\u308B\u3055 0\u301C1" }
   },
-  animate: () => ({
-    glow: (s) => {
-      const [r, gg, b] = [s.r, s.g, s.b].map((v) => clamp(Number(v) || 0, 0, 1));
-      const max = Math.max(r, gg, b);
-      const c = (v) => Math.round((max ? v / max : 0) * 255);
-      return { fill: `rgb(${c(r)},${c(gg)},${c(b)})`, opacity: Math.round(max * 1e3) / 1e3 };
-    }
-  }),
+  animate: () => ({ glow: rgbGlow }),
   pins: () => inline(["R", "K", "G", "B"]),
   render({ pins, anim }) {
     const c = centroid(pins);
@@ -1065,6 +1128,110 @@ var xiao = {
     const w = Number(params.width) || 6;
     const mid = -w / 2;
     return rect(-1.15, -w - 0.45, 8.3, w + 0.9, { rx: 0.35, fill: "#1f2a44", stroke: "#0f1626", "stroke-width": 0.06 }) + rect(-1.75, mid - 1.15, 1.6, 2.3, { rx: 0.3, fill: "#c8ccd0", stroke: "#8a8f94", "stroke-width": 0.05 }) + rect(1.1, mid - 1.9, 3.6, 3.8, { rx: 0.15, fill: "#b9bec4", stroke: "#8b9399", "stroke-width": 0.05 }) + text(2.9, mid - 0.45, "XIAO", { "font-size": 0.62, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central", "font-weight": "bold" }) + text(2.9, mid + 0.45, params.model, { "font-size": 0.42, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central" }) + headerPins(pins) + pinLabels(pins, w);
+  }
+};
+var CHECK_BOARD = "\u8CA9\u58F2\u5143\u306B\u3088\u3063\u3066\u30D4\u30F3\u306E\u4E26\u3073\u3084\u5BF8\u6CD5\u304C\u9055\u3046\u5834\u5408\u304C\u3042\u308A\u307E\u3059\u3002\u8CFC\u5165\u3057\u305F\u88FD\u54C1\u306E\u8868\u8A18\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
+function pinOrder(value, fallback) {
+  const names = String(value ?? "").split(/\s*,\s*/).filter(Boolean);
+  const ok = names.length === fallback.length && fallback.every((n2) => names.includes(n2));
+  return ok ? names : fallback;
+}
+var inmp441 = {
+  type: "inmp441",
+  name: "I2S\u30DE\u30A4\u30AF INMP441",
+  category: "\u30BB\u30F3\u30B5",
+  description: `I2S MEMS\u30DE\u30A4\u30AF\u306E\u4E38\u578B\u30E2\u30B8\u30E5\u30FC\u30EB\u30023\u672C\u305A\u30642\u5217: SCK \u306E\u5411\u304B\u3044\u304C SD\u3001WS \u306E\u5411\u304B\u3044\u304C VDD\u3001L/R \u306E\u5411\u304B\u3044\u304C GND\u3002VDD \u306F 3.3V\u3002L/R \u306F GND \u3067\u5DE6\u30C1\u30E3\u30F3\u30CD\u30EB\u3002${CHECK_BOARD}`,
+  mount: "rigid",
+  params: { width: { default: 4, description: "\u5217\u9593\u9694 (\u30D4\u30C3\u30C1\u5358\u4F4D)" } },
+  pins: (p) => dualRow(6, Number(p.width) || 4, ["L/R", "WS", "SCK", "SD", "VDD", "GND"]),
+  extent: [-1.9, -5.9, 3.9, 1.9],
+  render({ pins, params, rot }) {
+    const w = Number(params.width) || 4;
+    return circle(1, -w / 2, Math.max(2.8, w / 2 + 0.9), { fill: "#5b2c86", stroke: "#3a1b58", "stroke-width": 0.08 }) + circle(1, -w / 2, 0.75, { fill: "#d0d4d8", stroke: "#8b9399", "stroke-width": 0.05 }) + circle(1, -w / 2, 0.2, { fill: "#222" }) + headerPins(pins) + pins.map((p) => uprightText(p.x, p.y === 0 ? 0.75 : -w - 0.75, p.name, rot, { "font-size": 0.38, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" })).join("") + uprightText(1, -w / 2 + 1.4, "INMP441", rot, { "font-size": 0.42, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" });
+  }
+};
+var max98357a = {
+  type: "max98357a",
+  name: "I2S\u30A2\u30F3\u30D7 MAX98357A",
+  category: "\u51FA\u529B",
+  description: `I2S D\u7D1A\u30A2\u30F3\u30D7\u306E\u30E2\u30B8\u30E5\u30FC\u30EB\u3002\u30D8\u30C3\u30C0\u30FC7\u672C (LRC, BCLK, DIN, GAIN, SD, GND, Vin) \u3092\u30DC\u30FC\u30C9\u306B\u633F\u3057\u3001\u30B9\u30D4\u30FC\u30AB\u30FC\u7AEF\u5B50 SPK+ / SPK- \u306F\u30DC\u30FC\u30C9\u306B\u633F\u3055\u306A\u3044\u7AEF\u5B50 (\u914D\u7DDA\u306F "AMP1.SPK+" \u306E\u3088\u3046\u306B)\u3002Vin \u306F 2.5\u301C5.5V\u3002${CHECK_BOARD}`,
+  mount: "rigid",
+  params: {},
+  pins: () => [
+    ...inline(["LRC", "BCLK", "DIN", "GAIN", "SD", "GND", "Vin"]),
+    { name: "SPK+", x: 2.3, y: -6.6, insert: false },
+    { name: "SPK-", x: 3.7, y: -6.6, insert: false }
+  ],
+  extent: [-0.9, -7.6, 6.9, 0.7],
+  render({ pins, rot }) {
+    const header2 = pins.filter((p) => p.y === 0);
+    return rect(-0.85, -7.5, 7.7, 8.15, { rx: 0.3, fill: "#1f5fa8", stroke: "#164477", "stroke-width": 0.06 }) + rect(1.2, -7.4, 3.6, 1.6, { rx: 0.15, fill: "#2e7d32", stroke: "#1b5e20", "stroke-width": 0.05 }) + rect(2.3, -4.3, 1.4, 1.4, { fill: "#1b1b1b" }) + headerPins(header2) + header2.map((p) => text(p.x, -0.85, p.name, { "font-size": 0.3, fill: "#fff", "text-anchor": "end", "dominant-baseline": "central", transform: `rotate(90 ${n(p.x)} -0.85)` })).join("") + uprightText(3, -1.9, "MAX98357A", rot, { "font-size": 0.5, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" });
+  }
+};
+var WS2812_PINS = ["DIN", "VCC", "GND"];
+var ws2812b = {
+  type: "ws2812b",
+  name: "\u30D5\u30EB\u30AB\u30E9\u30FCLED WS2812B (1\u706F\u57FA\u677F)",
+  category: "\u534A\u5C0E\u4F53",
+  description: `\u30A2\u30C9\u30EC\u30B9\u6307\u5B9A\u3067\u304D\u308B\u30D5\u30EB\u30AB\u30E9\u30FCLED (NeoPixel) \u306E1\u706F\u57FA\u677F\u3002\u5165\u529B\u5074 (DIN, VCC, GND) \u3092\u30DC\u30FC\u30C9\u306B\u633F\u3057\u3001\u51FA\u529B\u5074 (DOUT, VCC2, GND2) \u306F\u6B21\u306ELED\u3078\u3064\u306A\u3050\u7AEF\u5B50\u3002r / g / b (0\u301C1) \u3067\u767A\u5149\u8272\u3092\u30A2\u30CB\u30E1\u30FC\u30B7\u30E7\u30F3\u3002${CHECK_BOARD}`,
+  mount: "rigid",
+  params: { pinOrder: { default: "DIN,VCC,GND", description: "\u5165\u529B\u5074\u306E\u30D4\u30F3\u306E\u4E26\u3073 (\u4F8B: GND,VCC,DIN)" } },
+  states: RGB_STATES,
+  animate: () => ({ glow: rgbGlow }),
+  pins: (p) => [
+    ...inline(pinOrder(p.pinOrder, WS2812_PINS)),
+    ...pinOrder(p.pinOrder, WS2812_PINS).map((name, i) => ({ name: name === "DIN" ? "DOUT" : `${name}2`, x: i, y: -4, insert: false }))
+  ],
+  internal: () => [
+    ["VCC", "VCC2"],
+    ["GND", "GND2"]
+  ],
+  extent: [-0.8, -4.6, 2.8, 0.6],
+  render({ pins, anim }) {
+    return rect(-0.75, -4.55, 3.5, 5.1, { rx: 0.3, fill: "#1b1b1b", stroke: "#000", "stroke-width": 0.05 }) + headerPins(pins.filter((p) => p.y === 0)) + rect(0.1, -3.1, 1.8, 1.8, { rx: 0.1, fill: "#f2f2f2" }) + circle(1, -2.2, 0.6, { fill: "#d9d9d9" }) + g(circle(1, -2.2, 2.2, { opacity: 0.2 }) + circle(1, -2.2, 1.4, { opacity: 0.4 }) + circle(1, -2.2, 0.7) + circle(1, -2.2, 0.35, { fill: "#fff", opacity: 0.8 }), {
+      ...anim("glow"),
+      "pointer-events": "none"
+    });
+  }
+};
+var SSD1306_PINS = ["GND", "VCC", "SCL", "SDA"];
+var ssd1306 = {
+  type: "ssd1306",
+  name: "OLED 0.96\u30A4\u30F3\u30C1 SSD1306 (I2C)",
+  category: "\u8868\u793A",
+  description: `128x64 \u306E I2C OLED\u3002\u30D4\u30F3\u306E\u4E26\u3073\u306F\u88FD\u54C1\u306B\u3088\u308A GND,VCC,SCL,SDA \u3068 VCC,GND,SCL,SDA \u304C\u3042\u308B\u306E\u3067 pinOrder \u3067\u5408\u308F\u305B\u308B\u3002\u753B\u9762\u306F\u30D4\u30F3\u306E\u4E0B\u5074\u306B\u63CF\u304F\u3002text \u3067\u30A2\u30CB\u30E1\u30FC\u30B7\u30E7\u30F3\u3002${CHECK_BOARD}`,
+  mount: "rigid",
+  params: {
+    pinOrder: { default: "GND,VCC,SCL,SDA", options: ["GND,VCC,SCL,SDA", "VCC,GND,SCL,SDA"], description: "\u30D4\u30F3\u306E\u4E26\u3073" }
+  },
+  states: { text: { type: "string", default: "", description: "\u753B\u9762\u306E\u6587\u5B57 (\\n \u3067\u6539\u884C)" } },
+  animate: ({ values }) => Object.fromEntries(values("text").map((v, i) => [`text:${i}`, (s) => ({ opacity: String(s.text) === v ? 1 : 0 })])),
+  pins: (p) => inline(pinOrder(p.pinOrder, SSD1306_PINS)),
+  extent: [-3.9, -0.9, 6.9, 10.2],
+  render({ pins, anim, values }) {
+    const size = 0.8;
+    const texts = values("text").map(
+      (v, i) => tag(
+        "text",
+        { x: -2.9, y: 2.3, "font-size": size, "font-family": "monospace", fill: "#9fe8ff", ...anim(`text:${i}`) },
+        v.split("\n").slice(0, 6).map((l, j) => tag("tspan", { x: -2.9, dy: j === 0 ? size : size * 1.2 }, esc(l.slice(0, 18)))).join("")
+      )
+    ).join("");
+    return rect(-3.875, -0.85, 10.75, 10.95, { rx: 0.4, fill: "#1b3a6b", stroke: "#0f2445", "stroke-width": 0.06 }) + rect(-3.3, 1.65, 9.6, 5.7, { fill: "#0b0b0b", stroke: "#333", "stroke-width": 0.08 }) + headerPins(pins) + pins.map((p) => text(p.x, 0.75, p.name, { "font-size": 0.38, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" })).join("") + texts;
+  }
+};
+var qwiic = {
+  type: "qwiic",
+  name: "Qwiic \u5909\u63DB\u30B1\u30FC\u30D6\u30EB",
+  category: "\u30B3\u30CD\u30AF\u30BF",
+  description: "Qwiic (JST SH 4\u30D4\u30F3) \u304B\u3089\u30D4\u30F3\u30D8\u30C3\u30C0\u3078\u306E\u5909\u63DB\u30B1\u30FC\u30D6\u30EB\u3002GND (\u9ED2), 3V3 (\u8D64), SDA (\u9752), SCL (\u9EC4)\u3002Qwiic \u306F 3.3V\u3002\u30B1\u30FC\u30D6\u30EB\u306E\u5148\u306E\u30B3\u30CD\u30AF\u30BF\u306F\u30D4\u30F3\u306E\u4E0A\u5074\u306B\u63CF\u304F\u3002",
+  mount: "rigid",
+  params: {},
+  pins: () => inline(["GND", "3V3", "SDA", "SCL"]),
+  extent: [-1.2, -6.6, 4.2, 0.6],
+  render({ rot }) {
+    const cable = ["#263238", "#e53935", "#1e88e5", "#fdd835"].map((c, i) => tag("path", { d: `M ${i} 0 C ${i} -2 ${1 + i * 0.33} -2.5 ${1 + i * 0.33} -4.4`, fill: "none", stroke: c, "stroke-width": 0.18 })).join("");
+    return rect(-0.5, -0.5, 4, 1, { fill: "#222", rx: 0.1 }) + cable + rect(0.4, -6.4, 2.2, 2, { rx: 0.2, fill: "#f0f0f0", stroke: "#9e9e9e", "stroke-width": 0.06 }) + uprightText(1.5, -5.4, "Qwiic", rot, { "font-size": 0.42, fill: "#333", "text-anchor": "middle", "dominant-baseline": "central" });
   }
 };
 var LCD_COLS = 16;
@@ -1179,13 +1346,85 @@ var BUILTIN_PARTS = [
   nano,
   pico,
   esp32,
-  xiao
+  xiao,
+  inmp441,
+  max98357a,
+  ws2812b,
+  ssd1306,
+  qwiic
 ];
+
+// src/parts/roles.js
+var gnd = { kind: "gnd" };
+var supply = (volts) => ({ kind: "supply", volts });
+var vin = (vmin, vmax, extra2 = {}) => ({ kind: "vin", vmin, vmax, ...extra2 });
+function ioPins(pattern, vmax) {
+  return { pattern, role: { kind: "io", vmax } };
+}
+var BATTERY_VOLTS = { AAx2: 3, AAx3: 4.5, AAx4: 6, "9V": 9 };
+var BUILTIN_ROLES = {
+  nano: { pins: { "5V": supply(5), "3V3": supply(3.3), GND: gnd, GND2: gnd, VIN: vin(7, 12, { optional: true }) }, io: ioPins(/^(D\d+|A\d|TX1|RX0)$/, 5.5) },
+  pico: {
+    pins: { VBUS: supply(5), VSYS: vin(1.8, 5.5, { optional: true }), "3V3": supply(3.3), AGND: gnd, ...gnds("GND", 7) },
+    io: ioPins(/^GP\d+$/, 3.6)
+  },
+  esp32: { pins: { "3V3": supply(3.3), "5V": supply(5), GND: gnd, GND2: gnd, GND3: gnd }, io: ioPins(/^IO\d+$/, 3.6) },
+  xiao: { pins: { "3V3": supply(3.3), "5V": supply(5), GND: gnd }, io: ioPins(/^D\d+$/, 3.6) },
+  regulator: {
+    pins: (p) => {
+      const m = /78(\d\d)/.exec(String(p.model));
+      return { IN: vin(void 0, 35), GND: gnd, OUT: m ? supply(Number(m[1])) : { kind: "supply" } };
+    }
+  },
+  battery: { pins: (p) => ({ "+": supply(BATTERY_VOLTS[p.kind] ?? 3), "-": gnd }) },
+  dht11: { pins: { VCC: vin(3, 5.5), GND: gnd } },
+  hcsr04: { pins: { VCC: vin(4.5, 5.5), GND: gnd, ECHO: { kind: "out", volts: 5 } } },
+  relay: { pins: { VCC: vin(4.5, 5.5), GND: gnd } },
+  lcd1602: { pins: { VCC: vin(4.5, 5.5), GND: gnd } },
+  servo: { pins: { VCC: vin(4.5, 6), GND: gnd } },
+  ne555: { pins: { VCC: vin(4.5, 16), GND: gnd } },
+  lm358: { pins: { VCC: vin(3, 32), GND: gnd } },
+  "74hc595": { pins: { VCC: vin(2, 6), GND: gnd } },
+  inmp441: { pins: { VDD: vin(1.8, 3.6), GND: gnd } },
+  max98357a: { pins: { Vin: vin(2.5, 5.5), GND: gnd } },
+  ws2812b: { pins: { VCC: vin(3.5, 5.5), GND: gnd } },
+  ssd1306: { pins: { VCC: vin(3, 5.5), GND: gnd } },
+  qwiic: { pins: { "3V3": vin(3, 3.6), GND: gnd } }
+};
+function gnds(prefix, count) {
+  const out2 = { [prefix]: gnd };
+  for (let i = 2; i <= count; i++) out2[`${prefix}${i}`] = gnd;
+  return out2;
+}
+function builtinRoles(type, params, pinNames) {
+  const spec = BUILTIN_ROLES[type];
+  if (!spec) return {};
+  const fixed = typeof spec.pins === "function" ? spec.pins(params) : spec.pins ?? {};
+  const out2 = { ...fixed };
+  if (spec.io) {
+    for (const name of pinNames) if (!(name in out2) && spec.io.pattern.test(name)) out2[name] = spec.io.role;
+  }
+  return out2;
+}
+function jsonRole(pin) {
+  if (!pin.role) return null;
+  const kinds = ["gnd", "supply", "vin", "io", "out"];
+  if (!kinds.includes(pin.role)) return null;
+  const role = { kind: pin.role };
+  for (const k of ["volts", "vmin", "vmax"]) if (Number.isFinite(pin[k])) role[k] = pin[k];
+  if (pin.optional) role.optional = true;
+  return role;
+}
 
 // src/parts/registry.js
 var MM = 1 / 2.54;
 function createRegistry(partDefs = []) {
-  const parts = new Map(BUILTIN_PARTS.map((p) => [p.type, { ...p, builtin: true }]));
+  const parts = new Map(
+    BUILTIN_PARTS.map((p) => [
+      p.type,
+      { ...p, builtin: true, roles: (params) => builtinRoles(p.type, params, p.pins(params).map((x) => x.name)) }
+    ])
+  );
   const errors = [];
   for (const def of partDefs) {
     try {
@@ -1247,6 +1486,8 @@ function fromJson(def) {
       ...display ? Object.fromEntries(values("text").map((v, i) => [`text:${i}`, (s) => ({ opacity: String(s.text) === v ? 1 : 0 })])) : {}
     }),
     pins: () => pins,
+    // electrical roles for the advisory checks ("role" on JSON pins)
+    roles: () => Object.fromEntries(def.pins.map((p) => [String(p.name), jsonRole(p)]).filter(([, r]) => r)),
     // drawing bounds relative to the first pin, in pitch units (only needed when it leaves the board)
     extent: def.extent ? [def.extent[0] - o.x, def.extent[1] - o.y, def.extent[2] - o.x, def.extent[3] - o.y].map((v) => v * scale2) : void 0,
     internal: () => def.internal ?? [],
@@ -1302,7 +1543,7 @@ function resolveCircuit(circuit) {
   const errors = [];
   const warnings = [];
   if (!circuit || typeof circuit !== "object") {
-    return { errors: ["\u56DE\u8DEF\u30C7\u30FC\u30BF\u304C\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u306F\u3042\u308A\u307E\u305B\u3093"], warnings, parts: [], wires: [], overlays: [], nets: [], netOf: () => null, netOfHole: () => null };
+    return { errors: ["\u56DE\u8DEF\u30C7\u30FC\u30BF\u304C\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u306F\u3042\u308A\u307E\u305B\u3093"], warnings, advice: [], parts: [], wires: [], overlays: [], nets: [], netOf: () => null, netOfHole: () => null };
   }
   let board;
   try {
@@ -1407,7 +1648,9 @@ function resolveCircuit(circuit) {
     occupied,
     timeline,
     errors: unique(errors),
-    warnings: unique(warnings)
+    warnings: unique(warnings),
+    // advisory electrical checks (参考): common mistakes, not a guarantee
+    advice: electricalAdvice(parts)
   };
 }
 function placePart(board, def, inst, id, errors, warnings) {
@@ -1535,6 +1778,8 @@ function describe(result) {
   const lines = [];
   for (const e of result.errors) lines.push(`ERROR: ${e}`);
   for (const w of result.warnings) lines.push(`WARN:  ${w}`);
+  for (const a of result.advice ?? []) lines.push(`NOTE:  (\u53C2\u8003) ${a}`);
+  if (result.advice?.length) lines.push("       NOTE \u306F\u96FB\u6C17\u7684\u306A\u3088\u304F\u3042\u308B\u30DF\u30B9\u306E\u53C2\u8003\u3067\u3059\u3002\u51FA\u306A\u3044\u3053\u3068\u306F\u56DE\u8DEF\u304C\u6B63\u3057\u3044\u3053\u3068\u3092\u610F\u5473\u3057\u307E\u305B\u3093");
   lines.push(`\u90E8\u54C1 ${result.parts.length} \u500B, \u914D\u7DDA ${result.wires.length} \u672C`);
   for (const p of result.parts) {
     const where = (pin) => pin.hole ?? (p.offboard ? "\u30DC\u30FC\u30C9\u5916" : pin.terminal ? "\u7AEF\u5B50" : "?");
@@ -1846,7 +2091,12 @@ var ID_PREFIX = {
   pot: "VR",
   lcd1602: "LCD",
   speaker: "SP",
-  battery: "BT"
+  battery: "BT",
+  inmp441: "MIC",
+  max98357a: "AMP",
+  ws2812b: "LED",
+  ssd1306: "DISP",
+  qwiic: "J"
 };
 function normalize(circuit) {
   const c = structuredClone(circuit);
