@@ -30,7 +30,10 @@ bb.addPart("resistor", { pins: ["a10", "a14"], value: "1k" })          // → "R
 bb.move("R1", "b10")
 bb.addWire("c14", "T-14", "black")
 bb.load(json)       // → { ok, errors, warnings, parts, wires }
-bb.check()          // 検証結果とネットリスト
+bb.check()          // 検証結果とネットリスト ({ json: true } でオブジェクト、{ layout: true } で見た目の問題も)
+bb.layout()         // 見た目の問題 (本体の重なり、隠れた配線の端など)
+bb.place("xiao", { at: "h3", rot: 180 })   // 置いたときのピンの穴・覆う範囲・ぶつかり (回路は変えない)
+bb.coords("h3", "U1.D3")                   // 穴やピンの座標
 bb.inspect("a10")   // { hole, occupant, net }
 bb.parts()          // 使える部品
 bb.undo(); bb.redo()
@@ -55,8 +58,8 @@ await bb.png({ background: null })     // その瞬間の透過PNG (Blob)
 | `autoSteps` | なし | 組み立て手順を自動で作って設定します (モジュール・IC → ほかの部品 → 配線) |
 | `setAssembly` | `tray`, `trayOrigin`, `trayWidth`, `timing`, `introText`, `outroText`, `numbering` のうち必要なもの / `clear: true` | 組み立ての設定をマージします。`tray` と `timing` はキーごとにマージされ、値に `null` を書くとそのキーを消します |
 | `definePart` | `def` | 独自部品の定義 (`partDefs` の1件) を追加します。同じ `type` があれば差し替えます |
-| `animate` | `target`, `keys`, (`replace` = true) | 部品または配線のアニメーションのキーを設定します。`replace: false` にすると、既存のキーに追加します |
-| `setAnimation` | `duration`, `loop`, `captions`, `tracks` のうち必要なもの / `clear: true` | アニメーションの設定を上書きでマージします。`clear: true` でアニメーションを削除します |
+| `animate` | `target`, `keys`, (`replace` = true) | 部品・配線・演出のアニメーションのキーを設定します。`target` はID、IDの配列、または `animation.groups` の名前。`replace: false` にすると、既存のキーに追加します |
+| `setAnimation` | `duration`, `loop`, `captions`, `tracks`, `groups` のうち必要なもの / `clear: true` | アニメーションの設定を上書きでマージします。`clear: true` でアニメーションを削除します |
 | `setBoard` | `board` | ボードの種類を変更します (`full` / `half` / `mini`) |
 | `setTitle` | `title` | タイトルを変更します |
 

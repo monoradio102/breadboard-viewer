@@ -228,18 +228,21 @@ const OPS = {
   },
 
   // Sets the keys of one target's track (replace: false appends to the existing keys).
+  // target: an id, an array of ids, or a group name from animation.groups.
   animate(c, { target, keys = [], replace = true }) {
-    const exists = usedIds(c).has(target);
-    if (!exists) fail(`target "${target}" の部品・配線が見つかりません`);
+    const groups = c.animation?.groups ?? {};
+    const ids = Array.isArray(target) ? target : Array.isArray(groups[target]) ? groups[target] : [target];
+    if (!ids.length) fail("target が空です");
+    for (const id of ids) if (!usedIds(c).has(id)) fail(`target "${id}" の部品・配線が見つかりません`);
     if (!Array.isArray(keys) || keys.some((k) => !Number.isFinite(Number(k?.t)))) fail("keys は {t, ...状態} の配列です");
     const anim = { duration: 2000, loop: true, ...(c.animation ?? {}) };
     const tracks = [...(anim.tracks ?? [])];
-    const i = tracks.findIndex((t) => t.target === target);
+    const i = tracks.findIndex((t) => JSON.stringify(t.target) === JSON.stringify(target));
     const merged = replace || i < 0 ? keys : [...tracks[i].keys, ...keys];
     const track = { target, keys: [...merged].sort((a, b) => a.t - b.t) };
     if (i < 0) tracks.push(track);
     else tracks[i] = track;
-    return { circuit: { ...c, animation: { ...anim, tracks } }, id: target };
+    return { circuit: { ...c, animation: { ...anim, tracks } }, id: Array.isArray(target) ? target.join(",") : target };
   },
 
   // Merges duration / loop / captions / tracks into the animation; clear: true removes it.
@@ -415,9 +418,17 @@ function checkEnd(c, ref) {
 function retarget(c, from, to) {
   if (from === to) return c;
   let out = c;
-  if (c.animation?.tracks) {
-    const tracks = c.animation.tracks.flatMap((t) => (t.target !== from ? [t] : to === null ? [] : [{ ...t, target: to }]));
-    out = { ...out, animation: { ...c.animation, tracks } };
+  if (c.animation) {
+    const swap = (ids) => ids.flatMap((id) => (id !== from ? [id] : to === null ? [] : [to]));
+    const tracks = (c.animation.tracks ?? []).flatMap((t) => {
+      if (Array.isArray(t.target)) {
+        const target = swap(t.target);
+        return target.length ? [{ ...t, target }] : [];
+      }
+      return t.target !== from ? [t] : to === null ? [] : [{ ...t, target: to }];
+    });
+    const groups = c.animation.groups ? Object.fromEntries(Object.entries(c.animation.groups).map(([k, ids]) => [k, swap(ids)])) : undefined;
+    out = { ...out, animation: { ...c.animation, ...(c.animation.tracks ? { tracks } : {}), ...(groups ? { groups } : {}) } };
   }
   if (Array.isArray(c.steps)) {
     const steps = c.steps.map((s) => ({ ...s, items: (s.items ?? []).flatMap((id) => (id !== from ? [id] : to === null ? [] : [to])) }));

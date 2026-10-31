@@ -65,22 +65,30 @@ node bb.mjs render circuit.json -o step3.png --step 3                   # 組み
 node bb.mjs frames circuit.json -o asm --assembly --fps 30              # 組み立て手順のアニメーションを連番 PNG に
 ```
 
-1. `parts` で部品の `type` とピン名を確かめる
+1. `parts` で部品の `type` とピン名を確かめる。`node bb.mjs parts --json --type xiao` でピンの相対位置と本体の範囲もわかる
+   置く前に `node bb.mjs place xiao --at h3 --rot 180 --in circuit.json` で、各ピンの穴・本体が覆う範囲・ぶつかりを確かめる
 2. `apply` で部品を置き、配線する (操作の一覧は https://monoradio102.github.io/breadboard-viewer/docs/OPS.md)。JSON を直接書いてもよい
 3. 必ず `check` を実行し、エラーがなく、ネットリストが意図どおりか確かめる。`NOTE` (参考) は電気的なよくあるミス (電源どうしのショート、抵抗なしの LED、GND 未接続、電圧の過不足など) なので、意図したものでなければ直す
-4. `render` で画像にして、見た目を確かめる
-5. 動作を説明するときは `animate` / `setAnimation` でアニメーションを付ける。部品の状態で表せない演出は SVG を書いて `addOverlay` で流し込む
+4. `node bb.mjs check circuit.json --layout` で見た目の問題 (本体の重なり、本体の下に隠れた配線の端、ほかの穴の真上を通る配線、ラベルの重なり) を文字で確かめ、最後に `render` で画像にして確かめる。
+   結果を機械的に読むときは `check --json`。静止画を確かめるだけなら、SVG を `rsvg-convert -o out.png circuit.svg` で PNG にしてもよい (アニメーションは止まった状態)
+5. 動作を説明するときは `animate` / `setAnimation` でアニメーションを付ける。複数の配線をまとめて動かすときは `target` に配列か、`animation.groups` の名前を使う。
+   部品の状態で表せない演出は SVG を書いて `addOverlay` で流し込む。1 回きりの動きは `restart: true` (表示された時刻から SVG の時計が始まる)、消し方は `fadeOut` (ミリ秒) で指定する
 6. 組み方を説明するときは `setSteps` で組み立て手順を書く (`autoSteps` で自動生成もできる)。部品を並べたところから順に配置していく様子を描ける。
    トレイの位置や時間は `setAssembly` で指定し、`node bb.mjs plan circuit.json` で各手順の時刻・トレイの位置と重なりを確かめる
 
 SVG の出力と、parts / new / apply / check は Node.js 18 以上だけで動きます。
 PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx playwright install chromium`)。
+インストール済みの Google Chrome を使うなら `--chrome`、ほかのブラウザなら `--browser-path <実行ファイル>` (このときブラウザのダウンロードは不要で、`npm i playwright-core` だけで動きます)。
+`render` / `frames` は `--viewbox "x y w h"` か `--focus U1,MIC1 [--margin 2]` で表示範囲を絞れます。`frames --jobs 4` で並列に書き出します。
+知らないオプションはエラーになります。
 
 ## 回路を書くときの要点
 
 - 穴: `a1`〜`j63` (行 a〜j × 列)。同じ列の a〜e、f〜j がそれぞれ導通。e と f の間が中央の溝
 - 電源レール: `T+5`, `T-5` (上), `B+5`, `B-5` (下)。各レールは端から端まで導通。穴は列 3 から 5 個ずつ、6 列ごと (3-7, 9-13, 15-19, …)
 - 部品の置き方: `at` (1 番ピンの穴) + `rot`、`pins` (抵抗や LED など足を曲げられる部品の穴を個別に)、`pos: [x, y]` (ボードの外)
+- 座標: 列 n の x = n + 1。行の y は a=4 … e=8、f=11 … j=15。レールの y は T+=1, T-=2, B+=17, B-=18 (`node bb.mjs coords h3 T-5` でも確かめられる)
+- 配線の `bend` は、正の値で from → to の向きに対して右側 (画面上) に膨らむ
 - 配線の端: 穴の名前、または `"部品ID.ピン名"` (ボード外の部品のピンや、端子)
 - 独自部品のピンに `"role"` (`gnd` / `supply` + `volts` / `vin` + `vmax` など) を書くと、電気的なチェックに使われる
 - 独自部品のピンに `"insert": false` を付けると、ボードに挿さない端子 (端子台、パッド、リード線) になる。ボードに挿した部品のスピーカー端子などに使う

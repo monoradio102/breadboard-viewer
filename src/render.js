@@ -69,7 +69,7 @@ export function renderSvg(result, options = {}) {
     g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params))).join(""), { class: "parts" }),
     g(result.wires.map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
     g(result.parts.map(drawTerminals).join(""), { class: "terminals" }),
-    g(result.overlays.map((o) => drawOverlay(o, ctxFor(o.id, overlayAnimate))).join(""), { class: "overlays" }),
+    g(result.overlays.map((o) => drawOverlay(o, ctxFor(o.id, overlayAnimate), tl)).join(""), { class: "overlays" }),
     labels ? g(result.parts.map(drawLabel).join(""), { class: "labels", "pointer-events": "none" }) : "",
     captions ? drawCaptions(tl, vb, animEls, svgId, animate, stateOf) : "",
     g(drawProblems(result), { class: "problems" }),
@@ -137,10 +137,13 @@ function drawTerminals(part) {
 }
 
 const wireAnimate = () => ({ flow: (s) => ({ opacity: s.flow ? 1 : 0 }) });
-const overlayAnimate = () => ({ fx: (s) => ({ opacity: s.show ? Math.max(0, Math.min(1, Number(s.opacity))) : 0 }) });
+const overlayAnimate = () => ({ fx: (s) => ({ opacity: Math.round(Math.max(0, Math.min(1, Number(s.opacity))) * Number(s.vis ?? 1) * 1000) / 1000 }) });
 
-function drawOverlay(o, ctx) {
-  return g(spriteImage(o), { class: "overlay", "data-id": o.id, ...ctx.anim("fx") });
+// restart: true -> data-restart lists the times (ms within a loop) the overlay becomes visible,
+// so players (the editor, bb.mjs frames) can restart the SVG's own clock there.
+function drawOverlay(o, ctx, tl) {
+  const restart = o.restart ? { "data-restart": (tl?.showStarts?.get(o.id) ?? [0]).join(","), "data-cycle": tl?.loop ? tl.duration : 0 } : {};
+  return g(spriteImage(o, restart), { class: "overlay", "data-id": o.id, ...ctx.anim("fx") });
 }
 
 function hash(s) {
@@ -218,9 +221,10 @@ function drawPart(part, ctx) {
   });
 }
 
-// SVG path of a wire: straight segments through the via points, or (shape: "curve") a
-// Catmull-Rom spline through them. `bend` bows the wire sideways by that fraction of its length.
-export function wirePath(w) {
+// Shape of a wire: straight segments through the via points, or (shape: "curve") a
+// Catmull-Rom spline through them. `bend` bows a plain wire sideways by that fraction of its
+// length: positive values bow to the right of the from → to direction (as seen on screen).
+function wireGeometry(w) {
   let pts = [w.a, ...w.via, w.b];
   const bend = Number(w.bend) || 0;
   const curve = w.shape === "curve" || (bend && pts.length === 2);
@@ -229,8 +233,8 @@ export function wirePath(w) {
     const dy = w.b.y - w.a.y;
     pts = [w.a, { x: (w.a.x + w.b.x) / 2 - dy * bend, y: (w.a.y + w.b.y) / 2 + dx * bend }, w.b];
   }
-  if (!curve || pts.length < 3) return `M ${pts.map((p) => `${n(p.x)} ${n(p.y)}`).join(" L ")}`;
-  let d = `M ${n(pts[0].x)} ${n(pts[0].y)}`;
+  if (!curve || pts.length < 3) return { lines: pts };
+  const beziers = [];
   for (let i = 0; i < pts.length - 1; i++) {
     const p0 = pts[i - 1] ?? pts[i];
     const p1 = pts[i];
@@ -238,9 +242,45 @@ export function wirePath(w) {
     const p3 = pts[i + 2] ?? p2;
     const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
     const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
-    d += ` C ${n(c1.x)} ${n(c1.y)} ${n(c2.x)} ${n(c2.y)} ${n(p2.x)} ${n(p2.y)}`;
+    beziers.push([p1, c1, c2, p2]);
   }
-  return d;
+  return { beziers };
+}
+
+export function wirePath(w) {
+  const geo = wireGeometry(w);
+  if (geo.lines) return `M ${geo.lines.map((p) => `${n(p.x)} ${n(p.y)}`).join(" L ")}`;
+  const [first] = geo.beziers[0];
+  return `M ${n(first.x)} ${n(first.y)}${geo.beziers.map(([, c1, c2, p2]) => ` C ${n(c1.x)} ${n(c1.y)} ${n(c2.x)} ${n(c2.y)} ${n(p2.x)} ${n(p2.y)}`).join("")}`;
+}
+
+// Points along a wire (for layout checks), about `step` pitch units apart.
+export function wirePoints(w, step = 0.2) {
+  const geo = wireGeometry(w);
+  const out = [];
+  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  if (geo.lines) {
+    for (let i = 0; i < geo.lines.length - 1; i++) {
+      const [a, b] = [geo.lines[i], geo.lines[i + 1]];
+      const k = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
+      for (let j = 0; j < k; j++) out.push(lerp(a, b, j / k));
+    }
+    out.push(geo.lines.at(-1));
+    return out;
+  }
+  for (const [p1, c1, c2, p2] of geo.beziers) {
+    const k = Math.max(4, Math.ceil(Math.hypot(p2.x - p1.x, p2.y - p1.y) / step) * 2);
+    for (let j = 0; j < k; j++) {
+      const t = j / k;
+      const u = 1 - t;
+      out.push({
+        x: u * u * u * p1.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p2.x,
+        y: u * u * u * p1.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p2.y,
+      });
+    }
+  }
+  out.push(geo.beziers.at(-1)[3]);
+  return out;
 }
 
 // drawIn: { offset } makes the wire paths drawable from 0 (offset 1) to fully drawn (offset 0)
@@ -268,14 +308,31 @@ function drawWire(w, ctx, drawIn = null) {
   );
 }
 
-// The part id next to the part. inst.idLabel: false hides it, { dx, dy } moves it (pitch units).
-function drawLabel(part) {
+// Where the part id label goes: { x, y, anchor } (null when hidden).
+// inst.idLabel: false hides it, { dx, dy } moves it (pitch units).
+function labelSpot(part) {
   const opt = part.inst.idLabel;
-  if (opt === false) return "";
+  if (opt === false) return null;
   const xs = part.pins.map((p) => p.x);
   const ys = part.pins.map((p) => p.y);
-  const x = (part.def.mount === "leads" ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs)) + (Number(opt?.dx) || 0);
-  const y = (part.def.mount === "leads" ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95) + (Number(opt?.dy) || 0);
+  const leads = part.def.mount === "leads";
+  const x = (leads ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs)) + (Number(opt?.dx) || 0);
+  const y = (leads ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95) + (Number(opt?.dy) || 0);
+  return { x, y, anchor: leads ? "middle" : "start" };
+}
+
+// Approximate box of the id label (for layout checks).
+export function labelBox(part) {
+  const spot = labelSpot(part);
+  if (!spot) return null;
+  const w = [...part.id].length * 0.32 + 0.1;
+  return { x: spot.anchor === "middle" ? spot.x - w / 2 : spot.x, y: spot.y - 0.3, w, h: 0.6 };
+}
+
+function drawLabel(part) {
+  const spot = labelSpot(part);
+  if (!spot) return "";
+  const { x, y } = spot;
   return text(x, y, part.id, {
     "font-size": 0.5,
     "font-weight": "bold",

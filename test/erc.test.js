@@ -68,3 +68,27 @@ import { readFileSync } from "node:fs";
 function readExample(name) {
   return readFileSync(new URL(`../examples/${name}.json`, import.meta.url), "utf8");
 }
+
+test("electrolytic capacitors: rating from the value, reversed polarity", () => {
+  const nano = { id: "U1", type: "nano", at: "h3" }; // 5V = d6, GND2 = d4
+  const wires = [{ from: "a6", to: "T+6" }, { from: "a4", to: "T-4" }];
+  const over = advice({ parts: [nano, { id: "C1", type: "electrolytic", value: "100uF 4V", pins: { "+": "T+10", "-": "T-10" } }], wires });
+  assert.match(over, /C1 の耐圧 4V を超える 5V/);
+  assert.doesNotMatch(over, /向きが逆/);
+  const reversed = advice({ parts: [nano, { id: "C1", type: "electrolytic", value: "100uF 16V", pins: { "+": "T-10", "-": "T+10" } }], wires });
+  assert.match(reversed, /C1 \(電解コンデンサ\) の向きが逆です/);
+  assert.doesNotMatch(reversed, /耐圧/);
+  const fine = advice({ parts: [nano, { id: "C1", type: "electrolytic", value: "100uF 16V", pins: { "+": "T+10", "-": "T-10" } }], wires });
+  assert.doesNotMatch(fine, /C1/);
+});
+
+test("an input needing a higher HIGH than its driver (WS2812B at 5 V from a 3.3 V GPIO)", () => {
+  const parts = [xiao, { id: "LED1", type: "ws2812b", at: "a20" }];
+  // XIAO 5V (d5) -> T+, GND (d6) -> T-, D0 (h5) -> LED1.DIN (a20)
+  const wires = [{ from: "a5", to: "T+5" }, { from: "a6", to: "T-7" }, { from: "b21", to: "T+21" }, { from: "b22", to: "T-23" }, { from: "j5", to: "b20" }];
+  assert.match(advice({ parts, wires }), /LED1\.DIN は HIGH に 3\.5V 以上が必要ですが、U1\.D0 の出力は 3\.3V です/);
+  // powered from 3.3 V the threshold is 2.31 V: no level warning (but VCC below 3.5 V is reported)
+  const at3v3 = advice({ parts, wires: [{ from: "a7", to: "T+7" }, ...wires.slice(1)] });
+  assert.doesNotMatch(at3v3, /HIGH に/);
+  assert.match(at3v3, /LED1\.VCC は 3\.5V 以上が必要/);
+});

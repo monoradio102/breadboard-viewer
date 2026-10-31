@@ -73,12 +73,17 @@ node tools/bb.mjs parts                                      # 使える部品�
 node tools/bb.mjs new my.json half                           # 空の回路を作る
 node tools/bb.mjs apply my.json '[{"op":"addPart","type":"led","at":"a10"}]'  # 編集操作を適用する
 node tools/bb.mjs check examples/blink-nano.json             # 検証とネットリストの表示
+node tools/bb.mjs check examples/xiao-voice.json --layout --json  # 見た目の問題も含めて JSON で
+node tools/bb.mjs place xiao --at h3 --rot 180               # 置いたときのピンの穴・覆う範囲・ぶつかり
+node tools/bb.mjs coords h3 T-5 U1.D3                        # 穴やピンの座標
+node tools/bb.mjs parts --json --type xiao                   # ピンの相対位置と本体の範囲
 node tools/bb.mjs lib my-parts.json examples/oled-custom-part.json            # 独自部品を集めてライブラリにする
 node tools/bb.mjs apply my.json '[{"op":"addPart","type":"oled-ssd1306-i2c","at":"d24"}]' --lib my-parts.json  # ライブラリの部品を使う
 node tools/bb.mjs render examples/blink-nano.json -o out.svg # SVGに描画
 node tools/bb.mjs render examples/blink-nano.json -o out.png # PNGに描画 (Playwrightが必要)
 node tools/bb.mjs render examples/motor-servo.json -o f.png --time 1500 --transparent  # 1.5秒時点の透過PNG
-node tools/bb.mjs frames examples/motor-servo.json -o frames --fps 30 --transparent    # 1周分の連番PNG (GIF / MP4 用)
+node tools/bb.mjs frames examples/motor-servo.json -o frames --fps 30 --transparent --jobs 4  # 1周分の連番PNG (GIF / MP4 用)
+node tools/bb.mjs render examples/xiao-voice.json -o mic.png --focus MIC1 --chrome     # 部品に寄った絵 (インストール済みの Chrome で)
 node tools/bb.mjs render examples/blink-nano.json -o step2.png --step 2                 # 組み立て手順2の状態
 node tools/bb.mjs frames examples/blink-nano.json -o asm --assembly                     # 組み立て手順の連番PNG
 npm test

@@ -47,29 +47,11 @@ export function planAssembly(result, steps = result.steps?.length ? result.steps
   const length = (i) => lengths[i - 1] ?? T.step;
   const duration = starts[steps.length] + T.outro;
 
-  // final bounding box of each part's drawing (approximate: pins, extent, label room)
+  // final bounding box of each part's drawing, with room for the id label above
   const boxes = new Map();
   for (const p of result.parts) {
-    const pad = p.def.mount === "leads" ? 1.3 : 0.9;
-    let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
-    const add = (x, y) => {
-      x0 = Math.min(x0, x);
-      y0 = Math.min(y0, y);
-      x1 = Math.max(x1, x);
-      y1 = Math.max(y1, y);
-    };
-    for (const pin of p.pins) {
-      add(pin.x - pad, pin.y - pad);
-      add(pin.x + pad, pin.y + pad);
-    }
-    const e = p.def.extent;
-    if (e && p.transform) {
-      for (const [cx, cy] of [[e[0], e[1]], [e[2], e[3]], [e[0], e[3]], [e[2], e[1]]]) {
-        const [dx, dy] = rotate(cx, cy, p.transform.rot);
-        add(p.transform.x + dx, p.transform.y + dy);
-      }
-    }
-    boxes.set(p.id, { x: x0, y: y0 - 1, w: x1 - x0, h: y1 - y0 + 1 });
+    const box = partBox(p, p.def.mount === "leads" ? 1.3 : 0.9);
+    boxes.set(p.id, { ...box, y: box.y - 1, h: box.h + 1 });
   }
 
   // tray: parts placed in a step start here. Fixed positions from settings.tray (first pin),
@@ -140,6 +122,30 @@ export function planAssembly(result, steps = result.steps?.length ? result.steps
       return k;
     },
   };
+}
+
+// Approximate box of a placed part's drawing: its pins padded by `pad`, grown to the
+// part's declared extent (pitch units, board coordinates).
+export function partBox(part, pad = 0.9) {
+  let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+  const add = (x, y) => {
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x);
+    y1 = Math.max(y1, y);
+  };
+  for (const pin of part.pins) {
+    add(pin.x - pad, pin.y - pad);
+    add(pin.x + pad, pin.y + pad);
+  }
+  const e = part.def.extent;
+  if (e && part.transform) {
+    for (const [cx, cy] of [[e[0], e[1]], [e[2], e[3]], [e[0], e[3]], [e[2], e[1]]]) {
+      const [dx, dy] = rotate(cx, cy, part.transform.rot);
+      add(part.transform.x + dx, part.transform.y + dy);
+    }
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 const ease = (f) => (f <= 0 ? 0 : f >= 1 ? 1 : f * f * (3 - 2 * f));

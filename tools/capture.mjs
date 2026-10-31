@@ -8,9 +8,15 @@ import { createRequire } from "node:module";
 
 const SPRITE_PREFIX = "data:image/svg+xml;charset=utf-8,";
 
-export async function openCapture(svg, { scale = 2, transparent = false } = {}) {
+// channel: "chrome" uses the installed Google Chrome; executablePath any Chromium-based browser.
+export async function launchBrowser({ channel, executablePath } = {}) {
   const { chromium } = loadPlaywright();
-  const browser = await chromium.launch();
+  return chromium.launch({ ...(channel ? { channel } : {}), ...(executablePath ? { executablePath } : {}) });
+}
+
+// browser: share one browser between several captures (closed by the caller).
+export async function openCapture(svg, { scale = 2, transparent = false, channel, executablePath, browser: shared } = {}) {
+  const browser = shared ?? (await launchBrowser({ channel, executablePath }));
   const block = (ctx) => ctx.route("**/*", (route) => route.abort());
   const mainCtx = await browser.newContext({ deviceScaleFactor: scale });
   await block(mainCtx);
@@ -26,7 +32,10 @@ export async function openCapture(svg, { scale = 2, transparent = false } = {}) 
       const m = img.getScreenCTM();
       const k = Math.hypot(m.a, m.b);
       img.dataset.sprite = String(i);
-      list.push({ i, href, w: img.width.baseVal.value * k, h: img.height.baseVal.value * k, fit: img.getAttribute("preserveAspectRatio") });
+      // restart: the sprite's clock starts each time the overlay becomes visible
+      const starts = img.dataset.restart ? img.dataset.restart.split(",").map(Number) : null;
+      const cycle = Number(img.dataset.cycle) || 0;
+      list.push({ i, href, starts, cycle, w: img.width.baseVal.value * k, h: img.height.baseVal.value * k, fit: img.getAttribute("preserveAspectRatio") });
     });
     return list;
   }, SPRITE_PREFIX);
@@ -56,7 +65,7 @@ export async function openCapture(svg, { scale = 2, transparent = false } = {}) 
   return {
     async frame(t, path) {
       for (const sp of sprites) {
-        await sp.page.evaluate(seek, t);
+        await sp.page.evaluate(seek, spriteTime(sp, t));
         const png = await sp.page.locator("svg").first().screenshot({ omitBackground: true });
         sp.png = `data:image/png;base64,${png.toString("base64")}`;
       }
@@ -77,7 +86,7 @@ export async function openCapture(svg, { scale = 2, transparent = false } = {}) 
       );
       await main.locator("svg").first().screenshot({ path, omitBackground: transparent });
     },
-    close: () => browser.close(),
+    close: () => (shared ? Promise.all([mainCtx.close(), spriteCtx?.close()]) : browser.close()),
   };
 }
 
@@ -97,4 +106,13 @@ function loadPlaywright() {
   );
   err.code = "NO_PLAYWRIGHT";
   throw err;
+}
+
+// Time on a sprite's own clock: the frame time, or the time since the overlay last became
+// visible (restart: true).
+function spriteTime(sp, t) {
+  if (!sp.starts?.length) return t;
+  const local = sp.cycle ? t % sp.cycle : t;
+  const since = sp.starts.filter((s) => s <= local);
+  return Math.max(0, local - (since.length ? Math.max(...since) : sp.starts[0]));
 }

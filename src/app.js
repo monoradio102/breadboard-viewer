@@ -5,6 +5,8 @@ import { emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircu
 import { fromJson } from "./parts/registry.js";
 import { OP_NAMES, OpError, applyOps, normalize } from "./ops.js";
 import { planAssembly } from "./assembly.js";
+import { coordsOf, layoutIssues, previewPlacement } from "./inspect.js";
+import { svgDataUri } from "./svg.js";
 import { WIRE_COLORS, renderBounds, renderSvg } from "./render.js";
 
 const STORAGE_KEY = "breadboard-viewer:last";
@@ -386,7 +388,25 @@ function tickPlayer() {
       : `${(local / 1000).toFixed(1)}s / ${(tl.duration / 1000).toFixed(1)}s`;
   }
   updateCaption();
+  if (tl?.animated && player.playing) restartOverlays(localTime());
   requestAnimationFrame(tickPlayer);
+}
+
+// Overlays with restart: true get their own clock restarted when they become visible:
+// re-setting the image (with a changing comment) starts the SVG document afresh.
+let lastLocal = null;
+let restarts = 0;
+function restartOverlays(local) {
+  const prev = lastLocal;
+  lastLocal = local;
+  if (prev === null) return;
+  const wrapped = local < prev;
+  for (const img of el.stage.querySelectorAll("image[data-restart]")) {
+    const starts = img.dataset.restart.split(",").map(Number);
+    const crossed = starts.some((s) => (wrapped ? s > prev || s <= local : s > prev && s <= local));
+    const o = crossed && circuit.overlays?.find((x) => x.id === img.closest(".overlay")?.dataset.id);
+    if (o) img.setAttribute("href", svgDataUri(`${o.svg}<!--${++restarts}-->`));
+  }
 }
 requestAnimationFrame(tickPlayer);
 
@@ -1164,8 +1184,22 @@ window.bb = {
     setPlaying(false);
     seek(ms);
   },
-  /** Validation result and netlist as text. */
-  check: () => describe(result),
+  /** Validation result and netlist as text; { json: true } for an object, { layout: true } adds layout issues. */
+  check: (opts = {}) => {
+    const layout = opts.layout ? layoutIssues(result) : null;
+    if (!opts.json) return describe(result) + (layout ? `\n${layout.map((l) => `LAYOUT: ${l}`).join("\n")}` : "");
+    return {
+      ...report(),
+      ...(layout ? { layout } : {}),
+      nets: result.nets.map((n) => ({ name: n.name, pins: n.pins.map((p) => p.ref) })),
+    };
+  },
+  /** Layout problems only visible in the drawing (overlapping bodies, hidden wire ends...). */
+  layout: () => layoutIssues(result),
+  /** Preview a placement without changing the circuit: bb.place("xiao", { at: "h3", rot: 180 }). */
+  place: (type, opts = {}) => previewPlacement(circuit, { type, ...opts }),
+  /** Board coordinates of holes / pins / "x,y": bb.coords("h3", "T-5"). */
+  coords: (...refs) => refs.map((r) => coordsOf(result, r)),
   /** What is at a hole: { hole, occupant, net }. */
   inspect: (hole) => ({ hole, occupant: result.occupied.get(hole) ?? null, net: result.netOfHole(hole) }),
   /** Available part types with pins and params. */

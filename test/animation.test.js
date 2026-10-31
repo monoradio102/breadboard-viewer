@@ -105,3 +105,57 @@ test("still frames: time draws the state at that moment without CSS animation", 
   assert.ok(m && Number(m[1]) > 500, `motor angle at 1 s: ${m?.[1]}`);
   assert.match(renderSvg(r, { time: 3500 }), /data-anim="caption:2" style="opacity:1"/);
 });
+
+test("tracks can target arrays of ids and named groups", () => {
+  const r = resolveCircuit({
+    board: "half",
+    wires: [
+      { id: "A", from: "a1", to: "a5" },
+      { id: "B", from: "b1", to: "b5" },
+      { id: "C", from: "c1", to: "c5" },
+    ],
+    animation: {
+      duration: 1000,
+      groups: { REC: ["B", "C"] },
+      tracks: [
+        { target: ["A", "B"], keys: [{ t: 0, flow: true }] },
+        { target: "REC", keys: [{ t: 500, flow: true }] },
+      ],
+    },
+  });
+  assert.deepEqual(r.warnings, []);
+  assert.equal(r.timeline.tracks.get("A").stateAt(0).flow, true);
+  assert.equal(r.timeline.tracks.get("C").stateAt(0).flow, false);
+  assert.equal(r.timeline.tracks.get("C").stateAt(600).flow, true);
+});
+
+test("animate op takes arrays and group names; groups follow renames", () => {
+  let { circuit } = applyOps(load("xiao-voice"), [
+    { op: "setAnimation", groups: { I2S: ["WS", "SCK"] } },
+    { op: "animate", target: ["WS", "SCK"], keys: [{ t: 0, flow: true }] },
+    { op: "animate", target: "I2S", keys: [{ t: 100, flow: false }] },
+  ]);
+  assert.deepEqual(resolveCircuit(circuit).warnings, []);
+  circuit = applyOps(circuit, [{ op: "update", id: "WS", set: { id: "WS_M" } }]).circuit;
+  assert.deepEqual(circuit.animation.groups.I2S, ["WS_M", "SCK"]);
+  assert.ok(circuit.animation.tracks.some((t) => JSON.stringify(t.target) === '["WS_M","SCK"]'));
+  assert.throws(() => applyOps(circuit, [{ op: "animate", target: ["WS_M", "NOPE"], keys: [] }]), /NOPE/);
+});
+
+test("overlay fadeIn / fadeOut and restart start times", () => {
+  const svg = '<svg viewBox="0 0 10 10"><circle r="4" cx="5" cy="5"/></svg>';
+  const r = resolveCircuit({
+    board: "half",
+    overlays: [{ id: "FX", svg, x: 0, y: 0, w: 2, h: 2, fadeIn: 400, fadeOut: 200, restart: true }],
+    animation: { duration: 3000, tracks: [{ target: "FX", keys: [{ t: 0, show: false }, { t: 1000, show: true }, { t: 2000, show: false }] }] },
+  });
+  const tr = r.timeline.tracks.get("FX");
+  assert.equal(tr.stateAt(900).vis, 0);
+  assert.equal(tr.stateAt(1200).vis, 0.5);
+  assert.equal(tr.stateAt(1500).vis, 1);
+  assert.equal(tr.stateAt(2100).vis, 0.5);
+  assert.equal(tr.stateAt(2300).vis, 0);
+  assert.deepEqual(r.timeline.showStarts.get("FX"), [1000]);
+  assert.match(renderSvg(r), /data-restart="1000" data-cycle="3000"/);
+  assert.match(renderSvg(r, { time: 1200 }), /data-anim="FX:fx" style="opacity:0.5"/);
+});

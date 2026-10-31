@@ -22,6 +22,9 @@ export const OVERLAY_STATES = {
   opacity: { type: "number", default: 1, description: "不透明度 0〜1" },
 };
 
+// derived from show + the overlay's fadeIn / fadeOut (not written in keys)
+const OVERLAY_VIS = { vis: { type: "number", default: 1 } };
+
 const SAMPLES = 60;
 
 // Builds per-target timelines. Problems go to `warnings`.
@@ -29,41 +32,82 @@ export function buildTimeline(parts, wires, animation, warnings = [], overlays =
   const targets = new Map();
   for (const p of parts) targets.set(p.id, { kind: "part", specs: p.def.states ?? {}, base: p.inst.state ?? {} });
   for (const w of wires) targets.set(w.id, { kind: "wire", specs: WIRE_STATES, base: w.state ?? {} });
-  for (const o of overlays) targets.set(o.id, { kind: "overlay", specs: OVERLAY_STATES, base: o.state ?? {} });
+  for (const o of overlays) targets.set(o.id, { kind: "overlay", specs: OVERLAY_STATES, base: o.state ?? {}, overlay: o });
 
   const anim = animation && typeof animation === "object" ? animation : null;
   const duration = Math.max(1, Number(anim?.duration) || 1000);
-  const tracks = new Map();
-  for (const [id, target] of targets) tracks.set(id, makeTrack(target.specs, target.base, []));
+  const groups = anim?.groups && typeof anim.groups === "object" ? anim.groups : {};
+  const keysOf = new Map([...targets.keys()].map((id) => [id, []]));
 
+  // a track's target: an id, an array of ids, or the name of a group in animation.groups
+  const expand = (target) => (Array.isArray(target) ? target : Array.isArray(groups[target]) ? groups[target] : [target]);
   for (const [i, tr] of (anim?.tracks ?? []).entries()) {
-    const target = targets.get(tr.target);
-    if (!target) {
-      warnings.push(`animation.tracks[${i}]: target "${tr.target}" が見つかりません`);
-      continue;
-    }
-    const keys = [];
-    for (const key of tr.keys ?? []) {
-      const t = Number(key.t);
-      if (!Number.isFinite(t)) {
-        warnings.push(`animation ${tr.target}: キーに t (ミリ秒) がありません`);
+    for (const id of expand(tr.target)) {
+      const target = targets.get(id);
+      if (!target) {
+        warnings.push(`animation.tracks[${i}]: target "${id}" が見つかりません`);
         continue;
       }
-      for (const name of Object.keys(key)) {
-        if (name !== "t" && !(name in target.specs)) {
-          warnings.push(`animation ${tr.target}: 状態 "${name}" はありません (使えるもの: ${Object.keys(target.specs).join(", ") || "なし"})`);
+      for (const key of tr.keys ?? []) {
+        const t = Number(key.t);
+        if (!Number.isFinite(t)) {
+          warnings.push(`animation ${id}: キーに t (ミリ秒) がありません`);
+          continue;
         }
+        for (const name of Object.keys(key)) {
+          if (name !== "t" && !(name in target.specs)) {
+            warnings.push(`animation ${id}: 状態 "${name}" はありません (使えるもの: ${Object.keys(target.specs).join(", ") || "なし"})`);
+          }
+        }
+        keysOf.get(id).push({ ...key, t });
       }
-      keys.push({ ...key, t });
     }
-    const prev = tracks.get(tr.target);
-    tracks.set(tr.target, makeTrack(target.specs, target.base, [...prev.keys, ...keys]));
+  }
+  const tracks = new Map();
+  const showStarts = new Map(); // overlay id -> times it becomes visible (for restart)
+  for (const [id, target] of targets) {
+    let keys = keysOf.get(id);
+    let specs = target.specs;
+    let base = target.base;
+    if (target.kind === "overlay") {
+      const fade = overlayFade(target.overlay, base, keys);
+      keys = [...keys, ...fade.keys];
+      specs = { ...specs, ...OVERLAY_VIS };
+      base = { ...base, vis: fade.initial };
+      showStarts.set(id, fade.starts);
+    }
+    tracks.set(id, makeTrack(specs, base, keys));
   }
   const captions = (anim?.captions ?? [])
     .map((c) => ({ t: Number(c.t) || 0, text: String(c.text ?? "") }))
     .sort((a, b) => a.t - b.t);
   const animated = Boolean(anim) && ([...tracks.values()].some((t) => t.keys.length) || captions.length > 0);
-  return { duration, loop: anim?.loop !== false, tracks, captions, animated };
+  return { duration, loop: anim?.loop !== false, tracks, captions, animated, showStarts };
+}
+
+// Visibility ramps of an overlay from its show keys: fadeIn / fadeOut (ms) start at the key's
+// time. Also returns when it becomes visible (its clock restarts there with restart: true).
+function overlayFade(overlay, base, keys) {
+  const fadeIn = Math.max(0.5, Number(overlay.fadeIn) || 0);
+  const fadeOut = Math.max(0.5, Number(overlay.fadeOut) || 0);
+  let shown = (base.show ?? true) !== false;
+  const shows = keys.filter((k) => "show" in k).sort((a, b) => a.t - b.t);
+  const out = [];
+  const starts = [];
+  for (const k of shows) if (k.t <= 0) shown = Boolean(k.show);
+  const initial = shown ? 1 : 0;
+  if (shown) starts.push(0);
+  for (const k of shows) {
+    if (k.t <= 0 || Boolean(k.show) === shown) continue;
+    shown = Boolean(k.show);
+    if (shown) {
+      out.push({ t: k.t, vis: 0 }, { t: k.t + fadeIn, vis: 1 });
+      starts.push(k.t);
+    } else {
+      out.push({ t: k.t, vis: 1 }, { t: k.t + fadeOut, vis: 0 });
+    }
+  }
+  return { keys: out, initial, starts };
 }
 
 export function makeTrack(specs, base, keys) {

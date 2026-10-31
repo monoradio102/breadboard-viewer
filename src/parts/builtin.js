@@ -791,8 +791,21 @@ const inmp441 = {
       circle(1, -w / 2, 0.75, { fill: "#d0d4d8", stroke: "#8b9399", "stroke-width": 0.05 }) +
       circle(1, -w / 2, 0.2, { fill: "#222" }) +
       headerPins(pins) +
-      pins.map((p) => uprightText(p.x, p.y === 0 ? 0.75 : -w - 0.75, p.name, rot, { "font-size": 0.38, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" })).join("") +
-      uprightText(1, -w / 2 + 1.4, "INMP441", rot, { "font-size": 0.42, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" })
+      // pin names inside the board (toward the centre), outlined so they stay readable
+      pins
+        .map((p) =>
+          uprightText(p.x, p.y === 0 ? -0.55 : -w + 0.55, p.name, rot, {
+            "font-size": 0.36,
+            fill: "#fff",
+            stroke: "#3a1b58",
+            "stroke-width": 0.08,
+            "paint-order": "stroke",
+            "text-anchor": "middle",
+            "dominant-baseline": "central",
+          }),
+        )
+        .join("") +
+      uprightText(1, -w / 2 + 0.95, "INMP441", rot, { "font-size": 0.3, fill: "#e0d0f0", "text-anchor": "middle", "dominant-baseline": "central" })
     );
   },
 };

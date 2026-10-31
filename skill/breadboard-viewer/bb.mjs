@@ -3,6 +3,7 @@
 
 // tools/bb.mjs
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpus } from "node:os";
 import { join } from "node:path";
 
 // src/board.js
@@ -20,11 +21,11 @@ function colX(col) {
   return col + 1;
 }
 function railCols(cols) {
-  const out2 = [];
+  const out = [];
   for (let start = 3; start <= cols - 1; start += 6) {
-    for (let c = start; c < start + 5 && c <= cols - 1; c++) out2.push(c);
+    for (let c = start; c < start + 5 && c <= cols - 1; c++) out.push(c);
   }
-  return out2;
+  return out;
 }
 function parseHole(id) {
   const m = HOLE_RE.exec(String(id));
@@ -86,42 +87,80 @@ var OVERLAY_STATES = {
   show: { type: "bool", default: true, description: "\u8868\u793A\u3059\u308B" },
   opacity: { type: "number", default: 1, description: "\u4E0D\u900F\u660E\u5EA6 0\u301C1" }
 };
+var OVERLAY_VIS = { vis: { type: "number", default: 1 } };
 var SAMPLES = 60;
 function buildTimeline(parts, wires, animation, warnings = [], overlays = []) {
   const targets = /* @__PURE__ */ new Map();
   for (const p of parts) targets.set(p.id, { kind: "part", specs: p.def.states ?? {}, base: p.inst.state ?? {} });
   for (const w of wires) targets.set(w.id, { kind: "wire", specs: WIRE_STATES, base: w.state ?? {} });
-  for (const o of overlays) targets.set(o.id, { kind: "overlay", specs: OVERLAY_STATES, base: o.state ?? {} });
+  for (const o of overlays) targets.set(o.id, { kind: "overlay", specs: OVERLAY_STATES, base: o.state ?? {}, overlay: o });
   const anim = animation && typeof animation === "object" ? animation : null;
   const duration = Math.max(1, Number(anim?.duration) || 1e3);
-  const tracks = /* @__PURE__ */ new Map();
-  for (const [id, target] of targets) tracks.set(id, makeTrack(target.specs, target.base, []));
+  const groups = anim?.groups && typeof anim.groups === "object" ? anim.groups : {};
+  const keysOf = new Map([...targets.keys()].map((id) => [id, []]));
+  const expand = (target) => Array.isArray(target) ? target : Array.isArray(groups[target]) ? groups[target] : [target];
   for (const [i, tr] of (anim?.tracks ?? []).entries()) {
-    const target = targets.get(tr.target);
-    if (!target) {
-      warnings.push(`animation.tracks[${i}]: target "${tr.target}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
-      continue;
-    }
-    const keys = [];
-    for (const key of tr.keys ?? []) {
-      const t = Number(key.t);
-      if (!Number.isFinite(t)) {
-        warnings.push(`animation ${tr.target}: \u30AD\u30FC\u306B t (\u30DF\u30EA\u79D2) \u304C\u3042\u308A\u307E\u305B\u3093`);
+    for (const id of expand(tr.target)) {
+      const target = targets.get(id);
+      if (!target) {
+        warnings.push(`animation.tracks[${i}]: target "${id}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
         continue;
       }
-      for (const name of Object.keys(key)) {
-        if (name !== "t" && !(name in target.specs)) {
-          warnings.push(`animation ${tr.target}: \u72B6\u614B "${name}" \u306F\u3042\u308A\u307E\u305B\u3093 (\u4F7F\u3048\u308B\u3082\u306E: ${Object.keys(target.specs).join(", ") || "\u306A\u3057"})`);
+      for (const key of tr.keys ?? []) {
+        const t = Number(key.t);
+        if (!Number.isFinite(t)) {
+          warnings.push(`animation ${id}: \u30AD\u30FC\u306B t (\u30DF\u30EA\u79D2) \u304C\u3042\u308A\u307E\u305B\u3093`);
+          continue;
         }
+        for (const name of Object.keys(key)) {
+          if (name !== "t" && !(name in target.specs)) {
+            warnings.push(`animation ${id}: \u72B6\u614B "${name}" \u306F\u3042\u308A\u307E\u305B\u3093 (\u4F7F\u3048\u308B\u3082\u306E: ${Object.keys(target.specs).join(", ") || "\u306A\u3057"})`);
+          }
+        }
+        keysOf.get(id).push({ ...key, t });
       }
-      keys.push({ ...key, t });
     }
-    const prev = tracks.get(tr.target);
-    tracks.set(tr.target, makeTrack(target.specs, target.base, [...prev.keys, ...keys]));
   }
-  const captions2 = (anim?.captions ?? []).map((c) => ({ t: Number(c.t) || 0, text: String(c.text ?? "") })).sort((a, b) => a.t - b.t);
-  const animated = Boolean(anim) && ([...tracks.values()].some((t) => t.keys.length) || captions2.length > 0);
-  return { duration, loop: anim?.loop !== false, tracks, captions: captions2, animated };
+  const tracks = /* @__PURE__ */ new Map();
+  const showStarts = /* @__PURE__ */ new Map();
+  for (const [id, target] of targets) {
+    let keys = keysOf.get(id);
+    let specs = target.specs;
+    let base = target.base;
+    if (target.kind === "overlay") {
+      const fade = overlayFade(target.overlay, base, keys);
+      keys = [...keys, ...fade.keys];
+      specs = { ...specs, ...OVERLAY_VIS };
+      base = { ...base, vis: fade.initial };
+      showStarts.set(id, fade.starts);
+    }
+    tracks.set(id, makeTrack(specs, base, keys));
+  }
+  const captions = (anim?.captions ?? []).map((c) => ({ t: Number(c.t) || 0, text: String(c.text ?? "") })).sort((a, b) => a.t - b.t);
+  const animated = Boolean(anim) && ([...tracks.values()].some((t) => t.keys.length) || captions.length > 0);
+  return { duration, loop: anim?.loop !== false, tracks, captions, animated, showStarts };
+}
+function overlayFade(overlay, base, keys) {
+  const fadeIn = Math.max(0.5, Number(overlay.fadeIn) || 0);
+  const fadeOut = Math.max(0.5, Number(overlay.fadeOut) || 0);
+  let shown = (base.show ?? true) !== false;
+  const shows = keys.filter((k) => "show" in k).sort((a, b) => a.t - b.t);
+  const out = [];
+  const starts = [];
+  for (const k of shows) if (k.t <= 0) shown = Boolean(k.show);
+  const initial = shown ? 1 : 0;
+  if (shown) starts.push(0);
+  for (const k of shows) {
+    if (k.t <= 0 || Boolean(k.show) === shown) continue;
+    shown = Boolean(k.show);
+    if (shown) {
+      out.push({ t: k.t, vis: 0 }, { t: k.t + fadeIn, vis: 1 });
+      starts.push(k.t);
+    } else {
+      out.push({ t: k.t, vis: 1 }, { t: k.t + fadeOut, vis: 0 });
+    }
+  }
+  return { keys: out, initial, starts };
 }
 function makeTrack(specs, base, keys) {
   keys = [...keys].sort((a, b) => a.t - b.t);
@@ -168,7 +207,7 @@ function sampleTrack(track, duration) {
   const smooth = Object.values(track.specs).some((s) => s.type === "number" || s.type === "rate");
   if (smooth) for (let i = 1; i < SAMPLES; i++) times.add(duration * i / SAMPLES);
   const sorted = [...times].sort((a, b) => a - b);
-  const out2 = [];
+  const out = [];
   const angles = Object.fromEntries(track.rates.map((r) => [r, 0]));
   let prev = null;
   for (const t of sorted) {
@@ -180,10 +219,10 @@ function sampleTrack(track, duration) {
       }
     }
     for (const r of track.rates) s[`${r}Angle`] = angles[r];
-    out2.push({ t, s });
+    out.push({ t, s });
     prev = { t, s };
   }
-  return out2;
+  return out;
 }
 function cssDecl(props) {
   return Object.entries(props).map(([k, v]) => `${k}:${typeof v === "number" ? Math.round(v * 1e3) / 1e3 : v}`).join(";");
@@ -216,11 +255,11 @@ function valuesOf(track, name) {
   const vals = [track.defaults[name], ...track.keys.filter((k) => name in k).map((k) => k[name])];
   return [...new Set(vals.filter((v) => v !== void 0).map(String))];
 }
-function captionTrack(captions2) {
+function captionTrack(captions) {
   return makeTrack(
     { caption: { type: "string", default: -1 } },
     {},
-    captions2.map((c, i) => ({ t: c.t, caption: i }))
+    captions.map((c, i) => ({ t: c.t, caption: i }))
   );
 }
 function stateAtTime(track, t) {
@@ -230,7 +269,7 @@ function stateAtTime(track, t) {
 
 // src/erc.js
 function electricalAdvice(parts) {
-  const out2 = [];
+  const out = [];
   const byNet = /* @__PURE__ */ new Map();
   const rolesOf = new Map(parts.map((p) => [p, p.def.roles?.(p.params) ?? {}]));
   for (const part of parts) {
@@ -242,25 +281,27 @@ function electricalAdvice(parts) {
   }
   const is = (kind) => (m) => m.role?.kind === kind;
   const volts = (m) => m.role?.volts;
+  const netOf = (part, name) => part.pins.find((p) => p.name === name)?.net;
+  const round2 = (v) => Math.round(v * 100) / 100;
   for (const members of byNet.values()) {
     const supplies = members.filter(is("supply"));
     const gnds2 = members.filter(is("gnd"));
     const levels = [...new Set(supplies.map(volts).filter((v) => v !== void 0))];
     if (levels.length > 1) {
-      out2.push(`\u96FB\u5727\u306E\u9055\u3046\u96FB\u6E90\u3069\u3046\u3057\u304C\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059: ${supplies.map((s) => `${s.ref} (${volts(s) ?? "?"}V)`).join(", ")}`);
+      out.push(`\u96FB\u5727\u306E\u9055\u3046\u96FB\u6E90\u3069\u3046\u3057\u304C\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059: ${supplies.map((s) => `${s.ref} (${volts(s) ?? "?"}V)`).join(", ")}`);
     }
-    if (supplies.length && gnds2.length) out2.push(`\u96FB\u6E90\u3068 GND \u304C\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059 (\u30B7\u30E7\u30FC\u30C8): ${supplies[0].ref} \u3068 ${gnds2[0].ref}`);
+    if (supplies.length && gnds2.length) out.push(`\u96FB\u6E90\u3068 GND \u304C\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059 (\u30B7\u30E7\u30FC\u30C8): ${supplies[0].ref} \u3068 ${gnds2[0].ref}`);
     const drivers = members.filter((m) => (is("supply")(m) || is("out")(m)) && volts(m) !== void 0);
     for (const m of members) {
       const r = m.role;
       if (r?.kind === "vin") {
         for (const s of supplies.filter((s2) => volts(s2) !== void 0)) {
-          if (r.vmax !== void 0 && volts(s) > r.vmax) out2.push(`${m.ref} \u306F ${r.vmax}V \u307E\u3067\u3067\u3059\u304C\u3001${s.ref} (${volts(s)}V) \u306B\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059`);
-          if (r.vmin !== void 0 && volts(s) < r.vmin) out2.push(`${m.ref} \u306F ${r.vmin}V \u4EE5\u4E0A\u304C\u5FC5\u8981\u3067\u3059\u304C\u3001${s.ref} (${volts(s)}V) \u306B\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059`);
+          if (r.vmax !== void 0 && volts(s) > r.vmax) out.push(`${m.ref} \u306F ${r.vmax}V \u307E\u3067\u3067\u3059\u304C\u3001${s.ref} (${volts(s)}V) \u306B\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059`);
+          if (r.vmin !== void 0 && volts(s) < r.vmin) out.push(`${m.ref} \u306F ${r.vmin}V \u4EE5\u4E0A\u304C\u5FC5\u8981\u3067\u3059\u304C\u3001${s.ref} (${volts(s)}V) \u306B\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059`);
         }
       }
       if (r?.kind === "io" && r.vmax !== void 0) {
-        for (const d of drivers.filter((d2) => volts(d2) > r.vmax)) out2.push(`${m.ref} (${r.vmax}V \u307E\u3067) \u306B ${d.ref} \u306E ${volts(d)}V \u304C\u76F4\u63A5\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059`);
+        for (const d of drivers.filter((d2) => volts(d2) > r.vmax)) out.push(`${m.ref} (${r.vmax}V \u307E\u3067) \u306B ${d.ref} \u306E ${volts(d)}V \u304C\u76F4\u63A5\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059`);
       }
     }
   }
@@ -270,21 +311,55 @@ function electricalAdvice(parts) {
     const linked = (p) => byNet.get(p.net).some((m) => m.part !== part);
     if (!pins.some(linked)) continue;
     const gndPins = pins.filter((p) => roles[p.name]?.kind === "gnd");
-    if (gndPins.length && !gndPins.some(linked)) out2.push(`${part.id} \u306E GND \u304C\u3069\u3053\u306B\u3082\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u305B\u3093`);
+    if (gndPins.length && !gndPins.some(linked)) out.push(`${part.id} \u306E GND \u304C\u3069\u3053\u306B\u3082\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u305B\u3093`);
     for (const p of pins.filter((p2) => roles[p2.name]?.kind === "vin" && !roles[p2.name].optional && !linked(p2))) {
-      out2.push(`${part.id}.${p.name} (\u96FB\u6E90\u5165\u529B) \u304C\u3069\u3053\u306B\u3082\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u305B\u3093`);
+      out.push(`${part.id}.${p.name} (\u96FB\u6E90\u5165\u529B) \u304C\u3069\u3053\u306B\u3082\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u305B\u3093`);
     }
   }
-  const netOf = (part, name) => part.pins.find((p) => p.name === name)?.net;
+  const supplyOn = (part, name) => {
+    const net = netOf(part, name);
+    const s = net && byNet.get(net)?.find((m) => is("supply")(m) && volts(m) !== void 0);
+    return s ? volts(s) : void 0;
+  };
+  for (const part of parts) {
+    for (const [name, r] of Object.entries(rolesOf.get(part))) {
+      if (r?.kind !== "in") continue;
+      const vih = r.vih ?? (r.vihRatio && r.ref ? r.vihRatio * (supplyOn(part, r.ref) ?? NaN) : void 0);
+      if (!Number.isFinite(vih)) continue;
+      for (const m of byNet.get(netOf(part, name)) ?? []) {
+        const level = m.role?.kind === "io" ? m.role.voh : m.role?.kind === "out" ? m.role.volts : void 0;
+        if (level !== void 0 && level < vih - 1e-9) {
+          out.push(`${part.id}.${name} \u306F HIGH \u306B ${round2(vih)}V \u4EE5\u4E0A\u304C\u5FC5\u8981\u3067\u3059\u304C\u3001${m.ref} \u306E\u51FA\u529B\u306F ${level}V \u3067\u3059 (\u30EC\u30D9\u30EB\u5909\u63DB\u3092\u691C\u8A0E)`);
+        }
+      }
+    }
+  }
+  for (const part of parts.filter((p) => p.type === "electrolytic" || p.type === "capacitor")) {
+    const [a, b] = part.type === "electrolytic" ? ["+", "-"] : ["1", "2"];
+    const across = (x, y) => {
+      const hi = byNet.get(netOf(part, x))?.find((m) => is("supply")(m) && volts(m) !== void 0);
+      const lo = byNet.get(netOf(part, y))?.some(is("gnd"));
+      return hi && lo ? hi : null;
+    };
+    const rating = /(\d+(?:\.\d+)?)\s*V\b/i.exec(String(part.params.value ?? ""));
+    for (const [x, y] of [[a, b], [b, a]]) {
+      const hi = across(x, y);
+      if (!hi) continue;
+      if (part.type === "electrolytic" && x === "-") {
+        out.push(`${part.id} (\u96FB\u89E3\u30B3\u30F3\u30C7\u30F3\u30B5) \u306E\u5411\u304D\u304C\u9006\u3067\u3059: \u2212 \u5074\u306B ${hi.ref} (${volts(hi)}V)\u3001+ \u5074\u306B GND \u304C\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3059`);
+      }
+      if (rating && volts(hi) > Number(rating[1])) out.push(`${part.id} \u306E\u8010\u5727 ${rating[1]}V \u3092\u8D85\u3048\u308B ${volts(hi)}V (${hi.ref}) \u304C\u304B\u304B\u308A\u307E\u3059`);
+    }
+  }
   for (const part of parts.filter((p) => p.type === "led" || p.type === "rgbled")) {
     const k = netOf(part, "K");
     if (!k || !byNet.get(k)?.some(is("gnd"))) continue;
     for (const a of part.type === "led" ? ["A"] : ["R", "G", "B"]) {
       const driver = byNet.get(netOf(part, a))?.find((m) => ["supply", "io", "out"].includes(m.role?.kind));
-      if (driver) out2.push(`${part.id} \u304C\u62B5\u6297\u306A\u3057\u3067 ${driver.ref} \u3068 GND \u306E\u9593\u306B\u3042\u308A\u307E\u3059 (\u96FB\u6D41\u5236\u9650\u62B5\u6297\u3092\u5165\u308C\u307E\u3057\u3087\u3046)`);
+      if (driver) out.push(`${part.id} \u304C\u62B5\u6297\u306A\u3057\u3067 ${driver.ref} \u3068 GND \u306E\u9593\u306B\u3042\u308A\u307E\u3059 (\u96FB\u6D41\u5236\u9650\u62B5\u6297\u3092\u5165\u308C\u307E\u3057\u3087\u3046)`);
     }
   }
-  return [...new Set(out2)];
+  return [...new Set(out)];
 }
 
 // src/svg.js
@@ -295,12 +370,12 @@ function n(v) {
   return Number.isFinite(v) ? String(Math.round(v * 1e3) / 1e3) : "0";
 }
 function attrs(obj) {
-  let out2 = "";
+  let out = "";
   for (const [k, v] of Object.entries(obj)) {
     if (v === void 0 || v === null || v === false) continue;
-    out2 += ` ${k}="${typeof v === "number" ? n(v) : esc(v)}"`;
+    out += ` ${k}="${typeof v === "number" ? n(v) : esc(v)}"`;
   }
-  return out2;
+  return out;
 }
 var tag = (name, a, inner) => inner === void 0 ? `<${name}${attrs(a)}/>` : `<${name}${attrs(a)}>${inner}</${name}>`;
 var rect = (x, y, w, h, a = {}) => tag("rect", { x, y, width: w, height: h, ...a });
@@ -308,8 +383,8 @@ var circle = (cx, cy, r, a = {}) => tag("circle", { cx, cy, r, ...a });
 var line = (x1, y1, x2, y2, a = {}) => tag("line", { x1, y1, x2, y2, ...a });
 var text = (x, y, s, a = {}) => tag("text", { x, y, "font-family": "sans-serif", ...a }, esc(s));
 var g = (inner, a = {}) => tag("g", a, inner);
-function shapesToSvg(shapes = [], extra2 = () => ({})) {
-  return shapes.map((s) => shapeToSvg(s, extra2(s) ?? {})).join("");
+function shapesToSvg(shapes = [], extra = () => ({})) {
+  return shapes.map((s) => shapeToSvg(s, extra(s) ?? {})).join("");
 }
 function style(s, defaults) {
   return {
@@ -320,27 +395,27 @@ function style(s, defaults) {
     rx: void 0
   };
 }
-function shapeToSvg(s, extra2) {
+function shapeToSvg(s, extra) {
   switch (s.type) {
     case "rect":
-      return rect(s.x, s.y, s.w, s.h, { ...style(s, { fill: "#333" }), rx: s.r, ...extra2 });
+      return rect(s.x, s.y, s.w, s.h, { ...style(s, { fill: "#333" }), rx: s.r, ...extra });
     case "circle":
-      return circle(s.cx, s.cy, s.r, { ...style(s, { fill: "#333" }), ...extra2 });
+      return circle(s.cx, s.cy, s.r, { ...style(s, { fill: "#333" }), ...extra });
     case "line":
       return line(s.x1, s.y1, s.x2, s.y2, {
         ...style(s, { stroke: "#333" }),
         "stroke-width": s.strokeWidth ?? 0.1,
         "stroke-linecap": "round",
-        ...extra2
+        ...extra
       });
     case "polygon":
       return tag("polygon", {
         points: (s.points ?? []).map(([x, y]) => `${n(x)},${n(y)}`).join(" "),
         ...style(s, { fill: "#333" }),
-        ...extra2
+        ...extra
       });
     case "path":
-      return tag("path", { d: s.d, ...style(s, { fill: "none", stroke: "#333" }), ...extra2 });
+      return tag("path", { d: s.d, ...style(s, { fill: "none", stroke: "#333" }), ...extra });
     case "text":
       return text(s.x, s.y, s.text ?? "", {
         "font-size": s.size ?? 0.6,
@@ -348,7 +423,7 @@ function shapeToSvg(s, extra2) {
         "dominant-baseline": "central",
         fill: s.fill ?? "#fff",
         "font-weight": s.bold ? "bold" : void 0,
-        ...extra2
+        ...extra
       });
     default:
       return "";
@@ -364,7 +439,7 @@ function svgDataUri(svg) {
   const withNs = /<svg[^>]*\sxmlns=/.test(svg) ? svg : svg.replace(/<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(withNs)}`;
 }
-function spriteImage({ svg, x, y, w, h, fit }, extra2 = {}) {
+function spriteImage({ svg, x, y, w, h, fit }, extra = {}) {
   return tag("image", {
     href: svgDataUri(svg),
     x,
@@ -372,7 +447,7 @@ function spriteImage({ svg, x, y, w, h, fit }, extra2 = {}) {
     width: w,
     height: h,
     preserveAspectRatio: fit === "stretch" ? "none" : "xMidYMid meet",
-    ...extra2
+    ...extra
   });
 }
 
@@ -477,8 +552,8 @@ var resistor = {
   render({ pins: [a, b], params }) {
     const L = clamp(dist(a, b) - 0.7, 0.9, 2.6);
     const bands = bandColors(parseOhms(params.value)) ?? [];
-    const pos = [-0.3, -0.13, 0.04, 0.3];
-    const body = rect(-L / 2, -0.36, L, 0.72, { rx: 0.3, fill: "#d9c49a", stroke: "#a8916a", "stroke-width": 0.04 }) + bands.map((c, i) => rect(pos[i] * L - 0.045 * L, -0.36, 0.09 * L, 0.72, { fill: c })).join("");
+    const pos2 = [-0.3, -0.13, 0.04, 0.3];
+    const body = rect(-L / 2, -0.36, L, 0.72, { rx: 0.3, fill: "#d9c49a", stroke: "#a8916a", "stroke-width": 0.04 }) + bands.map((c, i) => rect(pos2[i] * L - 0.045 * L, -0.36, 0.09 * L, 0.72, { fill: c })).join("");
     return leg(a, b) + onAxis(a, b, body);
   }
 };
@@ -1147,7 +1222,18 @@ var inmp441 = {
   extent: [-1.9, -5.9, 3.9, 1.9],
   render({ pins, params, rot }) {
     const w = Number(params.width) || 4;
-    return circle(1, -w / 2, Math.max(2.8, w / 2 + 0.9), { fill: "#5b2c86", stroke: "#3a1b58", "stroke-width": 0.08 }) + circle(1, -w / 2, 0.75, { fill: "#d0d4d8", stroke: "#8b9399", "stroke-width": 0.05 }) + circle(1, -w / 2, 0.2, { fill: "#222" }) + headerPins(pins) + pins.map((p) => uprightText(p.x, p.y === 0 ? 0.75 : -w - 0.75, p.name, rot, { "font-size": 0.38, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" })).join("") + uprightText(1, -w / 2 + 1.4, "INMP441", rot, { "font-size": 0.42, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" });
+    return circle(1, -w / 2, Math.max(2.8, w / 2 + 0.9), { fill: "#5b2c86", stroke: "#3a1b58", "stroke-width": 0.08 }) + circle(1, -w / 2, 0.75, { fill: "#d0d4d8", stroke: "#8b9399", "stroke-width": 0.05 }) + circle(1, -w / 2, 0.2, { fill: "#222" }) + headerPins(pins) + // pin names inside the board (toward the centre), outlined so they stay readable
+    pins.map(
+      (p) => uprightText(p.x, p.y === 0 ? -0.55 : -w + 0.55, p.name, rot, {
+        "font-size": 0.36,
+        fill: "#fff",
+        stroke: "#3a1b58",
+        "stroke-width": 0.08,
+        "paint-order": "stroke",
+        "text-anchor": "middle",
+        "dominant-baseline": "central"
+      })
+    ).join("") + uprightText(1, -w / 2 + 0.95, "INMP441", rot, { "font-size": 0.3, fill: "#e0d0f0", "text-anchor": "middle", "dominant-baseline": "central" });
   }
 };
 var max98357a = {
@@ -1357,19 +1443,19 @@ var BUILTIN_PARTS = [
 // src/parts/roles.js
 var gnd = { kind: "gnd" };
 var supply = (volts) => ({ kind: "supply", volts });
-var vin = (vmin, vmax, extra2 = {}) => ({ kind: "vin", vmin, vmax, ...extra2 });
-function ioPins(pattern, vmax) {
-  return { pattern, role: { kind: "io", vmax } };
+var vin = (vmin, vmax, extra = {}) => ({ kind: "vin", vmin, vmax, ...extra });
+function ioPins(pattern, vmax, voh) {
+  return { pattern, role: { kind: "io", vmax, voh } };
 }
 var BATTERY_VOLTS = { AAx2: 3, AAx3: 4.5, AAx4: 6, "9V": 9 };
 var BUILTIN_ROLES = {
-  nano: { pins: { "5V": supply(5), "3V3": supply(3.3), GND: gnd, GND2: gnd, VIN: vin(7, 12, { optional: true }) }, io: ioPins(/^(D\d+|A\d|TX1|RX0)$/, 5.5) },
+  nano: { pins: { "5V": supply(5), "3V3": supply(3.3), GND: gnd, GND2: gnd, VIN: vin(7, 12, { optional: true }) }, io: ioPins(/^(D\d+|A\d|TX1|RX0)$/, 5.5, 5) },
   pico: {
     pins: { VBUS: supply(5), VSYS: vin(1.8, 5.5, { optional: true }), "3V3": supply(3.3), AGND: gnd, ...gnds("GND", 7) },
-    io: ioPins(/^GP\d+$/, 3.6)
+    io: ioPins(/^GP\d+$/, 3.6, 3.3)
   },
-  esp32: { pins: { "3V3": supply(3.3), "5V": supply(5), GND: gnd, GND2: gnd, GND3: gnd }, io: ioPins(/^IO\d+$/, 3.6) },
-  xiao: { pins: { "3V3": supply(3.3), "5V": supply(5), GND: gnd }, io: ioPins(/^D\d+$/, 3.6) },
+  esp32: { pins: { "3V3": supply(3.3), "5V": supply(5), GND: gnd, GND2: gnd, GND3: gnd }, io: ioPins(/^IO\d+$/, 3.6, 3.3) },
+  xiao: { pins: { "3V3": supply(3.3), "5V": supply(5), GND: gnd }, io: ioPins(/^D\d+$/, 3.6, 3.3) },
   regulator: {
     pins: (p) => {
       const m = /78(\d\d)/.exec(String(p.model));
@@ -1387,31 +1473,32 @@ var BUILTIN_ROLES = {
   "74hc595": { pins: { VCC: vin(2, 6), GND: gnd } },
   inmp441: { pins: { VDD: vin(1.8, 3.6), GND: gnd } },
   max98357a: { pins: { Vin: vin(2.5, 5.5), GND: gnd } },
-  ws2812b: { pins: { VCC: vin(3.5, 5.5), GND: gnd } },
+  ws2812b: { pins: { VCC: vin(3.5, 5.5), GND: gnd, DIN: { kind: "in", vihRatio: 0.7, ref: "VCC" } } },
   ssd1306: { pins: { VCC: vin(3, 5.5), GND: gnd } },
   qwiic: { pins: { "3V3": vin(3, 3.6), GND: gnd } }
 };
 function gnds(prefix, count) {
-  const out2 = { [prefix]: gnd };
-  for (let i = 2; i <= count; i++) out2[`${prefix}${i}`] = gnd;
-  return out2;
+  const out = { [prefix]: gnd };
+  for (let i = 2; i <= count; i++) out[`${prefix}${i}`] = gnd;
+  return out;
 }
 function builtinRoles(type, params, pinNames) {
   const spec = BUILTIN_ROLES[type];
   if (!spec) return {};
   const fixed = typeof spec.pins === "function" ? spec.pins(params) : spec.pins ?? {};
-  const out2 = { ...fixed };
+  const out = { ...fixed };
   if (spec.io) {
-    for (const name of pinNames) if (!(name in out2) && spec.io.pattern.test(name)) out2[name] = spec.io.role;
+    for (const name of pinNames) if (!(name in out) && spec.io.pattern.test(name)) out[name] = spec.io.role;
   }
-  return out2;
+  return out;
 }
 function jsonRole(pin) {
   if (!pin.role) return null;
-  const kinds = ["gnd", "supply", "vin", "io", "out"];
+  const kinds = ["gnd", "supply", "vin", "io", "out", "in"];
   if (!kinds.includes(pin.role)) return null;
   const role = { kind: pin.role };
-  for (const k of ["volts", "vmin", "vmax"]) if (Number.isFinite(pin[k])) role[k] = pin[k];
+  for (const k of ["volts", "vmin", "vmax", "voh", "vih", "vihRatio"]) if (Number.isFinite(pin[k])) role[k] = pin[k];
+  if (typeof pin.ref === "string") role.ref = pin.ref;
   if (pin.optional) role.optional = true;
   return role;
 }
@@ -1448,12 +1535,12 @@ function fromJson(def) {
     if (names.has(String(p.name))) throw new Error(`${def.type}: \u30D4\u30F3\u540D "${p.name}" \u304C\u91CD\u8907\u3057\u3066\u3044\u307E\u3059`);
     names.add(String(p.name));
   }
-  const scale2 = def.units === "mm" ? MM : 1;
+  const scale = def.units === "mm" ? MM : 1;
   const o = def.pins[0];
   const pins = def.pins.map((p) => ({
     name: String(p.name),
-    x: (p.x - o.x) * scale2,
-    y: (p.y - o.y) * scale2,
+    x: (p.x - o.x) * scale,
+    y: (p.y - o.y) * scale,
     ...p.insert === false ? { insert: false } : {}
   }));
   const mount = def.mount === "leads" ? "leads" : "rigid";
@@ -1489,13 +1576,13 @@ function fromJson(def) {
     // electrical roles for the advisory checks ("role" on JSON pins)
     roles: () => Object.fromEntries(def.pins.map((p) => [String(p.name), jsonRole(p)]).filter(([, r]) => r)),
     // drawing bounds relative to the first pin, in pitch units (only needed when it leaves the board)
-    extent: def.extent ? [def.extent[0] - o.x, def.extent[1] - o.y, def.extent[2] - o.x, def.extent[3] - o.y].map((v) => v * scale2) : void 0,
+    extent: def.extent ? [def.extent[0] - o.x, def.extent[1] - o.y, def.extent[2] - o.x, def.extent[3] - o.y].map((v) => v * scale) : void 0,
     internal: () => def.internal ?? [],
     source: def.source,
     json: def,
     render: mount === "rigid" ? ({ anim, values }) => shapes.length || display || sprites.length ? g(
       shapesToSvg(shapes, (s) => s.when ? anim(`when:${s.when}`) : null) + sprites.map((sp) => spriteImage(sp, sp.when ? anim(`when:${sp.when}`) : {})).join("") + (display ? displayText(display, values("text"), anim) : ""),
-      { transform: `scale(${n(scale2)}) translate(${n(-o.x)} ${n(-o.y)})` }
+      { transform: `scale(${n(scale)}) translate(${n(-o.x)} ${n(-o.y)})` }
     ) : fallbackBox(pins, label) : ({ pins: placed }) => genericLeads(placed, label),
     builtin: false
   };
@@ -1628,10 +1715,10 @@ function resolveCircuit(circuit) {
   steps.forEach((s, i) => {
     for (const id of s?.items ?? []) if (!known.has(id)) warnings.push(`steps[${i}]: "${id}" \u3068\u3044\u3046\u90E8\u54C1\u30FB\u914D\u7DDA\u306F\u3042\u308A\u307E\u305B\u3093`);
   });
-  const assembly2 = circuit.assembly && typeof circuit.assembly === "object" ? circuit.assembly : {};
-  for (const id of Object.keys(assembly2.tray ?? {})) {
+  const assembly = circuit.assembly && typeof circuit.assembly === "object" ? circuit.assembly : {};
+  for (const id of Object.keys(assembly.tray ?? {})) {
     if (!parts.some((p) => p.id === id)) warnings.push(`assembly.tray: "${id}" \u3068\u3044\u3046\u90E8\u54C1\u306F\u3042\u308A\u307E\u305B\u3093`);
-    else if (!Array.isArray(assembly2.tray[id]) || assembly2.tray[id].length !== 2) warnings.push(`assembly.tray.${id} \u306F [x, y] \u3067\u3059`);
+    else if (!Array.isArray(assembly.tray[id]) || assembly.tray[id].length !== 2) warnings.push(`assembly.tray.${id} \u306F [x, y] \u3067\u3059`);
   }
   const unique = (list) => [...new Set(list)];
   return {
@@ -1641,7 +1728,7 @@ function resolveCircuit(circuit) {
     wires,
     overlays,
     steps,
-    assembly: assembly2,
+    assembly,
     nets,
     netOf,
     netOfHole: netOf,
@@ -1691,8 +1778,8 @@ function placePart(board, def, inst, id, errors, warnings) {
     pins = layout.map((p, i) => {
       const hole = list[i];
       if (!board.has(hole)) errors.push(`${id}.${p.name}: "${hole}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306A\u3044\u7A74\u3067\u3059`);
-      const pos = board.pos(hole);
-      return { name: p.name, hole: pos ? hole : null, node: pos ? hole : null, x: pos?.x ?? 0, y: pos?.y ?? 0 };
+      const pos2 = board.pos(hole);
+      return { name: p.name, hole: pos2 ? hole : null, node: pos2 ? hole : null, x: pos2?.x ?? 0, y: pos2?.y ?? 0 };
     });
   } else if (inst.at !== void 0) {
     const origin = board.pos(inst.at);
@@ -1831,75 +1918,6 @@ function coveredHoles(result) {
   return covered;
 }
 
-// src/io.js
-var META_RE = /<metadata id="breadboard-circuit"[^>]*>([\s\S]*?)<\/metadata>/;
-function parseCircuitText(text2) {
-  const trimmed = text2.trim();
-  if (trimmed.startsWith("<")) {
-    const m = META_RE.exec(trimmed);
-    if (!m) throw new Error("\u3053\u306ESVG\u306B\u306F\u56DE\u8DEF\u30C7\u30FC\u30BF\u304C\u5165\u3063\u3066\u3044\u307E\u305B\u3093");
-    return JSON.parse(unescapeXml(m[1]));
-  }
-  return JSON.parse(trimmed);
-}
-function stringifyCircuit(circuit) {
-  const keys = Object.keys(circuit);
-  const body = keys.map((k, i) => {
-    const v = circuit[k];
-    const comma = i < keys.length - 1 ? "," : "";
-    if ((k === "parts" || k === "wires") && Array.isArray(v) && v.length) {
-      const items = v.map((item, j) => `    ${inline2(item)}${j < v.length - 1 ? "," : ""}`);
-      return `  "${k}": [
-${items.join("\n")}
-  ]${comma}`;
-    }
-    return `  "${k}": ${JSON.stringify(v, null, 2).replace(/\n/g, "\n  ")}${comma}`;
-  });
-  return `{
-${body.join("\n")}
-}
-`;
-}
-function inline2(v) {
-  if (Array.isArray(v)) return `[${v.map(inline2).join(", ")}]`;
-  if (v && typeof v === "object") {
-    const entries = Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${inline2(x)}`);
-    return `{ ${entries.join(", ")} }`;
-  }
-  return JSON.stringify(v);
-}
-function unescapeXml(s) {
-  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
-}
-function emptyCircuit() {
-  return { version: 1, title: "", board: "half", parts: [], wires: [] };
-}
-function parseLibrary(text2, fromJson2) {
-  const data = parseCircuitText(text2);
-  const list = Array.isArray(data) ? data : data?.partDefs;
-  if (!Array.isArray(list)) throw new Error("\u90E8\u54C1\u5B9A\u7FA9 (partDefs) \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
-  const defs = [];
-  const errors = [];
-  for (const def of list) {
-    try {
-      fromJson2(def);
-      defs.push(def);
-    } catch (e) {
-      errors.push(e.message);
-    }
-  }
-  return { name: Array.isArray(data) ? "" : data.name ?? data.title ?? "", defs, errors };
-}
-function mergeDefs(...lists) {
-  const byType = /* @__PURE__ */ new Map();
-  for (const list of lists) for (const def of list ?? []) byType.set(def.type, def);
-  return [...byType.values()];
-}
-function stringifyLibrary(name, defs) {
-  return `${JSON.stringify({ name, partDefs: defs }, null, 2)}
-`;
-}
-
 // src/assembly.js
 var TIMING = { intro: 1500, step: 2400, lead: 200, move: 900, draw: 800, outro: 2500 };
 function autoSteps(result) {
@@ -1933,26 +1951,8 @@ function planAssembly(result, steps = result.steps?.length ? result.steps : auto
   const duration = starts[steps.length] + T.outro;
   const boxes = /* @__PURE__ */ new Map();
   for (const p of result.parts) {
-    const pad = p.def.mount === "leads" ? 1.3 : 0.9;
-    let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
-    const add = (x2, y2) => {
-      x0 = Math.min(x0, x2);
-      y0 = Math.min(y0, y2);
-      x1 = Math.max(x1, x2);
-      y1 = Math.max(y1, y2);
-    };
-    for (const pin of p.pins) {
-      add(pin.x - pad, pin.y - pad);
-      add(pin.x + pad, pin.y + pad);
-    }
-    const e = p.def.extent;
-    if (e && p.transform) {
-      for (const [cx, cy] of [[e[0], e[1]], [e[2], e[3]], [e[0], e[3]], [e[2], e[1]]]) {
-        const [dx, dy] = rotate(cx, cy, p.transform.rot);
-        add(p.transform.x + dx, p.transform.y + dy);
-      }
-    }
-    boxes.set(p.id, { x: x0, y: y0 - 1, w: x1 - x0, h: y1 - y0 + 1 });
+    const box = partBox(p, p.def.mount === "leads" ? 1.3 : 0.9);
+    boxes.set(p.id, { ...box, y: box.y - 1, h: box.h + 1 });
   }
   const b = result.board.bounds;
   let bottom = b.y + b.h;
@@ -1992,7 +1992,7 @@ function planAssembly(result, steps = result.steps?.length ? result.steps : auto
     trayBounds = union(trayBounds, trayBoxes.get(p.id));
   }
   const number = (i) => settings.numbering === false ? "" : `${i}. `;
-  const captions2 = [
+  const captions = [
     { t: 0, text: settings.introText ?? "\u90E8\u54C1\u3092\u4E26\u3079\u308B" },
     ...steps.map((s, i) => ({ t: start(i + 1), text: `${number(i + 1)}${s.text ?? ""}` })),
     { t: start(steps.length + 1), text: settings.outroText ?? "\u5B8C\u6210" }
@@ -2007,7 +2007,7 @@ function planAssembly(result, steps = result.steps?.length ? result.steps : auto
     trayBoxes,
     trayBounds,
     duration,
-    captions: captions2,
+    captions,
     start,
     length,
     // a moment that shows step k done, its parts still highlighted (0 = everything in the tray)
@@ -2019,13 +2019,34 @@ function planAssembly(result, steps = result.steps?.length ? result.steps : auto
     }
   };
 }
+function partBox(part, pad = 0.9) {
+  let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+  const add = (x, y) => {
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x);
+    y1 = Math.max(y1, y);
+  };
+  for (const pin of part.pins) {
+    add(pin.x - pad, pin.y - pad);
+    add(pin.x + pad, pin.y + pad);
+  }
+  const e = part.def.extent;
+  if (e && part.transform) {
+    for (const [cx, cy] of [[e[0], e[1]], [e[2], e[3]], [e[0], e[3]], [e[2], e[1]]]) {
+      const [dx, dy] = rotate(cx, cy, part.transform.rot);
+      add(part.transform.x + dx, part.transform.y + dy);
+    }
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
 var ease = (f) => f <= 0 ? 0 : f >= 1 ? 1 : f * f * (3 - 2 * f);
 var round = (v) => Math.round(v * 1e3) / 1e3;
 var isPoint = (v) => Array.isArray(v) && v.length === 2 && v.every(Number.isFinite);
 function pickNumbers(obj) {
-  const out2 = {};
-  for (const [k, v] of Object.entries(obj ?? {})) if (k in TIMING && Number(v) >= 0) out2[k] = Number(v);
-  return out2;
+  const out = {};
+  for (const [k, v] of Object.entries(obj ?? {})) if (k in TIMING && Number(v) >= 0) out[k] = Number(v);
+  return out;
 }
 function offsetAt(plan, id, t) {
   const o = plan.offsets.get(id);
@@ -2060,388 +2081,6 @@ function union(a, b) {
   const x = Math.min(a.x, b.x);
   const y = Math.min(a.y, b.y);
   return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
-}
-
-// src/ops.js
-var OpError = class extends Error {
-};
-var fail = (msg) => {
-  throw new OpError(msg);
-};
-var ID_PREFIX = {
-  resistor: "R",
-  led: "LED",
-  diode: "D",
-  capacitor: "C",
-  electrolytic: "C",
-  cds: "CDS",
-  transistor: "Q",
-  regulator: "U",
-  button: "SW",
-  trimmer: "VR",
-  buzzer: "BZ",
-  header: "J",
-  motor: "M",
-  servo: "SV",
-  seg7: "DS",
-  dht11: "U",
-  hcsr04: "U",
-  relay: "K",
-  rgbled: "LED",
-  pot: "VR",
-  lcd1602: "LCD",
-  speaker: "SP",
-  battery: "BT",
-  inmp441: "MIC",
-  max98357a: "AMP",
-  ws2812b: "LED",
-  ssd1306: "DISP",
-  qwiic: "J"
-};
-function normalize(circuit) {
-  const c = structuredClone(circuit);
-  c.parts ??= [];
-  c.wires ??= [];
-  if (c.overlays && !c.overlays.length) delete c.overlays;
-  const used = new Set(c.wires.map((w) => w.id).filter(Boolean));
-  let i = 1;
-  c.wires = c.wires.map((w) => {
-    if (w.id) return w;
-    while (used.has(`W${i}`)) i++;
-    used.add(`W${i}`);
-    return { id: `W${i}`, ...w };
-  });
-  return c;
-}
-function applyOps(circuit, ops) {
-  let c = normalize(circuit);
-  const ids = [];
-  (Array.isArray(ops) ? ops : [ops]).forEach((op, i) => {
-    const fn = OPS[op?.op];
-    if (!fn) fail(`#${i + 1}: \u672A\u77E5\u306E\u64CD\u4F5C "${op?.op}" (\u4F7F\u3048\u308B\u3082\u306E: ${Object.keys(OPS).join(", ")})`);
-    try {
-      const out2 = fn(c, op);
-      c = out2.circuit;
-      ids.push(out2.id ?? op.id ?? null);
-    } catch (e) {
-      if (e instanceof OpError) fail(`#${i + 1} ${op.op}: ${e.message}`);
-      throw e;
-    }
-  });
-  return { circuit: c, ids };
-}
-var OPS = {
-  addPart(c, { op, id, ...rest }) {
-    const def = registryFor(c).get(rest.type) ?? fail(`\u672A\u77E5\u306E\u90E8\u54C1\u30BF\u30A4\u30D7 "${rest.type}"`);
-    const inst = { id: id ?? nextId(c, ID_PREFIX[def.type] ?? def.json?.prefix ?? defaultPrefix(def)), ...rest };
-    if (usedIds(c).has(inst.id)) fail(`ID "${inst.id}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
-    if (inst.pos !== void 0) {
-      checkPos(inst.pos);
-    } else if (inst.at === void 0 && inst.pins === void 0) {
-      const spot = findFreeSpot(resolveCircuit(c), def, rest) ?? fail(`${def.name} \u3092\u7F6E\u3051\u308B\u7A7A\u304D\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
-      if (def.mount === "leads") inst.pins = spot.pins;
-      else inst.at = spot.at;
-    } else if (inst.at !== void 0 && def.mount === "leads" && inst.pins === void 0) {
-      inst.pins = layoutHoles(c, def, inst, inst.at, inst.rot ?? 0);
-      delete inst.at;
-      delete inst.rot;
-    }
-    return { circuit: { ...c, parts: [...c.parts, inst] }, id: inst.id };
-  },
-  // to: a hole (on the board), or pos: [x, y] (free placement off the board / overlay position)
-  move(c, { id, to: to2, pos }) {
-    const oi = overlayIndex(c, id);
-    if (oi >= 0) {
-      checkPos(pos);
-      return { circuit: { ...c, overlays: c.overlays.map((o, i) => i === oi ? { ...o, x: pos[0], y: pos[1] } : o) } };
-    }
-    const { inst, index, def } = partInfo(c, id);
-    if (pos !== void 0) {
-      checkPos(pos);
-      const { at, pins, ...rest } = inst;
-      return { circuit: replacePart(c, index, { ...rest, pos }) };
-    }
-    const board = boardOf(c);
-    if (!board.has(to2)) fail(`"${to2}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306A\u3044\u7A74\u3067\u3059`);
-    let next;
-    if (inst.pos !== void 0) {
-      const { pos: _, ...rest } = inst;
-      next = def.mount === "leads" ? { ...withoutRot(rest), pins: layoutHoles(c, def, inst, to2, inst.rot ?? 0) } : { ...rest, at: to2 };
-    } else if (inst.pins !== void 0) {
-      const holes = pinHoles(inst, def);
-      const from2 = board.pos(holes[0]) ?? fail(`${id} \u306E\u30D4\u30F3\u306E\u4F4D\u7F6E\u304C\u4E0D\u6B63\u3067\u3059`);
-      const target = board.pos(to2);
-      const moved = holes.map((h) => {
-        const p = board.pos(h) ?? fail(`${id} \u306E\u30D4\u30F3 "${h}" \u304C\u4E0D\u6B63\u3067\u3059`);
-        return board.holeAt(p.x + target.x - from2.x, p.y + target.y - from2.y) ?? fail(`${id} \u3092 ${to2} \u306B\u52D5\u304B\u3059\u3068\u30D4\u30F3\u304C\u7A74\u304B\u3089\u5916\u308C\u307E\u3059`);
-      });
-      next = withPinHoles(inst, def, moved);
-    } else {
-      next = { ...inst, at: to2 };
-    }
-    return { circuit: replacePart(c, index, next) };
-  },
-  rotate(c, { id, by = 90 }) {
-    const { inst, index, def } = partInfo(c, id);
-    const step = (Number(by) % 360 + 360) % 360;
-    if (step % 90 !== 0) fail("by \u306F 90 \u306E\u500D\u6570\u3067\u3059");
-    if (inst.pins === void 0) {
-      const rot = ((Number(inst.rot ?? 0) + step) % 360 + 360) % 360;
-      const next = { ...inst, rot };
-      if (rot === 0) delete next.rot;
-      return { circuit: replacePart(c, index, next) };
-    }
-    const board = boardOf(c);
-    const holes = pinHoles(inst, def);
-    const o = board.pos(holes[0]);
-    const rotated = holes.map((h) => {
-      const p = board.pos(h);
-      const [dx, dy] = rotate(p.x - o.x, p.y - o.y, step);
-      return board.holeAt(o.x + dx, o.y + dy) ?? fail(`${id} \u3092\u56DE\u8EE2\u3059\u308B\u3068\u30D4\u30F3\u304C\u7A74\u304B\u3089\u5916\u308C\u307E\u3059`);
-    });
-    return { circuit: replacePart(c, index, withPinHoles(inst, def, rotated)) };
-  },
-  setPin(c, { id, pin, to: to2 }) {
-    const { inst, index, def } = partInfo(c, id);
-    if (def.mount !== "leads") fail(`${id} \u306F\u8DB3\u3092\u66F2\u3052\u3089\u308C\u306A\u3044\u90E8\u54C1\u3067\u3059 (move \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044)`);
-    if (inst.pos !== void 0) fail(`${id} \u306F\u30DC\u30FC\u30C9\u5916\u306B\u7F6E\u3044\u305F\u90E8\u54C1\u3067\u3059 (move \u306E to \u3067\u7A74\u306B\u633F\u3057\u3066\u304B\u3089\u52D5\u304B\u3057\u3066\u304F\u3060\u3055\u3044)`);
-    if (!boardOf(c).has(to2)) fail(`"${to2}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306A\u3044\u7A74\u3067\u3059`);
-    const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
-    const i = names.indexOf(String(pin));
-    if (i < 0) fail(`${id} \u306B\u30D4\u30F3 "${pin}" \u306F\u3042\u308A\u307E\u305B\u3093 (${names.join(", ")})`);
-    const holes = inst.pins !== void 0 ? pinHoles(inst, def) : layoutHoles(c, def, inst, inst.at, inst.rot ?? 0);
-    holes[i] = to2;
-    const next = withPinHoles({ ...inst }, def, holes);
-    delete next.at;
-    delete next.rot;
-    return { circuit: replacePart(c, index, next) };
-  },
-  update(c, { id, set = {} }) {
-    const oi = overlayIndex(c, id);
-    if (oi >= 0) {
-      const o = clean({ ...c.overlays[oi], ...set });
-      if (o.id !== id && usedIds(c).has(o.id)) fail(`ID "${o.id}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
-      return { circuit: retarget({ ...c, overlays: c.overlays.map((x, i) => i === oi ? o : x) }, id, o.id), id: o.id };
-    }
-    const wireIndex = c.wires.findIndex((w) => w.id === id);
-    if (wireIndex >= 0) {
-      const wire = clean({ ...c.wires[wireIndex], ...set });
-      if (wire.id !== id && c.wires.some((w) => w.id === wire.id)) fail(`ID "${wire.id}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
-      return { circuit: retarget({ ...c, wires: c.wires.map((w, i) => i === wireIndex ? wire : w) }, id, wire.id), id: wire.id };
-    }
-    const { inst, index } = partInfo(c, id);
-    if ("type" in set) fail("type \u306F\u5909\u66F4\u3067\u304D\u307E\u305B\u3093 (remove \u3057\u3066 addPart \u3057\u3066\u304F\u3060\u3055\u3044)");
-    const next = clean({ ...inst, ...set });
-    if (next.id !== id && findPart(c, next.id, false)) fail(`ID "${next.id}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
-    let out2 = retarget(replacePart(c, index, next), id, next.id);
-    if (next.id !== id) {
-      const rename = (ref) => isPinOf(ref, id) ? `${next.id}${String(ref).slice(id.length)}` : ref;
-      out2 = { ...out2, wires: out2.wires.map((w) => ({ ...w, from: rename(w.from), to: rename(w.to) })) };
-    }
-    return { circuit: out2, id: next.id };
-  },
-  // Removing a part also removes the wires attached to its pins ("R1.2").
-  remove(c, { id }) {
-    if (overlayIndex(c, id) >= 0) {
-      const { overlays, ...rest } = c;
-      const left = overlays.filter((o) => o.id !== id);
-      return { circuit: retarget(left.length ? { ...rest, overlays: left } : rest, id, null) };
-    }
-    if (c.wires.some((w) => w.id === id)) return { circuit: retarget({ ...c, wires: c.wires.filter((w) => w.id !== id) }, id, null) };
-    partInfo(c, id);
-    let next = { ...c, parts: c.parts.filter((p) => p.id !== id) };
-    for (const w of c.wires.filter((w2) => isPinOf(w2.from, id) || isPinOf(w2.to, id))) next = retarget(next, w.id, null);
-    next.wires = c.wires.filter((w) => !isPinOf(w.from, id) && !isPinOf(w.to, id));
-    return { circuit: retarget(next, id, null) };
-  },
-  addWire(c, { op, id, from: from2, to: to2, ...rest }) {
-    for (const h of [from2, to2]) checkEnd(c, h);
-    if (from2 === to2) fail("from \u3068 to \u304C\u540C\u3058\u3067\u3059");
-    const wid = id ?? nextId(c, "W");
-    if (usedIds(c).has(wid)) fail(`ID "${wid}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
-    return { circuit: { ...c, wires: [...c.wires, { id: wid, from: from2, to: to2, ...rest }] }, id: wid };
-  },
-  // Adds user SVG (an effect, arrow, note...) drawn above the circuit; x, y, w, h in pitch units.
-  addOverlay(c, { op, id, svg, x, y, w, h, ...rest }) {
-    const err = spriteError(svg);
-    if (err) fail(err);
-    if (![x, y, w, h].every(Number.isFinite)) fail("x, y, w, h (\u30D4\u30C3\u30C1\u5358\u4F4D) \u304C\u5FC5\u8981\u3067\u3059");
-    const oid = id ?? nextId(c, "FX");
-    if (usedIds(c).has(oid)) fail(`ID "${oid}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
-    return { circuit: { ...c, overlays: [...c.overlays ?? [], { id: oid, x, y, w, h, svg, ...rest }] }, id: oid };
-  },
-  // Sets the keys of one target's track (replace: false appends to the existing keys).
-  animate(c, { target, keys = [], replace = true }) {
-    const exists = usedIds(c).has(target);
-    if (!exists) fail(`target "${target}" \u306E\u90E8\u54C1\u30FB\u914D\u7DDA\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
-    if (!Array.isArray(keys) || keys.some((k) => !Number.isFinite(Number(k?.t)))) fail("keys \u306F {t, ...\u72B6\u614B} \u306E\u914D\u5217\u3067\u3059");
-    const anim = { duration: 2e3, loop: true, ...c.animation ?? {} };
-    const tracks = [...anim.tracks ?? []];
-    const i = tracks.findIndex((t) => t.target === target);
-    const merged = replace || i < 0 ? keys : [...tracks[i].keys, ...keys];
-    const track = { target, keys: [...merged].sort((a, b) => a.t - b.t) };
-    if (i < 0) tracks.push(track);
-    else tracks[i] = track;
-    return { circuit: { ...c, animation: { ...anim, tracks } }, id: target };
-  },
-  // Merges duration / loop / captions / tracks into the animation; clear: true removes it.
-  setAnimation(c, { clear, op, ...fields }) {
-    if (clear) {
-      const { animation, ...rest } = c;
-      return { circuit: rest };
-    }
-    return { circuit: { ...c, animation: { duration: 2e3, loop: true, tracks: [], ...c.animation ?? {}, ...fields } } };
-  },
-  setBoard(c, { board }) {
-    createBoard(board);
-    return { circuit: { ...c, board } };
-  },
-  setTitle(c, { title }) {
-    return { circuit: { ...c, title: String(title ?? "") } };
-  },
-  // Assembly steps: [{ text, items: [ids] }] (see assembly.js); [] or null removes them.
-  setSteps(c, { steps }) {
-    if (steps == null || Array.isArray(steps) && !steps.length) {
-      const { steps: _, ...rest } = c;
-      return { circuit: rest };
-    }
-    if (!Array.isArray(steps) || steps.some((s) => !s || !Array.isArray(s.items))) fail("steps \u306F { text, items: [ID...] } \u306E\u914D\u5217\u3067\u3059");
-    const ids = usedIds(c);
-    for (const s of steps) for (const id of s.items) if (!ids.has(id)) fail(`"${id}" \u3068\u3044\u3046\u90E8\u54C1\u30FB\u914D\u7DDA\u306F\u3042\u308A\u307E\u305B\u3093`);
-    return { circuit: { ...c, steps } };
-  },
-  // Merges assembly settings (tray, trayOrigin, trayWidth, timing, introText, outroText,
-  // numbering). tray and timing merge per key; null removes a key; clear: true removes all.
-  setAssembly(c, { op, clear, ...fields }) {
-    if (clear) {
-      const { assembly: assembly2, ...rest } = c;
-      return { circuit: rest };
-    }
-    const cur = c.assembly ?? {};
-    const next = { ...cur };
-    for (const [k, v] of Object.entries(fields)) {
-      if (v === null) delete next[k];
-      else if ((k === "tray" || k === "timing") && typeof v === "object") next[k] = clean({ ...cur[k] ?? {}, ...v });
-      else next[k] = v;
-    }
-    for (const id of Object.keys(next.tray ?? {})) if (!c.parts.some((p) => p.id === id)) fail(`tray: "${id}" \u3068\u3044\u3046\u90E8\u54C1\u306F\u3042\u308A\u307E\u305B\u3093`);
-    for (const [id, pos] of Object.entries(next.tray ?? {})) if (!Array.isArray(pos) || pos.length !== 2 || !pos.every(Number.isFinite)) fail(`tray.${id} \u306F [x, y] \u3067\u3059`);
-    return { circuit: { ...c, assembly: next } };
-  },
-  // Generates steps: modules / ICs first, then the other parts, then wires a few at a time.
-  autoSteps(c) {
-    return { circuit: { ...c, steps: autoSteps(resolveCircuit(c)) } };
-  },
-  // Adds a JSON part definition to the circuit (replaces one with the same type).
-  definePart(c, { def }) {
-    try {
-      fromJson(def);
-    } catch (e) {
-      fail(e.message);
-    }
-    if (BUILTIN_TYPES.has(def.type)) fail(`"${def.type}" \u306F\u7D44\u307F\u8FBC\u307F\u90E8\u54C1\u3068\u540C\u3058\u540D\u524D\u3067\u3059`);
-    const others = (c.partDefs ?? []).filter((d) => d.type !== def.type);
-    return { circuit: { ...c, partDefs: [...others, def] }, id: def.type };
-  }
-};
-var BUILTIN_TYPES = new Set(BUILTIN_PARTS.map((p) => p.type));
-var OP_NAMES = Object.keys(OPS);
-function registryFor(c) {
-  return createRegistry(c.partDefs ?? []);
-}
-function boardOf(c) {
-  try {
-    return createBoard(c.board ?? "half");
-  } catch (e) {
-    return fail(e.message);
-  }
-}
-function findPart(c, id, required = true) {
-  const index = c.parts.findIndex((p) => p.id === id);
-  if (index < 0 && required) fail(`ID "${id}" \u306E\u90E8\u54C1\u30FB\u914D\u7DDA\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
-  return index < 0 ? null : { inst: c.parts[index], index };
-}
-function partInfo(c, id) {
-  const { inst, index } = findPart(c, id);
-  const def = registryFor(c).get(inst.type) ?? fail(`${id}: \u672A\u77E5\u306E\u90E8\u54C1\u30BF\u30A4\u30D7 "${inst.type}"`);
-  return { inst, index, def };
-}
-function replacePart(c, index, inst) {
-  return { ...c, parts: c.parts.map((p, i) => i === index ? inst : p) };
-}
-function paramsOf(def, inst) {
-  const params = {};
-  for (const [k, spec] of Object.entries(def.params ?? {})) params[k] = inst[k] ?? spec.default;
-  return params;
-}
-function pinHoles(inst, def) {
-  if (Array.isArray(inst.pins)) return [...inst.pins];
-  return def.pins(paramsOf(def, inst)).map((p) => inst.pins[p.name]);
-}
-function withPinHoles(inst, def, holes) {
-  if (Array.isArray(inst.pins) || inst.pins === void 0) return { ...inst, pins: holes };
-  const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
-  return { ...inst, pins: Object.fromEntries(names.map((n2, i) => [n2, holes[i]])) };
-}
-function layoutHoles(c, def, inst, at, rot) {
-  const board = boardOf(c);
-  const o = board.pos(at) ?? fail(`"${at}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306A\u3044\u7A74\u3067\u3059`);
-  return def.pins(paramsOf(def, inst)).map((p) => {
-    const [dx, dy] = rotate(p.x, p.y, Number(rot));
-    return board.holeAt(o.x + dx, o.y + dy) ?? fail(`${def.name} \u3092 ${at} \u306B\u7F6E\u304F\u3068\u30D4\u30F3\u304C\u7A74\u304B\u3089\u5916\u308C\u307E\u3059`);
-  });
-}
-function overlayIndex(c, id) {
-  return (c.overlays ?? []).findIndex((o) => o.id === id);
-}
-function usedIds(c) {
-  return /* @__PURE__ */ new Set([...c.parts.map((p) => p.id), ...c.wires.map((w) => w.id), ...(c.overlays ?? []).map((o) => o.id)]);
-}
-function nextId(c, prefix) {
-  const used = usedIds(c);
-  let i = 1;
-  while (used.has(`${prefix}${i}`)) i++;
-  return `${prefix}${i}`;
-}
-function defaultPrefix(def) {
-  return def.category === "IC" || def.category === "\u30DE\u30A4\u30B3\u30F3\u30DC\u30FC\u30C9" ? "U" : "X";
-}
-var isPinOf = (ref, id) => String(ref).startsWith(`${id}.`);
-function checkPos(pos) {
-  if (!Array.isArray(pos) || pos.length !== 2 || !pos.every(Number.isFinite)) fail("pos \u306F [x, y] (\u30D4\u30C3\u30C1\u5358\u4F4D) \u3067\u3059");
-}
-function withoutRot({ rot, ...rest }) {
-  return rest;
-}
-function checkEnd(c, ref) {
-  if (boardOf(c).has(ref)) return;
-  const dot = String(ref).indexOf(".");
-  const inst = dot > 0 ? c.parts.find((p) => p.id === String(ref).slice(0, dot)) : null;
-  if (!inst) fail(`"${ref}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306E\u7A74\u3067\u3082\u3001\u90E8\u54C1\u306E\u30D4\u30F3 (\u4F8B: "SV1.SIG") \u3067\u3082\u3042\u308A\u307E\u305B\u3093`);
-  const def = registryFor(c).get(inst.type) ?? fail(`\u672A\u77E5\u306E\u90E8\u54C1\u30BF\u30A4\u30D7 "${inst.type}"`);
-  const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
-  if (!names.includes(String(ref).slice(dot + 1))) fail(`${inst.id} \u306B\u30D4\u30F3 "${String(ref).slice(dot + 1)}" \u306F\u3042\u308A\u307E\u305B\u3093 (${names.join(", ")})`);
-}
-function retarget(c, from2, to2) {
-  if (from2 === to2) return c;
-  let out2 = c;
-  if (c.animation?.tracks) {
-    const tracks = c.animation.tracks.flatMap((t) => t.target !== from2 ? [t] : to2 === null ? [] : [{ ...t, target: to2 }]);
-    out2 = { ...out2, animation: { ...c.animation, tracks } };
-  }
-  if (Array.isArray(c.steps)) {
-    const steps = c.steps.map((s) => ({ ...s, items: (s.items ?? []).flatMap((id) => id !== from2 ? [id] : to2 === null ? [] : [to2]) }));
-    out2 = { ...out2, steps };
-  }
-  if (c.assembly?.tray && from2 in c.assembly.tray) {
-    const { [from2]: pos, ...tray } = c.assembly.tray;
-    out2 = { ...out2, assembly: { ...c.assembly, tray: to2 === null ? tray : { ...tray, [to2]: pos } } };
-  }
-  return out2;
-}
-function clean(obj) {
-  for (const k of Object.keys(obj)) if (obj[k] === null) delete obj[k];
-  return obj;
 }
 
 // src/render.js
@@ -2487,17 +2126,17 @@ function renderSvg(result, options = {}) {
   };
   const pad = 1;
   const b = contentBounds(result, options.margin ?? 0);
-  const captions2 = (options.captions ?? true) && tl?.captions.length > 0;
-  const capRoom = captions2 ? 2.4 : 0;
+  const captions = (options.captions ?? true) && tl?.captions.length > 0;
+  const capRoom = captions ? 2.4 : 0;
   const vb = options.viewBox ? String(options.viewBox).split(/[\s,]+/).map(Number) : [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2 + capRoom];
   const body = [
     g(drawBoard(board), { class: "board" }),
     g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params))).join(""), { class: "parts" }),
     g(result.wires.map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
     g(result.parts.map(drawTerminals).join(""), { class: "terminals" }),
-    g(result.overlays.map((o) => drawOverlay(o, ctxFor(o.id, overlayAnimate))).join(""), { class: "overlays" }),
+    g(result.overlays.map((o) => drawOverlay(o, ctxFor(o.id, overlayAnimate), tl)).join(""), { class: "overlays" }),
     labels ? g(result.parts.map(drawLabel).join(""), { class: "labels", "pointer-events": "none" }) : "",
-    captions2 ? drawCaptions(tl, vb, animEls, svgId, animate, stateOf) : "",
+    captions ? drawCaptions(tl, vb, animEls, svgId, animate, stateOf) : "",
     g(drawProblems(result), { class: "problems" }),
     options.selection ? g(drawSelection(result, options.selection), { class: "selection" }) : "",
     options.tempWire ? g(drawTempWire(options.tempWire), { class: "temp-wire", "pointer-events": "none" }) : ""
@@ -2544,9 +2183,10 @@ function drawTerminals(part) {
   ).join("");
 }
 var wireAnimate = () => ({ flow: (s) => ({ opacity: s.flow ? 1 : 0 }) });
-var overlayAnimate = () => ({ fx: (s) => ({ opacity: s.show ? Math.max(0, Math.min(1, Number(s.opacity))) : 0 }) });
-function drawOverlay(o, ctx) {
-  return g(spriteImage(o), { class: "overlay", "data-id": o.id, ...ctx.anim("fx") });
+var overlayAnimate = () => ({ fx: (s) => ({ opacity: Math.round(Math.max(0, Math.min(1, Number(s.opacity))) * Number(s.vis ?? 1) * 1e3) / 1e3 }) });
+function drawOverlay(o, ctx, tl) {
+  const restart = o.restart ? { "data-restart": (tl?.showStarts?.get(o.id) ?? [0]).join(","), "data-cycle": tl?.loop ? tl.duration : 0 } : {};
+  return g(spriteImage(o, restart), { class: "overlay", "data-id": o.id, ...ctx.anim("fx") });
 }
 function hash(s) {
   let h = 5381;
@@ -2574,33 +2214,33 @@ function drawCaptions(tl, vb, animEls, svgId, animate, stateOf) {
 }
 function drawBoard(board) {
   const b = board.bounds;
-  const out2 = [rect(b.x, b.y, b.w, b.h, { rx: 0.4, fill: "#f3efe6", stroke: "#d3ccbc", "stroke-width": 0.06 })];
+  const out = [rect(b.x, b.y, b.w, b.h, { rx: 0.4, fill: "#f3efe6", stroke: "#d3ccbc", "stroke-width": 0.06 })];
   const left = 1.2;
   const right = board.cols + 1.8;
   if (board.rails) {
     const first = board.railCols[0] + 1 - 0.6;
     const last = board.railCols[board.railCols.length - 1] + 1 + 0.6;
     const stripe = (y, c) => line(first, y, last, y, { stroke: c, "stroke-width": 0.08 });
-    out2.push(stripe(0.45, "#e53935"), stripe(2.55, "#1e88e5"), stripe(16.45, "#e53935"), stripe(18.55, "#1e88e5"));
+    out.push(stripe(0.45, "#e53935"), stripe(2.55, "#1e88e5"), stripe(16.45, "#e53935"), stripe(18.55, "#1e88e5"));
     const sign = (x, y, s, c) => text(x, y, s, { "font-size": 0.6, fill: c, "text-anchor": "middle", "dominant-baseline": "central", "font-weight": "bold" });
     for (const x of [first - 0.5, last + 0.5]) {
-      out2.push(sign(x, 1, "+", "#e53935"), sign(x, 2, "\u2212", "#1e88e5"), sign(x, 17, "+", "#e53935"), sign(x, 18, "\u2212", "#1e88e5"));
+      out.push(sign(x, 1, "+", "#e53935"), sign(x, 2, "\u2212", "#1e88e5"), sign(x, 17, "+", "#e53935"), sign(x, 18, "\u2212", "#1e88e5"));
     }
   }
-  out2.push(rect(left, 9.15, right - left, 0.7, { fill: "#e4ded0", rx: 0.2 }));
+  out.push(rect(left, 9.15, right - left, 0.7, { fill: "#e4ded0", rx: 0.2 }));
   const small = { "font-size": 0.42, fill: "#9a9384", "text-anchor": "middle", "dominant-baseline": "central" };
   for (let col = 1; col <= board.cols; col++) {
     if (col === 1 || col % 5 === 0) {
-      out2.push(text(col + 1, 3.1, String(col), small), text(col + 1, 15.9, String(col), small));
+      out.push(text(col + 1, 3.1, String(col), small), text(col + 1, 15.9, String(col), small));
     }
   }
   for (const [row, y] of Object.entries(board.rowY)) {
-    out2.push(text(0.85, y, row, small), text(board.cols + 2.15, y, row, small));
+    out.push(text(0.85, y, row, small), text(board.cols + 2.15, y, row, small));
   }
   for (const [id, p] of board.holes) {
-    out2.push(rect(p.x - 0.22, p.y - 0.22, 0.44, 0.44, { rx: 0.07, fill: "#5d5a52", "data-hole": id }));
+    out.push(rect(p.x - 0.22, p.y - 0.22, 0.44, 0.44, { rx: 0.07, fill: "#5d5a52", "data-hole": id }));
   }
-  return out2.join("");
+  return out.join("");
 }
 function drawPart(part, ctx) {
   const attrs2 = { class: "part", "data-id": part.id, "data-type": part.type };
@@ -2614,7 +2254,7 @@ function drawPart(part, ctx) {
     transform: `translate(${n(t.x)} ${n(t.y)}) rotate(${t.rot})`
   });
 }
-function wirePath(w) {
+function wireGeometry(w) {
   let pts = [w.a, ...w.via, w.b];
   const bend = Number(w.bend) || 0;
   const curve = w.shape === "curve" || bend && pts.length === 2;
@@ -2623,8 +2263,8 @@ function wirePath(w) {
     const dy = w.b.y - w.a.y;
     pts = [w.a, { x: (w.a.x + w.b.x) / 2 - dy * bend, y: (w.a.y + w.b.y) / 2 + dx * bend }, w.b];
   }
-  if (!curve || pts.length < 3) return `M ${pts.map((p) => `${n(p.x)} ${n(p.y)}`).join(" L ")}`;
-  let d = `M ${n(pts[0].x)} ${n(pts[0].y)}`;
+  if (!curve || pts.length < 3) return { lines: pts };
+  const beziers = [];
   for (let i = 0; i < pts.length - 1; i++) {
     const p0 = pts[i - 1] ?? pts[i];
     const p1 = pts[i];
@@ -2632,9 +2272,42 @@ function wirePath(w) {
     const p3 = pts[i + 2] ?? p2;
     const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
     const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
-    d += ` C ${n(c1.x)} ${n(c1.y)} ${n(c2.x)} ${n(c2.y)} ${n(p2.x)} ${n(p2.y)}`;
+    beziers.push([p1, c1, c2, p2]);
   }
-  return d;
+  return { beziers };
+}
+function wirePath(w) {
+  const geo = wireGeometry(w);
+  if (geo.lines) return `M ${geo.lines.map((p) => `${n(p.x)} ${n(p.y)}`).join(" L ")}`;
+  const [first] = geo.beziers[0];
+  return `M ${n(first.x)} ${n(first.y)}${geo.beziers.map(([, c1, c2, p2]) => ` C ${n(c1.x)} ${n(c1.y)} ${n(c2.x)} ${n(c2.y)} ${n(p2.x)} ${n(p2.y)}`).join("")}`;
+}
+function wirePoints(w, step = 0.2) {
+  const geo = wireGeometry(w);
+  const out = [];
+  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  if (geo.lines) {
+    for (let i = 0; i < geo.lines.length - 1; i++) {
+      const [a, b] = [geo.lines[i], geo.lines[i + 1]];
+      const k = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
+      for (let j = 0; j < k; j++) out.push(lerp(a, b, j / k));
+    }
+    out.push(geo.lines.at(-1));
+    return out;
+  }
+  for (const [p1, c1, c2, p2] of geo.beziers) {
+    const k = Math.max(4, Math.ceil(Math.hypot(p2.x - p1.x, p2.y - p1.y) / step) * 2);
+    for (let j = 0; j < k; j++) {
+      const t = j / k;
+      const u = 1 - t;
+      out.push({
+        x: u * u * u * p1.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p2.x,
+        y: u * u * u * p1.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p2.y
+      });
+    }
+  }
+  out.push(geo.beziers.at(-1)[3]);
+  return out;
 }
 function drawWire(w, ctx, drawIn = null) {
   const color = WIRE_COLORS[w.color] ?? w.color ?? WIRE_COLORS.blue;
@@ -2650,13 +2323,26 @@ function drawWire(w, ctx, drawIn = null) {
     { class: "wire", "data-id": w.id, "data-from": w.from, "data-to": w.to }
   );
 }
-function drawLabel(part) {
+function labelSpot(part) {
   const opt = part.inst.idLabel;
-  if (opt === false) return "";
+  if (opt === false) return null;
   const xs = part.pins.map((p) => p.x);
   const ys = part.pins.map((p) => p.y);
-  const x = (part.def.mount === "leads" ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs)) + (Number(opt?.dx) || 0);
-  const y = (part.def.mount === "leads" ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95) + (Number(opt?.dy) || 0);
+  const leads = part.def.mount === "leads";
+  const x = (leads ? xs.reduce((a, b) => a + b, 0) / xs.length : Math.min(...xs)) + (Number(opt?.dx) || 0);
+  const y = (leads ? ys.reduce((a, b) => a + b, 0) / ys.length - 1.25 : Math.min(...ys) - 0.95) + (Number(opt?.dy) || 0);
+  return { x, y, anchor: leads ? "middle" : "start" };
+}
+function labelBox(part) {
+  const spot = labelSpot(part);
+  if (!spot) return null;
+  const w = [...part.id].length * 0.32 + 0.1;
+  return { x: spot.anchor === "middle" ? spot.x - w / 2 : spot.x, y: spot.y - 0.3, w, h: 0.6 };
+}
+function drawLabel(part) {
+  const spot = labelSpot(part);
+  if (!spot) return "";
+  const { x, y } = spot;
   return text(x, y, part.id, {
     "font-size": 0.5,
     "font-weight": "bold",
@@ -2669,14 +2355,14 @@ function drawLabel(part) {
   });
 }
 function drawProblems(result) {
-  const out2 = [];
+  const out = [];
   for (const part of result.parts) {
     if (part.offboard) continue;
     for (const p of part.pins) {
-      if (!p.hole && !p.terminal) out2.push(circle(p.x, p.y, 0.35, { fill: "none", stroke: "#d50000", "stroke-width": 0.1 }));
+      if (!p.hole && !p.terminal) out.push(circle(p.x, p.y, 0.35, { fill: "none", stroke: "#d50000", "stroke-width": 0.1 }));
     }
   }
-  return out2.join("");
+  return out.join("");
 }
 var ACCENT = "#1e6fd9";
 function handle(x, y, owner, name) {
@@ -2736,9 +2422,9 @@ function drawTempWire({ a, b, color }) {
   const c = WIRE_COLORS[color] ?? color ?? WIRE_COLORS.blue;
   return line(a.x, a.y, b.x, b.y, { stroke: c, "stroke-width": 0.26, "stroke-linecap": "round", opacity: 0.8 }) + circle(a.x, a.y, 0.18, { fill: c }) + circle(b.x, b.y, 0.18, { fill: c });
 }
-function renderBounds(result, { assembly: assembly2 = false } = {}) {
+function renderBounds(result, { assembly = false } = {}) {
   const b = contentBounds(result);
-  const tray = assembly2 ? planAssembly(result).trayBounds : null;
+  const tray = assembly ? planAssembly(result).trayBounds : null;
   if (!tray) return b;
   const x = Math.min(b.x, tray.x);
   const y = Math.min(b.y, tray.y);
@@ -2821,31 +2507,634 @@ function renderAssemblySvg(result, options) {
   const capTl = { captions: plan.captions, duration: plan.duration, loop: true };
   const animEls = [];
   const capState = (track) => still ? stateAtTime(track, t) : initialState(track);
-  const captions2 = withCaptions ? drawCaptions(capTl, vb, animEls, svgId, !still, capState) : "";
+  const captions = withCaptions ? drawCaptions(capTl, vb, animEls, svgId, !still, capState) : "";
   const body = [
     g(drawBoard(result.board), { class: "board" }),
     g(parts.join(""), { class: "parts" }),
     g(wires.join(""), { class: "wires" }),
     g(overlays.join(""), { class: "overlays" }),
     g(highlights.join(""), { class: "highlights", "pointer-events": "none" }),
-    captions2
+    captions
   ].join("");
   const meta = options.embed ? `<metadata id="breadboard-circuit" data-format="breadboard-viewer/v1">${esc(JSON.stringify(options.embed))}</metadata>` : "";
   const style2 = still ? `<style>${stillEffectCss(0)}</style>` : `<style>${EFFECT_CSS}${css.join("")}${compileCss(animEls, capTl, svgId)}</style>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" id="${svgId}" viewBox="${vb.map(n).join(" ")}" width="${n(vb[2] * SCALE)}" height="${n(vb[3] * SCALE)}">` + meta + style2 + body + `</svg>`;
 }
 
+// src/inspect.js
+var PREVIEW_ID = "__PREVIEW__";
+var r2 = (v) => Math.round(v * 100) / 100;
+var overlap = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+var inside = (p, b, m = 0) => p.x > b.x + m && p.x < b.x + b.w - m && p.y > b.y + m && p.y < b.y + b.h - m;
+function bodyBox(part) {
+  return part.def.mount === "leads" && !part.offboard ? partBox(part, 0.45) : partBox(part, 0.6);
+}
+function coveredBy(result) {
+  const map = /* @__PURE__ */ new Map();
+  for (const part of result.parts) {
+    if (part.def.mount === "leads" && !part.offboard) continue;
+    const box = bodyBox(part);
+    const own = new Set(part.pins.map((p) => p.hole));
+    for (const [hole, p] of result.board.holes) if (!own.has(hole) && inside(p, box, 0.25)) map.set(hole, part.id);
+  }
+  return map;
+}
+function previewPlacement(circuit, inst) {
+  const base = resolveCircuit(circuit);
+  const id = inst.id ?? PREVIEW_ID;
+  const trial = resolveCircuit({ ...circuit, parts: [...(circuit.parts ?? []).filter((p) => p.id !== id), { ...inst, id }] });
+  const part = trial.parts.find((p) => p.id === id);
+  const errors = trial.errors.filter((e) => e.includes(id) && !base.errors.includes(e)).map((e) => e.replaceAll(PREVIEW_ID, "(\u3053\u306E\u90E8\u54C1)"));
+  if (!part) return { ok: false, errors };
+  const covered = coveredBy(base);
+  const pins = part.pins.map((p) => ({
+    name: p.name,
+    hole: p.hole,
+    ...p.terminal ? { terminal: true } : {},
+    x: r2(p.x),
+    y: r2(p.y),
+    strip: p.hole ? stripOf(p.hole) : null
+  }));
+  const conflicts = [];
+  for (const p of pins) {
+    if (!p.hole) continue;
+    const who = base.occupied.get(p.hole);
+    if (who && !who.startsWith(`${id}.`)) conflicts.push(`${p.name}: \u7A74 ${p.hole} \u306F ${who} \u304C\u4F7F\u3063\u3066\u3044\u307E\u3059`);
+    if (covered.has(p.hole) && covered.get(p.hole) !== id) conflicts.push(`${p.name}: \u7A74 ${p.hole} \u306F ${covered.get(p.hole)} \u306E\u672C\u4F53\u306E\u4E0B\u3067\u3059`);
+  }
+  const internal = part.internal.map((group) => new Set(group));
+  const shorts = [];
+  for (let i = 0; i < pins.length; i++) {
+    for (let j = i + 1; j < pins.length; j++) {
+      const [a, b] = [pins[i], pins[j]];
+      if (!a.strip || a.strip !== b.strip || internal.some((g2) => g2.has(a.name) && g2.has(b.name))) continue;
+      shorts.push(`${a.name} \u3068 ${b.name} \u304C\u540C\u3058\u5217 (${a.strip}) \u3067\u3064\u306A\u304C\u3063\u3066\u3057\u307E\u3044\u307E\u3059`);
+    }
+  }
+  const box = bodyBox(part);
+  const under = [...trial.board.holes].filter(([h, p]) => inside(p, box, 0.25) && !part.pins.some((q) => q.hole === h));
+  const hidden = under.filter(([h]) => base.occupied.has(h)).map(([h]) => `${h} (${base.occupied.get(h)})`);
+  const cols = under.map(([h]) => Number(/\d+$/.exec(h)[0]));
+  const rows = [...new Set(under.map(([h]) => /^[a-j]|^[TB][+-]/.exec(h)[0]))];
+  return {
+    ok: !errors.length && !conflicts.length && !shorts.length,
+    pins,
+    body: { x: r2(box.x), y: r2(box.y), w: r2(box.w), h: r2(box.h), cols: cols.length ? [Math.min(...cols), Math.max(...cols)] : null, rows },
+    conflicts,
+    hidden: hidden.length ? hidden : void 0,
+    shorts,
+    errors
+  };
+}
+function coordsOf(result, ref) {
+  const m = /^(-?[\d.]+)\s*,\s*(-?[\d.]+)$/.exec(String(ref));
+  if (m) {
+    const [x, y] = [Number(m[1]), Number(m[2])];
+    let best = null;
+    for (const [hole, p] of result.board.holes) {
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (!best || d < best.d) best = { hole, d, p };
+    }
+    return { ref, x, y, nearest: best?.hole ?? null, distance: best ? r2(best.d) : null };
+  }
+  const pos2 = result.board.pos(ref);
+  if (pos2) return { ref, x: pos2.x, y: pos2.y };
+  const dot = String(ref).indexOf(".");
+  const part = dot > 0 ? result.parts.find((p) => p.id === ref.slice(0, dot)) : null;
+  const pin = part?.pins.find((p) => p.name === ref.slice(dot + 1));
+  if (pin) return { ref, x: r2(pin.x), y: r2(pin.y), hole: pin.hole };
+  return { ref, error: "\u7A74\u3067\u3082\u90E8\u54C1\u306E\u30D4\u30F3\u3067\u3082 x,y \u3067\u3082\u3042\u308A\u307E\u305B\u3093" };
+}
+function partSpec(def) {
+  const params = Object.fromEntries(Object.entries(def.params ?? {}).map(([k, s]) => [k, s.default]));
+  return {
+    type: def.type,
+    name: def.name,
+    category: def.category,
+    description: def.description,
+    mount: def.mount,
+    params: def.params ?? {},
+    pins: def.pins(params).map((p) => ({ name: p.name, x: r2(p.x), y: r2(p.y), ...p.insert === false ? { insert: false } : {} })),
+    internal: def.internal?.(params) ?? [],
+    extent: def.extent,
+    states: def.states ?? {},
+    roles: def.roles?.(params) ?? {}
+  };
+}
+function layoutIssues(result) {
+  const out = [];
+  const bodies = result.parts.map((p) => ({ part: p, box: bodyBox(p) }));
+  for (let i = 0; i < bodies.length; i++) {
+    for (let j = i + 1; j < bodies.length; j++) {
+      const [a, b] = [bodies[i], bodies[j]];
+      if (overlap(a.box, b.box) > 0.4) out.push(`${a.part.id} \u3068 ${b.part.id} \u306E\u672C\u4F53\u304C\u91CD\u306A\u3063\u3066\u3044\u307E\u3059`);
+    }
+  }
+  const covered = coveredBy(result);
+  for (const w of result.wires) {
+    for (const key of ["from", "to"]) {
+      const under = covered.get(w[key]);
+      if (under) out.push(`${w.id} \u306E\u7AEF ${w[key]} \u304C ${under} \u306E\u672C\u4F53\u306E\u4E0B\u306B\u96A0\u308C\u3066\u3044\u307E\u3059`);
+    }
+  }
+  const used = [...result.occupied].map(([hole, who]) => ({ hole, who, p: result.board.pos(hole) }));
+  for (const w of result.wires) {
+    const pts = wirePoints(w);
+    const ends = [w.a, w.b];
+    for (const u of used) {
+      if (u.who.startsWith(`${w.id}.`)) continue;
+      if (ends.some((e) => Math.hypot(e.x - u.p.x, e.y - u.p.y) < 0.5)) continue;
+      if (pts.some((q) => Math.hypot(q.x - u.p.x, q.y - u.p.y) < 0.18)) out.push(`${w.id} \u304C\u7A74 ${u.hole} (${u.who}) \u306E\u771F\u4E0A\u3092\u901A\u3063\u3066\u3044\u307E\u3059`);
+    }
+  }
+  const labels = result.parts.map((p) => ({ part: p, box: labelBox(p) })).filter((l) => l.box);
+  for (const l of labels) {
+    for (const b of bodies) {
+      if (b.part !== l.part && overlap(l.box, b.box) > 0.1) out.push(`${l.part.id} \u306E\u30E9\u30D9\u30EB\u304C ${b.part.id} \u306B\u91CD\u306A\u3063\u3066\u3044\u307E\u3059 (idLabel \u3067\u305A\u3089\u305B\u307E\u3059)`);
+    }
+    for (const m of labels) {
+      if (m.part.id > l.part.id && overlap(l.box, m.box) > 0.05) out.push(`${l.part.id} \u3068 ${m.part.id} \u306E\u30E9\u30D9\u30EB\u304C\u91CD\u306A\u3063\u3066\u3044\u307E\u3059`);
+    }
+  }
+  return [...new Set(out)];
+}
+
+// src/io.js
+var META_RE = /<metadata id="breadboard-circuit"[^>]*>([\s\S]*?)<\/metadata>/;
+function parseCircuitText(text2) {
+  const trimmed = text2.trim();
+  if (trimmed.startsWith("<")) {
+    const m = META_RE.exec(trimmed);
+    if (!m) throw new Error("\u3053\u306ESVG\u306B\u306F\u56DE\u8DEF\u30C7\u30FC\u30BF\u304C\u5165\u3063\u3066\u3044\u307E\u305B\u3093");
+    return JSON.parse(unescapeXml(m[1]));
+  }
+  return JSON.parse(trimmed);
+}
+function stringifyCircuit(circuit) {
+  const keys = Object.keys(circuit);
+  const body = keys.map((k, i) => {
+    const v = circuit[k];
+    const comma = i < keys.length - 1 ? "," : "";
+    if ((k === "parts" || k === "wires") && Array.isArray(v) && v.length) {
+      const items = v.map((item, j) => `    ${inline2(item)}${j < v.length - 1 ? "," : ""}`);
+      return `  "${k}": [
+${items.join("\n")}
+  ]${comma}`;
+    }
+    return `  "${k}": ${JSON.stringify(v, null, 2).replace(/\n/g, "\n  ")}${comma}`;
+  });
+  return `{
+${body.join("\n")}
+}
+`;
+}
+function inline2(v) {
+  if (Array.isArray(v)) return `[${v.map(inline2).join(", ")}]`;
+  if (v && typeof v === "object") {
+    const entries = Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${inline2(x)}`);
+    return `{ ${entries.join(", ")} }`;
+  }
+  return JSON.stringify(v);
+}
+function unescapeXml(s) {
+  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+}
+function emptyCircuit() {
+  return { version: 1, title: "", board: "half", parts: [], wires: [] };
+}
+function parseLibrary(text2, fromJson2) {
+  const data = parseCircuitText(text2);
+  const list = Array.isArray(data) ? data : data?.partDefs;
+  if (!Array.isArray(list)) throw new Error("\u90E8\u54C1\u5B9A\u7FA9 (partDefs) \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
+  const defs = [];
+  const errors = [];
+  for (const def of list) {
+    try {
+      fromJson2(def);
+      defs.push(def);
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+  return { name: Array.isArray(data) ? "" : data.name ?? data.title ?? "", defs, errors };
+}
+function mergeDefs(...lists) {
+  const byType = /* @__PURE__ */ new Map();
+  for (const list of lists) for (const def of list ?? []) byType.set(def.type, def);
+  return [...byType.values()];
+}
+function stringifyLibrary(name, defs) {
+  return `${JSON.stringify({ name, partDefs: defs }, null, 2)}
+`;
+}
+
+// src/ops.js
+var OpError = class extends Error {
+};
+var fail = (msg) => {
+  throw new OpError(msg);
+};
+var ID_PREFIX = {
+  resistor: "R",
+  led: "LED",
+  diode: "D",
+  capacitor: "C",
+  electrolytic: "C",
+  cds: "CDS",
+  transistor: "Q",
+  regulator: "U",
+  button: "SW",
+  trimmer: "VR",
+  buzzer: "BZ",
+  header: "J",
+  motor: "M",
+  servo: "SV",
+  seg7: "DS",
+  dht11: "U",
+  hcsr04: "U",
+  relay: "K",
+  rgbled: "LED",
+  pot: "VR",
+  lcd1602: "LCD",
+  speaker: "SP",
+  battery: "BT",
+  inmp441: "MIC",
+  max98357a: "AMP",
+  ws2812b: "LED",
+  ssd1306: "DISP",
+  qwiic: "J"
+};
+function normalize(circuit) {
+  const c = structuredClone(circuit);
+  c.parts ??= [];
+  c.wires ??= [];
+  if (c.overlays && !c.overlays.length) delete c.overlays;
+  const used = new Set(c.wires.map((w) => w.id).filter(Boolean));
+  let i = 1;
+  c.wires = c.wires.map((w) => {
+    if (w.id) return w;
+    while (used.has(`W${i}`)) i++;
+    used.add(`W${i}`);
+    return { id: `W${i}`, ...w };
+  });
+  return c;
+}
+function applyOps(circuit, ops) {
+  let c = normalize(circuit);
+  const ids = [];
+  (Array.isArray(ops) ? ops : [ops]).forEach((op, i) => {
+    const fn = OPS[op?.op];
+    if (!fn) fail(`#${i + 1}: \u672A\u77E5\u306E\u64CD\u4F5C "${op?.op}" (\u4F7F\u3048\u308B\u3082\u306E: ${Object.keys(OPS).join(", ")})`);
+    try {
+      const out = fn(c, op);
+      c = out.circuit;
+      ids.push(out.id ?? op.id ?? null);
+    } catch (e) {
+      if (e instanceof OpError) fail(`#${i + 1} ${op.op}: ${e.message}`);
+      throw e;
+    }
+  });
+  return { circuit: c, ids };
+}
+var OPS = {
+  addPart(c, { op, id, ...rest }) {
+    const def = registryFor(c).get(rest.type) ?? fail(`\u672A\u77E5\u306E\u90E8\u54C1\u30BF\u30A4\u30D7 "${rest.type}"`);
+    const inst = { id: id ?? nextId(c, ID_PREFIX[def.type] ?? def.json?.prefix ?? defaultPrefix(def)), ...rest };
+    if (usedIds(c).has(inst.id)) fail(`ID "${inst.id}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
+    if (inst.pos !== void 0) {
+      checkPos(inst.pos);
+    } else if (inst.at === void 0 && inst.pins === void 0) {
+      const spot = findFreeSpot(resolveCircuit(c), def, rest) ?? fail(`${def.name} \u3092\u7F6E\u3051\u308B\u7A7A\u304D\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
+      if (def.mount === "leads") inst.pins = spot.pins;
+      else inst.at = spot.at;
+    } else if (inst.at !== void 0 && def.mount === "leads" && inst.pins === void 0) {
+      inst.pins = layoutHoles(c, def, inst, inst.at, inst.rot ?? 0);
+      delete inst.at;
+      delete inst.rot;
+    }
+    return { circuit: { ...c, parts: [...c.parts, inst] }, id: inst.id };
+  },
+  // to: a hole (on the board), or pos: [x, y] (free placement off the board / overlay position)
+  move(c, { id, to, pos: pos2 }) {
+    const oi = overlayIndex(c, id);
+    if (oi >= 0) {
+      checkPos(pos2);
+      return { circuit: { ...c, overlays: c.overlays.map((o, i) => i === oi ? { ...o, x: pos2[0], y: pos2[1] } : o) } };
+    }
+    const { inst, index, def } = partInfo(c, id);
+    if (pos2 !== void 0) {
+      checkPos(pos2);
+      const { at, pins, ...rest } = inst;
+      return { circuit: replacePart(c, index, { ...rest, pos: pos2 }) };
+    }
+    const board = boardOf(c);
+    if (!board.has(to)) fail(`"${to}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306A\u3044\u7A74\u3067\u3059`);
+    let next;
+    if (inst.pos !== void 0) {
+      const { pos: _, ...rest } = inst;
+      next = def.mount === "leads" ? { ...withoutRot(rest), pins: layoutHoles(c, def, inst, to, inst.rot ?? 0) } : { ...rest, at: to };
+    } else if (inst.pins !== void 0) {
+      const holes = pinHoles(inst, def);
+      const from = board.pos(holes[0]) ?? fail(`${id} \u306E\u30D4\u30F3\u306E\u4F4D\u7F6E\u304C\u4E0D\u6B63\u3067\u3059`);
+      const target = board.pos(to);
+      const moved = holes.map((h) => {
+        const p = board.pos(h) ?? fail(`${id} \u306E\u30D4\u30F3 "${h}" \u304C\u4E0D\u6B63\u3067\u3059`);
+        return board.holeAt(p.x + target.x - from.x, p.y + target.y - from.y) ?? fail(`${id} \u3092 ${to} \u306B\u52D5\u304B\u3059\u3068\u30D4\u30F3\u304C\u7A74\u304B\u3089\u5916\u308C\u307E\u3059`);
+      });
+      next = withPinHoles(inst, def, moved);
+    } else {
+      next = { ...inst, at: to };
+    }
+    return { circuit: replacePart(c, index, next) };
+  },
+  rotate(c, { id, by = 90 }) {
+    const { inst, index, def } = partInfo(c, id);
+    const step = (Number(by) % 360 + 360) % 360;
+    if (step % 90 !== 0) fail("by \u306F 90 \u306E\u500D\u6570\u3067\u3059");
+    if (inst.pins === void 0) {
+      const rot = ((Number(inst.rot ?? 0) + step) % 360 + 360) % 360;
+      const next = { ...inst, rot };
+      if (rot === 0) delete next.rot;
+      return { circuit: replacePart(c, index, next) };
+    }
+    const board = boardOf(c);
+    const holes = pinHoles(inst, def);
+    const o = board.pos(holes[0]);
+    const rotated = holes.map((h) => {
+      const p = board.pos(h);
+      const [dx, dy] = rotate(p.x - o.x, p.y - o.y, step);
+      return board.holeAt(o.x + dx, o.y + dy) ?? fail(`${id} \u3092\u56DE\u8EE2\u3059\u308B\u3068\u30D4\u30F3\u304C\u7A74\u304B\u3089\u5916\u308C\u307E\u3059`);
+    });
+    return { circuit: replacePart(c, index, withPinHoles(inst, def, rotated)) };
+  },
+  setPin(c, { id, pin, to }) {
+    const { inst, index, def } = partInfo(c, id);
+    if (def.mount !== "leads") fail(`${id} \u306F\u8DB3\u3092\u66F2\u3052\u3089\u308C\u306A\u3044\u90E8\u54C1\u3067\u3059 (move \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044)`);
+    if (inst.pos !== void 0) fail(`${id} \u306F\u30DC\u30FC\u30C9\u5916\u306B\u7F6E\u3044\u305F\u90E8\u54C1\u3067\u3059 (move \u306E to \u3067\u7A74\u306B\u633F\u3057\u3066\u304B\u3089\u52D5\u304B\u3057\u3066\u304F\u3060\u3055\u3044)`);
+    if (!boardOf(c).has(to)) fail(`"${to}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306A\u3044\u7A74\u3067\u3059`);
+    const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
+    const i = names.indexOf(String(pin));
+    if (i < 0) fail(`${id} \u306B\u30D4\u30F3 "${pin}" \u306F\u3042\u308A\u307E\u305B\u3093 (${names.join(", ")})`);
+    const holes = inst.pins !== void 0 ? pinHoles(inst, def) : layoutHoles(c, def, inst, inst.at, inst.rot ?? 0);
+    holes[i] = to;
+    const next = withPinHoles({ ...inst }, def, holes);
+    delete next.at;
+    delete next.rot;
+    return { circuit: replacePart(c, index, next) };
+  },
+  update(c, { id, set = {} }) {
+    const oi = overlayIndex(c, id);
+    if (oi >= 0) {
+      const o = clean({ ...c.overlays[oi], ...set });
+      if (o.id !== id && usedIds(c).has(o.id)) fail(`ID "${o.id}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
+      return { circuit: retarget({ ...c, overlays: c.overlays.map((x, i) => i === oi ? o : x) }, id, o.id), id: o.id };
+    }
+    const wireIndex = c.wires.findIndex((w) => w.id === id);
+    if (wireIndex >= 0) {
+      const wire = clean({ ...c.wires[wireIndex], ...set });
+      if (wire.id !== id && c.wires.some((w) => w.id === wire.id)) fail(`ID "${wire.id}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
+      return { circuit: retarget({ ...c, wires: c.wires.map((w, i) => i === wireIndex ? wire : w) }, id, wire.id), id: wire.id };
+    }
+    const { inst, index } = partInfo(c, id);
+    if ("type" in set) fail("type \u306F\u5909\u66F4\u3067\u304D\u307E\u305B\u3093 (remove \u3057\u3066 addPart \u3057\u3066\u304F\u3060\u3055\u3044)");
+    const next = clean({ ...inst, ...set });
+    if (next.id !== id && findPart(c, next.id, false)) fail(`ID "${next.id}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
+    let out = retarget(replacePart(c, index, next), id, next.id);
+    if (next.id !== id) {
+      const rename = (ref) => isPinOf(ref, id) ? `${next.id}${String(ref).slice(id.length)}` : ref;
+      out = { ...out, wires: out.wires.map((w) => ({ ...w, from: rename(w.from), to: rename(w.to) })) };
+    }
+    return { circuit: out, id: next.id };
+  },
+  // Removing a part also removes the wires attached to its pins ("R1.2").
+  remove(c, { id }) {
+    if (overlayIndex(c, id) >= 0) {
+      const { overlays, ...rest } = c;
+      const left = overlays.filter((o) => o.id !== id);
+      return { circuit: retarget(left.length ? { ...rest, overlays: left } : rest, id, null) };
+    }
+    if (c.wires.some((w) => w.id === id)) return { circuit: retarget({ ...c, wires: c.wires.filter((w) => w.id !== id) }, id, null) };
+    partInfo(c, id);
+    let next = { ...c, parts: c.parts.filter((p) => p.id !== id) };
+    for (const w of c.wires.filter((w2) => isPinOf(w2.from, id) || isPinOf(w2.to, id))) next = retarget(next, w.id, null);
+    next.wires = c.wires.filter((w) => !isPinOf(w.from, id) && !isPinOf(w.to, id));
+    return { circuit: retarget(next, id, null) };
+  },
+  addWire(c, { op, id, from, to, ...rest }) {
+    for (const h of [from, to]) checkEnd(c, h);
+    if (from === to) fail("from \u3068 to \u304C\u540C\u3058\u3067\u3059");
+    const wid = id ?? nextId(c, "W");
+    if (usedIds(c).has(wid)) fail(`ID "${wid}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
+    return { circuit: { ...c, wires: [...c.wires, { id: wid, from, to, ...rest }] }, id: wid };
+  },
+  // Adds user SVG (an effect, arrow, note...) drawn above the circuit; x, y, w, h in pitch units.
+  addOverlay(c, { op, id, svg, x, y, w, h, ...rest }) {
+    const err = spriteError(svg);
+    if (err) fail(err);
+    if (![x, y, w, h].every(Number.isFinite)) fail("x, y, w, h (\u30D4\u30C3\u30C1\u5358\u4F4D) \u304C\u5FC5\u8981\u3067\u3059");
+    const oid = id ?? nextId(c, "FX");
+    if (usedIds(c).has(oid)) fail(`ID "${oid}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
+    return { circuit: { ...c, overlays: [...c.overlays ?? [], { id: oid, x, y, w, h, svg, ...rest }] }, id: oid };
+  },
+  // Sets the keys of one target's track (replace: false appends to the existing keys).
+  // target: an id, an array of ids, or a group name from animation.groups.
+  animate(c, { target, keys = [], replace = true }) {
+    const groups = c.animation?.groups ?? {};
+    const ids = Array.isArray(target) ? target : Array.isArray(groups[target]) ? groups[target] : [target];
+    if (!ids.length) fail("target \u304C\u7A7A\u3067\u3059");
+    for (const id of ids) if (!usedIds(c).has(id)) fail(`target "${id}" \u306E\u90E8\u54C1\u30FB\u914D\u7DDA\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
+    if (!Array.isArray(keys) || keys.some((k) => !Number.isFinite(Number(k?.t)))) fail("keys \u306F {t, ...\u72B6\u614B} \u306E\u914D\u5217\u3067\u3059");
+    const anim = { duration: 2e3, loop: true, ...c.animation ?? {} };
+    const tracks = [...anim.tracks ?? []];
+    const i = tracks.findIndex((t) => JSON.stringify(t.target) === JSON.stringify(target));
+    const merged = replace || i < 0 ? keys : [...tracks[i].keys, ...keys];
+    const track = { target, keys: [...merged].sort((a, b) => a.t - b.t) };
+    if (i < 0) tracks.push(track);
+    else tracks[i] = track;
+    return { circuit: { ...c, animation: { ...anim, tracks } }, id: Array.isArray(target) ? target.join(",") : target };
+  },
+  // Merges duration / loop / captions / tracks into the animation; clear: true removes it.
+  setAnimation(c, { clear, op, ...fields }) {
+    if (clear) {
+      const { animation, ...rest } = c;
+      return { circuit: rest };
+    }
+    return { circuit: { ...c, animation: { duration: 2e3, loop: true, tracks: [], ...c.animation ?? {}, ...fields } } };
+  },
+  setBoard(c, { board }) {
+    createBoard(board);
+    return { circuit: { ...c, board } };
+  },
+  setTitle(c, { title }) {
+    return { circuit: { ...c, title: String(title ?? "") } };
+  },
+  // Assembly steps: [{ text, items: [ids] }] (see assembly.js); [] or null removes them.
+  setSteps(c, { steps }) {
+    if (steps == null || Array.isArray(steps) && !steps.length) {
+      const { steps: _, ...rest } = c;
+      return { circuit: rest };
+    }
+    if (!Array.isArray(steps) || steps.some((s) => !s || !Array.isArray(s.items))) fail("steps \u306F { text, items: [ID...] } \u306E\u914D\u5217\u3067\u3059");
+    const ids = usedIds(c);
+    for (const s of steps) for (const id of s.items) if (!ids.has(id)) fail(`"${id}" \u3068\u3044\u3046\u90E8\u54C1\u30FB\u914D\u7DDA\u306F\u3042\u308A\u307E\u305B\u3093`);
+    return { circuit: { ...c, steps } };
+  },
+  // Merges assembly settings (tray, trayOrigin, trayWidth, timing, introText, outroText,
+  // numbering). tray and timing merge per key; null removes a key; clear: true removes all.
+  setAssembly(c, { op, clear, ...fields }) {
+    if (clear) {
+      const { assembly, ...rest } = c;
+      return { circuit: rest };
+    }
+    const cur = c.assembly ?? {};
+    const next = { ...cur };
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === null) delete next[k];
+      else if ((k === "tray" || k === "timing") && typeof v === "object") next[k] = clean({ ...cur[k] ?? {}, ...v });
+      else next[k] = v;
+    }
+    for (const id of Object.keys(next.tray ?? {})) if (!c.parts.some((p) => p.id === id)) fail(`tray: "${id}" \u3068\u3044\u3046\u90E8\u54C1\u306F\u3042\u308A\u307E\u305B\u3093`);
+    for (const [id, pos2] of Object.entries(next.tray ?? {})) if (!Array.isArray(pos2) || pos2.length !== 2 || !pos2.every(Number.isFinite)) fail(`tray.${id} \u306F [x, y] \u3067\u3059`);
+    return { circuit: { ...c, assembly: next } };
+  },
+  // Generates steps: modules / ICs first, then the other parts, then wires a few at a time.
+  autoSteps(c) {
+    return { circuit: { ...c, steps: autoSteps(resolveCircuit(c)) } };
+  },
+  // Adds a JSON part definition to the circuit (replaces one with the same type).
+  definePart(c, { def }) {
+    try {
+      fromJson(def);
+    } catch (e) {
+      fail(e.message);
+    }
+    if (BUILTIN_TYPES.has(def.type)) fail(`"${def.type}" \u306F\u7D44\u307F\u8FBC\u307F\u90E8\u54C1\u3068\u540C\u3058\u540D\u524D\u3067\u3059`);
+    const others = (c.partDefs ?? []).filter((d) => d.type !== def.type);
+    return { circuit: { ...c, partDefs: [...others, def] }, id: def.type };
+  }
+};
+var BUILTIN_TYPES = new Set(BUILTIN_PARTS.map((p) => p.type));
+var OP_NAMES = Object.keys(OPS);
+function registryFor(c) {
+  return createRegistry(c.partDefs ?? []);
+}
+function boardOf(c) {
+  try {
+    return createBoard(c.board ?? "half");
+  } catch (e) {
+    return fail(e.message);
+  }
+}
+function findPart(c, id, required = true) {
+  const index = c.parts.findIndex((p) => p.id === id);
+  if (index < 0 && required) fail(`ID "${id}" \u306E\u90E8\u54C1\u30FB\u914D\u7DDA\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
+  return index < 0 ? null : { inst: c.parts[index], index };
+}
+function partInfo(c, id) {
+  const { inst, index } = findPart(c, id);
+  const def = registryFor(c).get(inst.type) ?? fail(`${id}: \u672A\u77E5\u306E\u90E8\u54C1\u30BF\u30A4\u30D7 "${inst.type}"`);
+  return { inst, index, def };
+}
+function replacePart(c, index, inst) {
+  return { ...c, parts: c.parts.map((p, i) => i === index ? inst : p) };
+}
+function paramsOf(def, inst) {
+  const params = {};
+  for (const [k, spec] of Object.entries(def.params ?? {})) params[k] = inst[k] ?? spec.default;
+  return params;
+}
+function pinHoles(inst, def) {
+  if (Array.isArray(inst.pins)) return [...inst.pins];
+  return def.pins(paramsOf(def, inst)).map((p) => inst.pins[p.name]);
+}
+function withPinHoles(inst, def, holes) {
+  if (Array.isArray(inst.pins) || inst.pins === void 0) return { ...inst, pins: holes };
+  const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
+  return { ...inst, pins: Object.fromEntries(names.map((n2, i) => [n2, holes[i]])) };
+}
+function layoutHoles(c, def, inst, at, rot) {
+  const board = boardOf(c);
+  const o = board.pos(at) ?? fail(`"${at}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306A\u3044\u7A74\u3067\u3059`);
+  return def.pins(paramsOf(def, inst)).map((p) => {
+    const [dx, dy] = rotate(p.x, p.y, Number(rot));
+    return board.holeAt(o.x + dx, o.y + dy) ?? fail(`${def.name} \u3092 ${at} \u306B\u7F6E\u304F\u3068\u30D4\u30F3\u304C\u7A74\u304B\u3089\u5916\u308C\u307E\u3059`);
+  });
+}
+function overlayIndex(c, id) {
+  return (c.overlays ?? []).findIndex((o) => o.id === id);
+}
+function usedIds(c) {
+  return /* @__PURE__ */ new Set([...c.parts.map((p) => p.id), ...c.wires.map((w) => w.id), ...(c.overlays ?? []).map((o) => o.id)]);
+}
+function nextId(c, prefix) {
+  const used = usedIds(c);
+  let i = 1;
+  while (used.has(`${prefix}${i}`)) i++;
+  return `${prefix}${i}`;
+}
+function defaultPrefix(def) {
+  return def.category === "IC" || def.category === "\u30DE\u30A4\u30B3\u30F3\u30DC\u30FC\u30C9" ? "U" : "X";
+}
+var isPinOf = (ref, id) => String(ref).startsWith(`${id}.`);
+function checkPos(pos2) {
+  if (!Array.isArray(pos2) || pos2.length !== 2 || !pos2.every(Number.isFinite)) fail("pos \u306F [x, y] (\u30D4\u30C3\u30C1\u5358\u4F4D) \u3067\u3059");
+}
+function withoutRot({ rot, ...rest }) {
+  return rest;
+}
+function checkEnd(c, ref) {
+  if (boardOf(c).has(ref)) return;
+  const dot = String(ref).indexOf(".");
+  const inst = dot > 0 ? c.parts.find((p) => p.id === String(ref).slice(0, dot)) : null;
+  if (!inst) fail(`"${ref}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306E\u7A74\u3067\u3082\u3001\u90E8\u54C1\u306E\u30D4\u30F3 (\u4F8B: "SV1.SIG") \u3067\u3082\u3042\u308A\u307E\u305B\u3093`);
+  const def = registryFor(c).get(inst.type) ?? fail(`\u672A\u77E5\u306E\u90E8\u54C1\u30BF\u30A4\u30D7 "${inst.type}"`);
+  const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
+  if (!names.includes(String(ref).slice(dot + 1))) fail(`${inst.id} \u306B\u30D4\u30F3 "${String(ref).slice(dot + 1)}" \u306F\u3042\u308A\u307E\u305B\u3093 (${names.join(", ")})`);
+}
+function retarget(c, from, to) {
+  if (from === to) return c;
+  let out = c;
+  if (c.animation) {
+    const swap = (ids) => ids.flatMap((id) => id !== from ? [id] : to === null ? [] : [to]);
+    const tracks = (c.animation.tracks ?? []).flatMap((t) => {
+      if (Array.isArray(t.target)) {
+        const target = swap(t.target);
+        return target.length ? [{ ...t, target }] : [];
+      }
+      return t.target !== from ? [t] : to === null ? [] : [{ ...t, target: to }];
+    });
+    const groups = c.animation.groups ? Object.fromEntries(Object.entries(c.animation.groups).map(([k, ids]) => [k, swap(ids)])) : void 0;
+    out = { ...out, animation: { ...c.animation, ...c.animation.tracks ? { tracks } : {}, ...groups ? { groups } : {} } };
+  }
+  if (Array.isArray(c.steps)) {
+    const steps = c.steps.map((s) => ({ ...s, items: (s.items ?? []).flatMap((id) => id !== from ? [id] : to === null ? [] : [to]) }));
+    out = { ...out, steps };
+  }
+  if (c.assembly?.tray && from in c.assembly.tray) {
+    const { [from]: pos2, ...tray } = c.assembly.tray;
+    out = { ...out, assembly: { ...c.assembly, tray: to === null ? tray : { ...tray, [to]: pos2 } } };
+  }
+  return out;
+}
+function clean(obj) {
+  for (const k of Object.keys(obj)) if (obj[k] === null) delete obj[k];
+  return obj;
+}
+
 // tools/capture.mjs
 import { createRequire } from "node:module";
 var SPRITE_PREFIX = "data:image/svg+xml;charset=utf-8,";
-async function openCapture(svg, { scale: scale2 = 2, transparent: transparent2 = false } = {}) {
+async function launchBrowser({ channel, executablePath } = {}) {
   const { chromium } = loadPlaywright();
-  const browser = await chromium.launch();
+  return chromium.launch({ ...channel ? { channel } : {}, ...executablePath ? { executablePath } : {} });
+}
+async function openCapture(svg, { scale = 2, transparent = false, channel, executablePath, browser: shared } = {}) {
+  const browser = shared ?? await launchBrowser({ channel, executablePath });
   const block = (ctx) => ctx.route("**/*", (route) => route.abort());
-  const mainCtx = await browser.newContext({ deviceScaleFactor: scale2 });
+  const mainCtx = await browser.newContext({ deviceScaleFactor: scale });
   await block(mainCtx);
   const main2 = await mainCtx.newPage();
-  await main2.setContent(`<body style="margin:0;background:${transparent2 ? "transparent" : "#fff"}">${svg}</body>`);
+  await main2.setContent(`<body style="margin:0;background:${transparent ? "transparent" : "#fff"}">${svg}</body>`);
   const sprites = await main2.evaluate((prefix) => {
     const list = [];
     document.querySelectorAll("image").forEach((img, i) => {
@@ -2854,11 +3143,13 @@ async function openCapture(svg, { scale: scale2 = 2, transparent: transparent2 =
       const m = img.getScreenCTM();
       const k = Math.hypot(m.a, m.b);
       img.dataset.sprite = String(i);
-      list.push({ i, href, w: img.width.baseVal.value * k, h: img.height.baseVal.value * k, fit: img.getAttribute("preserveAspectRatio") });
+      const starts = img.dataset.restart ? img.dataset.restart.split(",").map(Number) : null;
+      const cycle = Number(img.dataset.cycle) || 0;
+      list.push({ i, href, starts, cycle, w: img.width.baseVal.value * k, h: img.height.baseVal.value * k, fit: img.getAttribute("preserveAspectRatio") });
     });
     return list;
   }, SPRITE_PREFIX);
-  const spriteCtx = sprites.length ? await browser.newContext({ deviceScaleFactor: scale2, javaScriptEnabled: false }) : null;
+  const spriteCtx = sprites.length ? await browser.newContext({ deviceScaleFactor: scale, javaScriptEnabled: false }) : null;
   if (spriteCtx) await block(spriteCtx);
   for (const sp of sprites) {
     sp.page = await spriteCtx.newPage();
@@ -2882,7 +3173,7 @@ async function openCapture(svg, { scale: scale2 = 2, transparent: transparent2 =
   return {
     async frame(t, path) {
       for (const sp of sprites) {
-        await sp.page.evaluate(seek, t);
+        await sp.page.evaluate(seek, spriteTime(sp, t));
         const png = await sp.page.locator("svg").first().screenshot({ omitBackground: true });
         sp.png = `data:image/png;base64,${png.toString("base64")}`;
       }
@@ -2901,9 +3192,9 @@ async function openCapture(svg, { scale: scale2 = 2, transparent: transparent2 =
         },
         { t, swaps: sprites.map(({ i, png }) => ({ i, png })) }
       );
-      await main2.locator("svg").first().screenshot({ path, omitBackground: transparent2 });
+      await main2.locator("svg").first().screenshot({ path, omitBackground: transparent });
     },
-    close: () => browser.close()
+    close: () => shared ? Promise.all([mainCtx.close(), spriteCtx?.close()]) : browser.close()
   };
 }
 function loadPlaywright() {
@@ -2920,73 +3211,134 @@ function loadPlaywright() {
   err.code = "NO_PLAYWRIGHT";
   throw err;
 }
+function spriteTime(sp, t) {
+  if (!sp.starts?.length) return t;
+  const local = sp.cycle ? t % sp.cycle : t;
+  const since = sp.starts.filter((s) => s <= local);
+  return Math.max(0, local - (since.length ? Math.max(...since) : sp.starts[0]));
+}
 
 // tools/bb.mjs
+var VIEW = {
+  "--viewbox": "value",
+  "--focus": "value",
+  "--margin": "value",
+  "--chrome": "flag",
+  "--browser-path": "value",
+  "--transparent": "flag",
+  "--scale": "value",
+  "--no-captions": "flag",
+  "--assembly": "flag"
+};
+var COMMANDS = {
+  check: ["check  <circuit.json> [--json] [--layout]", 1, 1, { "--json": "flag", "--layout": "flag" }],
+  render: [
+    'render <circuit.json> [-o out.svg|out.png] [--time ms | --step k] [--assembly] [--transparent] [--scale n]\n              [--no-captions] [--viewbox "x y w h" | --focus ID,ID [--margin n]] [--chrome | --browser-path path]',
+    1,
+    1,
+    { "-o": "value", "--time": "value", "--step": "value", ...VIEW }
+  ],
+  frames: [
+    'frames <circuit.json> -o <dir> [--fps 30] [--from ms] [--to ms] [--jobs n] [--assembly] [--transparent] [--scale 1]\n              [--no-captions] [--viewbox "x y w h" | --focus ID,ID [--margin n]] [--chrome | --browser-path path]',
+    1,
+    1,
+    { "-o": "value", "--fps": "value", "--from": "value", "--to": "value", "--jobs": "value", ...VIEW }
+  ],
+  apply: ["apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json] [--lib lib.json]", 2, 2, { "-o": "value", "--lib": "multi" }],
+  parts: ["parts  [circuit.json] [--lib lib.json] [--json] [--type t1,t2]", 0, 1, { "--lib": "multi", "--json": "flag", "--type": "value" }],
+  place: [
+    "place  <type> (--at hole | --pos x,y) [--rot 0|90|180|270] [--param k=v ...] [--in circuit.json] [--lib lib.json]",
+    1,
+    1,
+    { "--at": "value", "--pos": "value", "--rot": "value", "--param": "multi", "--in": "value", "--lib": "multi" }
+  ],
+  coords: ["coords <hole | PartId.Pin | x,y ...> [--in circuit.json] [--board full|half|mini]", 1, Infinity, { "--in": "value", "--board": "value" }],
+  lib: ["lib    <out.json> <circuit.json|library.json ...>", 2, Infinity, {}],
+  plan: ["plan   <circuit.json>", 1, 1, {}],
+  new: ["new    <circuit.json> [full|half|mini]", 1, 2, {}]
+};
 var USAGE = `usage:
-  bb.mjs check  <circuit.json>
-  bb.mjs render <circuit.json> [-o out.svg|out.png] [--time ms] [--transparent] [--scale n] [--no-captions]
-                [--assembly] [--step k]
-  bb.mjs frames <circuit.json> -o <dir> [--fps 30] [--from ms] [--to ms] [--transparent] [--scale 1] [--no-captions]
-                [--assembly]
-  bb.mjs apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json] [--lib lib.json]
-  bb.mjs parts  [circuit.json] [--lib lib.json]
-  bb.mjs lib    <out.json> <circuit.json|library.json ...>
-  bb.mjs plan   <circuit.json>
-  bb.mjs new    <circuit.json> [full|half|mini]`;
-var args = process.argv.slice(2);
-var option = (name) => {
-  const i = args.indexOf(name);
-  return i >= 0 ? args.splice(i, 2)[1] : void 0;
-};
-var flag = (name) => {
-  const i = args.indexOf(name);
-  return i >= 0 && Boolean(args.splice(i, 1));
-};
-var timeArg = option("--time");
-var timeArgValue = timeArg === void 0 ? void 0 : Number(timeArg);
-var out = option("-o");
-var transparent = flag("--transparent");
-var captions = !flag("--no-captions");
-var assembly = flag("--assembly");
-var stepArg = option("--step");
-var scale = option("--scale");
-var fps = Number(option("--fps") ?? 30);
-var libFiles = [];
-for (let f = option("--lib"); f !== void 0; f = option("--lib")) libFiles.push(f);
-var from = option("--from");
-var to = option("--to");
-var [cmd, file, extra] = args;
+${Object.values(COMMANDS).map(([u]) => `  bb.mjs ${u}`).join("\n")}`;
+function fail2(message, code = 2) {
+  console.error(message);
+  process.exit(code);
+}
+function parseArgs(argv) {
+  const [cmd2, ...rest] = argv;
+  const spec = COMMANDS[cmd2];
+  if (!spec) fail2(cmd2 ? `unknown command: ${cmd2}
+${USAGE}` : USAGE);
+  const [usage, min, max, options] = spec;
+  const opts2 = {};
+  const pos2 = [];
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (!a.startsWith("-") || /^-[\d.]/.test(a)) {
+      pos2.push(a);
+      continue;
+    }
+    const kind = options[a];
+    if (!kind) fail2(`unknown option for ${cmd2}: ${a}
+usage: bb.mjs ${usage}`);
+    if (kind === "flag") opts2[a] = true;
+    else {
+      if (i + 1 >= rest.length) fail2(`${a} needs a value
+usage: bb.mjs ${usage}`);
+      const v = rest[++i];
+      if (kind === "multi") (opts2[a] ??= []).push(v);
+      else opts2[a] = v;
+    }
+  }
+  if (pos2.length < min || pos2.length > max) fail2(`usage: bb.mjs ${usage}`);
+  return { cmd: cmd2, pos: pos2, opts: opts2 };
+}
+var { cmd, pos, opts } = parseArgs(process.argv.slice(2));
 var readCircuit = (f) => parseCircuitText(readFileSync(f, "utf8"));
 var readLibrary = (f) => {
   const lib = parseLibrary(readFileSync(f, "utf8"), fromJson);
   for (const e of lib.errors) console.error(`WARN:  ${f}: ${e}`);
   return lib.defs;
 };
-var libDefs = () => mergeDefs(...libFiles.map(readLibrary));
+var libDefs = () => mergeDefs(...(opts["--lib"] ?? []).map(readLibrary));
+var num = (name, fallback) => {
+  if (opts[name] === void 0) return fallback;
+  const v = Number(opts[name]);
+  if (!Number.isFinite(v)) fail2(`${name} must be a number`);
+  return v;
+};
 try {
   await main();
 } catch (e) {
   if (e?.code !== "NO_PLAYWRIGHT") throw e;
-  console.error(e.message);
-  process.exit(1);
+  fail2(e.message, 1);
 }
 async function main() {
   switch (cmd) {
     case "check": {
-      need(file);
-      const result = resolveCircuit(readCircuit(file));
-      console.log(describe(result));
+      const result = resolveCircuit(readCircuit(pos[0]));
+      const layout = opts["--layout"] ? layoutIssues(result) : null;
+      if (opts["--json"]) {
+        console.log(JSON.stringify(checkJson(result, layout), null, 2));
+      } else {
+        console.log(describe(result));
+        if (layout) {
+          for (const l of layout) console.log(`LAYOUT: ${l}`);
+          if (!layout.length) console.log("LAYOUT: \u898B\u305F\u76EE\u306E\u91CD\u306A\u308A\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
+        }
+      }
       process.exit(result.errors.length ? 1 : 0);
       break;
     }
     case "render": {
-      need(file);
-      const circuit = readCircuit(file);
+      const circuit = readCircuit(pos[0]);
       const result = resolveCircuit(circuit);
-      const time = stepArg !== void 0 ? planAssembly(result).timeOfStep(Number(stepArg)) : timeArgValue;
-      const mode = { captions, assembly: assembly || stepArg !== void 0 };
+      const out = opts["-o"];
+      if (opts["--step"] !== void 0 && opts["--time"] !== void 0) fail2("--time \u3068 --step \u306F\u3069\u3061\u3089\u304B\u4E00\u65B9\u3067\u3059");
+      const assembly = Boolean(opts["--assembly"]) || opts["--step"] !== void 0;
+      const time = opts["--step"] !== void 0 ? planAssembly(result).timeOfStep(num("--step")) : num("--time");
+      const mode = { captions: !opts["--no-captions"], assembly, viewBox: viewBoxOf(result) };
       if (out?.endsWith(".png")) {
-        const cap = await openCapture(renderSvg(result, mode), { scale: Number(scale ?? 2), transparent });
+        const cap = await openCapture(renderSvg(result, mode), captureOptions(2));
         await cap.frame(time ?? 0, out);
         await cap.close();
       } else {
@@ -2998,59 +3350,99 @@ async function main() {
       break;
     }
     case "frames": {
-      need(file && out);
-      const result = resolveCircuit(readCircuit(file));
+      const out = opts["-o"] ?? fail2("frames \u306B\u306F -o <dir> \u304C\u5FC5\u8981\u3067\u3059");
+      const result = resolveCircuit(readCircuit(pos[0]));
+      const assembly = Boolean(opts["--assembly"]);
       const duration = assembly ? planAssembly(result).duration : result.timeline.duration;
-      const start = Number(from ?? 0);
-      const end = Number(to ?? duration);
+      const fps = num("--fps", 30);
+      const start = num("--from", 0);
+      const end = num("--to", duration);
       const count = Math.max(1, Math.round((end - start) / 1e3 * fps));
+      const jobs = Math.max(1, Math.min(count, num("--jobs", Math.min(4, cpus().length))));
       mkdirSync(out, { recursive: true });
-      const cap = await openCapture(renderSvg(result, { captions, assembly }), { scale: Number(scale ?? 1), transparent });
-      for (let i = 0; i < count; i++) {
-        await cap.frame(start + i * 1e3 / fps, join(out, `frame_${String(i).padStart(5, "0")}.png`));
-      }
-      await cap.close();
-      console.log(`${count} frames (${fps} fps, ${start}\u2013${end} ms) -> ${out}/frame_%05d.png`);
+      const svg = renderSvg(result, { captions: !opts["--no-captions"], assembly, viewBox: viewBoxOf(result) });
+      const browser = await launchBrowser(captureOptions(1));
+      const caps = await Promise.all(Array.from({ length: jobs }, () => openCapture(svg, { ...captureOptions(1), browser })));
+      await Promise.all(
+        caps.map(async (cap, j) => {
+          for (let i = j; i < count; i += jobs) await cap.frame(start + i * 1e3 / fps, join(out, `frame_${String(i).padStart(5, "0")}.png`));
+        })
+      );
+      await Promise.all(caps.map((c) => c.close()));
+      await browser.close();
+      console.log(`${count} frames (${fps} fps, ${start}\u2013${end} ms, ${jobs} jobs) -> ${out}/frame_%05d.png`);
       console.log(`mp4: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -pix_fmt yuv420p -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" out.mp4`);
       console.log(`gif: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -vf "split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse" out.gif`);
       break;
     }
     case "apply": {
-      need(file && extra);
+      const [file, extra] = pos;
       let ops = JSON.parse(existsSync(extra) ? readFileSync(extra, "utf8") : extra);
       ops = withLibraryParts(readCircuit(file), Array.isArray(ops) ? ops : [ops], libDefs());
       try {
         const { circuit, ids } = applyOps(readCircuit(file), ops);
-        writeFileSync(out ?? file, stringifyCircuit(circuit));
+        writeFileSync(opts["-o"] ?? file, stringifyCircuit(circuit));
         console.log(`applied ${ids.length} op(s): ${ids.filter(Boolean).join(", ")}`);
         const result = resolveCircuit(circuit);
         for (const e of result.errors) console.log(`ERROR: ${e}`);
         for (const w of result.warnings) console.log(`WARN:  ${w}`);
       } catch (e) {
         if (!(e instanceof OpError)) throw e;
-        console.error(`failed (nothing written): ${e.message}`);
-        process.exit(1);
+        fail2(`failed (nothing written): ${e.message}`, 1);
       }
       break;
     }
     case "parts": {
-      const registry = createRegistry(mergeDefs(libDefs(), file ? readCircuit(file).partDefs : []));
-      for (const def of registry.parts.values()) {
-        const params = Object.fromEntries(Object.entries(def.params ?? {}).map(([k, s]) => [k, s.default]));
-        const pins = def.pins(params).map((p) => p.name);
-        const paramText = Object.entries(params).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
+      const registry = createRegistry(mergeDefs(libDefs(), pos[0] ? readCircuit(pos[0]).partDefs : []));
+      const only = opts["--type"]?.split(",").map((s) => s.trim());
+      const defs = [...registry.parts.values()].filter((d) => !only || only.includes(d.type));
+      if (only) {
+        for (const t of only) if (!registry.get(t)) fail2(`unknown part type: ${t}`);
+      }
+      if (opts["--json"]) {
+        console.log(JSON.stringify(defs.map(partSpec), null, 2));
+        break;
+      }
+      for (const def of defs) {
+        const spec = partSpec(def);
+        const params = Object.entries(spec.params).map(([k, s]) => `${k}=${JSON.stringify(s.default)}`).join(" ");
+        const layout = spec.pins.map((p) => `${p.name}(${p.x},${p.y}${p.insert === false ? ",\u7AEF\u5B50" : ""})`).join(" ");
         console.log(`${def.type}  [${def.mount}]  ${def.name}
-    pins: ${pins.join(", ")}${paramText ? `
-    params: ${paramText}` : ""}`);
+    pins: ${layout}${params ? `
+    params: ${params}` : ""}${spec.extent ? `
+    extent: [${spec.extent.join(", ")}]` : ""}`);
       }
       break;
     }
+    case "place": {
+      const circuit = opts["--in"] ? readCircuit(opts["--in"]) : emptyCircuit();
+      circuit.partDefs = mergeDefs(libDefs(), circuit.partDefs);
+      const inst = { type: pos[0], ...opts["--rot"] !== void 0 ? { rot: num("--rot") } : {} };
+      if (opts["--at"]) inst.at = opts["--at"];
+      else if (opts["--pos"]) inst.pos = opts["--pos"].split(",").map(Number);
+      else fail2("place \u306B\u306F --at <\u7A74> \u304B --pos x,y \u304C\u5FC5\u8981\u3067\u3059");
+      for (const kv of opts["--param"] ?? []) {
+        const [k, ...v] = kv.split("=");
+        const value = v.join("=");
+        inst[k] = value !== "" && Number.isFinite(Number(value)) ? Number(value) : value;
+      }
+      if (!createRegistry(circuit.partDefs ?? []).get(inst.type)) fail2(`unknown part type: ${inst.type}`);
+      const preview = previewPlacement(circuit, inst);
+      console.log(JSON.stringify(preview, null, 2));
+      process.exit(preview.ok ? 0 : 1);
+      break;
+    }
+    case "coords": {
+      const circuit = opts["--in"] ? readCircuit(opts["--in"]) : { ...emptyCircuit(), board: opts["--board"] ?? "full" };
+      const result = resolveCircuit(circuit);
+      for (const ref of pos) console.log(JSON.stringify(coordsOf(result, ref)));
+      break;
+    }
     case "plan": {
-      need(file);
-      const result = resolveCircuit(readCircuit(file));
+      const result = resolveCircuit(readCircuit(pos[0]));
       const plan = planAssembly(result);
       const box = (b) => b && Object.fromEntries(Object.entries(b).map(([k, v]) => [k, Math.round(v * 100) / 100]));
-      const out2 = {
+      const out = {
         duration: plan.duration,
         timing: plan.T,
         steps: plan.steps.map((s, i) => ({
@@ -3067,7 +3459,7 @@ async function main() {
         trayBounds: box(plan.trayBounds),
         board: box(result.board.bounds)
       };
-      console.log(JSON.stringify(out2, null, 2));
+      console.log(JSON.stringify(out, null, 2));
       const entries = [...plan.trayBoxes];
       for (let i = 0; i < entries.length; i++) {
         for (let j = i + 1; j < entries.length; j++) {
@@ -3080,41 +3472,77 @@ async function main() {
       break;
     }
     case "lib": {
-      need(file && args.length > 2);
-      const defs = mergeDefs(...args.slice(2).map(readLibrary));
+      const [file, ...inputs] = pos;
+      const defs = mergeDefs(...inputs.map(readLibrary));
       writeFileSync(file, stringifyLibrary(file.replace(/^.*\//, "").replace(/\.json$/, ""), defs));
       console.log(`${defs.length} part(s): ${defs.map((d) => d.type).join(", ")} -> ${file}`);
       break;
     }
     case "new": {
-      need(file);
-      writeFileSync(file, stringifyCircuit({ ...emptyCircuit(), board: extra ?? "half" }));
+      writeFileSync(pos[0], stringifyCircuit({ ...emptyCircuit(), board: pos[1] ?? "half" }));
       break;
     }
-    default:
-      console.error(USAGE);
-      process.exit(2);
   }
+}
+function checkJson(result, layout) {
+  return {
+    ok: result.errors.length === 0,
+    errors: result.errors,
+    warnings: result.warnings,
+    advice: result.advice,
+    ...layout ? { layout } : {},
+    parts: result.parts.map((p) => ({ id: p.id, type: p.type, pins: Object.fromEntries(p.pins.map((q) => [q.name, q.hole ?? (p.offboard ? "offboard" : q.terminal ? "terminal" : null)])) })),
+    nets: result.nets.filter((n2) => n2.pins.length > 1 || /[+-]/.test(n2.name)).map((n2) => ({ name: n2.name, pins: n2.pins.map((p) => p.ref) })),
+    unconnected: result.nets.filter((n2) => n2.pins.length < 2 && !/[+-]/.test(n2.name)).map((n2) => n2.pins[0].ref)
+  };
+}
+function viewBoxOf(result) {
+  if (opts["--viewbox"] && opts["--focus"]) fail2("--viewbox \u3068 --focus \u306F\u3069\u3061\u3089\u304B\u4E00\u65B9\u3067\u3059");
+  if (opts["--viewbox"]) {
+    const v = opts["--viewbox"].split(/[\s,]+/).map(Number);
+    if (v.length !== 4 || !v.every(Number.isFinite) || v[2] <= 0 || v[3] <= 0) fail2('--viewbox \u306F "x y w h" \u3067\u3059 (\u30D4\u30C3\u30C1\u5358\u4F4D)');
+    return v;
+  }
+  if (!opts["--focus"]) return void 0;
+  const margin = num("--margin", 2);
+  let box = null;
+  const add = (b) => {
+    box = box ? { x0: Math.min(box.x0, b.x), y0: Math.min(box.y0, b.y), x1: Math.max(box.x1, b.x + b.w), y1: Math.max(box.y1, b.y + b.h) } : { x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h };
+  };
+  for (const id of opts["--focus"].split(",").map((s) => s.trim())) {
+    const part = result.parts.find((p) => p.id === id);
+    const wire = result.wires.find((w) => w.id === id);
+    const hole = result.board.pos(id);
+    if (part) add(bodyBox(part));
+    else if (wire) for (const p of [wire.a, wire.b, ...wire.via]) add({ x: p.x, y: p.y, w: 0, h: 0 });
+    else if (hole) add({ x: hole.x, y: hole.y, w: 0, h: 0 });
+    else fail2(`--focus: "${id}" \u3068\u3044\u3046\u90E8\u54C1\u30FB\u914D\u7DDA\u30FB\u7A74\u306F\u3042\u308A\u307E\u305B\u3093`);
+  }
+  return [box.x0 - margin, box.y0 - margin, box.x1 - box.x0 + 2 * margin, box.y1 - box.y0 + 2 * margin];
+}
+function captureOptions(defaultScale) {
+  if (opts["--chrome"] && opts["--browser-path"]) fail2("--chrome \u3068 --browser-path \u306F\u3069\u3061\u3089\u304B\u4E00\u65B9\u3067\u3059");
+  return {
+    scale: num("--scale", defaultScale),
+    transparent: Boolean(opts["--transparent"]),
+    channel: opts["--chrome"] ? "chrome" : void 0,
+    executablePath: opts["--browser-path"]
+  };
 }
 function withLibraryParts(circuit, ops, defs) {
   if (!defs.length) return ops;
   const known = /* @__PURE__ */ new Set([...createRegistry(circuit.partDefs ?? []).parts.keys()]);
-  const out2 = [];
+  const out = [];
   for (const op of ops) {
     if (op?.op === "definePart" && op.def?.type) known.add(op.def.type);
     if (op?.op === "addPart" && !known.has(op.type)) {
       const def = defs.find((d) => d.type === op.type);
       if (def) {
-        out2.push({ op: "definePart", def });
+        out.push({ op: "definePart", def });
         known.add(def.type);
       }
     }
-    out2.push(op);
+    out.push(op);
   }
-  return out2;
-}
-function need(ok) {
-  if (ok) return;
-  console.error(USAGE);
-  process.exit(2);
+  return out;
 }

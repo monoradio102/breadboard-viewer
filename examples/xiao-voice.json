@@ -8,7 +8,8 @@
     { "id": "AMP1", "type": "max98357a", "at": "a20" },
     { "id": "SP1", "type": "speaker", "pos": [23, -9], "label": "4Ω 3W" },
     { "id": "LED1", "type": "ws2812b", "at": "a30" },
-    { "id": "DISP1", "type": "ssd1306", "at": "j38" }
+    { "id": "DISP1", "type": "ssd1306", "at": "j38" },
+    { "id": "D1", "type": "diode", "model": "1N4007", "pins": { "A": "f31", "K": "e31" }, "note": "VCC を約 4.3V に下げ、3.3V の信号でも HIGH と判定されるようにする (定番の対策。電圧降下はチェックでは計算していない)" }
   ],
   "wires": [
     { "id": "W1", "from": "a7", "to": "T+7", "color": "red", "note": "3V3 → 上の + レール" },
@@ -30,7 +31,7 @@
     { "id": "W13", "from": "AMP1.SPK+", "to": "SP1.+", "color": "red" },
     { "id": "W14", "from": "AMP1.SPK-", "to": "SP1.-", "color": "black" },
     { "id": "W15", "from": "i11", "to": "b30", "color": "brown", "bend": -0.12, "note": "DIN ← D6" },
-    { "id": "W16", "from": "e31", "to": "B+31", "color": "orange" },
+    { "id": "W16", "from": "j31", "to": "B+31", "color": "orange", "note": "5V → ダイオード D1 経由で LED1 の VCC へ" },
     { "id": "W17", "from": "e32", "to": "B-33", "color": "black" },
     { "id": "W18", "from": "f38", "to": "T-37", "color": "black" },
     { "id": "W19", "from": "f39", "to": "T+39", "color": "red" },

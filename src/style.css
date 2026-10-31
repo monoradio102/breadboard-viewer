@@ -342,7 +342,15 @@ button.danger {
      and show it before the long parts list */
   .stage-area {
     flex: none;
-    height: 65vh;
+    height: 60vh;
+    height: 60svh;
+  }
+
+  /* the bottom of the stage can be below the fold: show captions at the top */
+  .caption-layer {
+    top: 8px;
+    bottom: auto;
+    font-size: 13px;
   }
 
   .stage-wrap {
