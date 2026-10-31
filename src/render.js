@@ -85,7 +85,7 @@ export function renderSvg(result, options = {}) {
   const meta = options.embed
     ? `<metadata id="breadboard-circuit" data-format="breadboard-viewer/v1">${esc(JSON.stringify(options.embed))}</metadata>`
     : "";
-  const style = still ? `<style>${stillEffectCss(Number(options.time) || 0)}</style>` : `<style>${EFFECT_CSS}${animate ? compileCss(animEls, tl, svgId) : ""}</style>`;
+  const style = styleTag(still ? stillEffectCss(Number(options.time) || 0) : `${EFFECT_CSS}${animate ? compileCss(animEls, tl, svgId) : ""}`);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" id="${svgId}" viewBox="${vb.map(n).join(" ")}" ` +
     `width="${n(vb[2] * SCALE)}" height="${n(vb[3] * SCALE)}">` +
@@ -158,7 +158,12 @@ function hash(s) {
   return (h >>> 0).toString(36);
 }
 
-const cssString = (s) => String(s).replace(/["\\]/g, "\\$&");
+// ids and values from the circuit end up in the CSS (selectors, declarations); escape them so
+// they stay strings, and newlines so they cannot end one.
+const cssString = (s) => String(s).replace(/["\\]/g, "\\$&").replace(/[\n\r\f]/g, " ");
+// The SVG goes into the page with innerHTML, so nothing in the CSS may close the <style>:
+// "<" becomes the CSS escape \3c (still "<" inside a CSS string, an error anywhere else).
+const styleTag = (css) => `<style>${css.replace(/</g, "\\3c ")}</style>`;
 
 // Captions are a layer over the bottom of the view: a dark band with the current line.
 function drawCaptions(tl, vb, animEls, svgId, animate, stateOf) {
@@ -527,7 +532,7 @@ function renderAssemblySvg(result, options) {
   const meta = options.embed
     ? `<metadata id="breadboard-circuit" data-format="breadboard-viewer/v1">${esc(JSON.stringify(options.embed))}</metadata>`
     : "";
-  const style = still ? `<style>${stillEffectCss(0)}</style>` : `<style>${EFFECT_CSS}${css.join("")}${compileCss(animEls, capTl, svgId)}</style>`;
+  const style = styleTag(still ? stillEffectCss(0) : `${EFFECT_CSS}${css.join("")}${compileCss(animEls, capTl, svgId)}`);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" id="${svgId}" viewBox="${vb.map(n).join(" ")}" ` +
     `width="${n(vb[2] * SCALE)}" height="${n(vb[3] * SCALE)}">` +

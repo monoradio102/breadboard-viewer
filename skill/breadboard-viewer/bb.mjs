@@ -2303,7 +2303,7 @@ function renderSvg(result, options = {}) {
     options.tempWire ? g(drawTempWire(options.tempWire), { class: "temp-wire", "pointer-events": "none" }) : ""
   ].join("");
   const meta = options.embed ? `<metadata id="breadboard-circuit" data-format="breadboard-viewer/v1">${esc(JSON.stringify(options.embed))}</metadata>` : "";
-  const style2 = still ? `<style>${stillEffectCss(Number(options.time) || 0)}</style>` : `<style>${EFFECT_CSS}${animate ? compileCss(animEls, tl, svgId) : ""}</style>`;
+  const style2 = styleTag(still ? stillEffectCss(Number(options.time) || 0) : `${EFFECT_CSS}${animate ? compileCss(animEls, tl, svgId) : ""}`);
   return `<svg xmlns="http://www.w3.org/2000/svg" id="${svgId}" viewBox="${vb.map(n).join(" ")}" width="${n(vb[2] * SCALE)}" height="${n(vb[3] * SCALE)}">` + meta + style2 + body + `</svg>`;
 }
 function contentBounds(result, margin = 0) {
@@ -2354,7 +2354,8 @@ function hash(s) {
   for (let i = 0; i < s.length; i++) h = (h << 5) + h + s.charCodeAt(i) | 0;
   return (h >>> 0).toString(36);
 }
-var cssString = (s) => String(s).replace(/["\\]/g, "\\$&");
+var cssString = (s) => String(s).replace(/["\\]/g, "\\$&").replace(/[\n\r\f]/g, " ");
+var styleTag = (css) => `<style>${css.replace(/</g, "\\3c ")}</style>`;
 function drawCaptions(tl, vb, animEls, svgId, animate, stateOf) {
   const track = captionTrack(tl.captions);
   const state = stateOf(track);
@@ -2647,7 +2648,7 @@ function renderAssemblySvg(result, options) {
     captions
   ].join("");
   const meta = options.embed ? `<metadata id="breadboard-circuit" data-format="breadboard-viewer/v1">${esc(JSON.stringify(options.embed))}</metadata>` : "";
-  const style2 = still ? `<style>${stillEffectCss(0)}</style>` : `<style>${EFFECT_CSS}${css.join("")}${compileCss(animEls, capTl, svgId)}</style>`;
+  const style2 = styleTag(still ? stillEffectCss(0) : `${EFFECT_CSS}${css.join("")}${compileCss(animEls, capTl, svgId)}`);
   return `<svg xmlns="http://www.w3.org/2000/svg" id="${svgId}" viewBox="${vb.map(n).join(" ")}" width="${n(vb[2] * SCALE)}" height="${n(vb[3] * SCALE)}">` + meta + style2 + body + `</svg>`;
 }
 
@@ -2865,6 +2866,14 @@ function mergeDefs(...lists) {
 function stringifyLibrary(name, defs) {
   return `${JSON.stringify({ name, partDefs: defs }, null, 2)}
 `;
+}
+var LINK_LIMIT = 512 * 1024;
+function circuitLink(circuit, base = "https://monoradio102.github.io/breadboard-viewer/") {
+  const bytes = new TextEncoder().encode(JSON.stringify(circuit));
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 32768) bin += String.fromCharCode(...bytes.subarray(i, i + 32768));
+  const b64 = btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `${base.replace(/#.*$/, "")}#data=${b64}`;
 }
 
 // src/ops.js
@@ -3407,7 +3416,8 @@ var COMMANDS = {
   coords: ["coords <hole | PartId.Pin | x,y ...> [--in circuit.json] [--board full|half|mini]", 1, Infinity, { "--in": "value", "--board": "value" }],
   lib: ["lib    <out.json> <circuit.json|library.json ...>", 2, Infinity, {}],
   plan: ["plan   <circuit.json>", 1, 1, {}],
-  new: ["new    <circuit.json> [full|half|mini]", 1, 2, {}]
+  new: ["new    <circuit.json> [full|half|mini]", 1, 2, {}],
+  url: ["url    <circuit.json> [--base https://\u2026/]", 1, 1, { "--base": "value" }]
 };
 var USAGE = `usage:
 ${Object.values(COMMANDS).map(([u]) => `  bb.mjs ${u}`).join("\n")}`;
@@ -3634,6 +3644,16 @@ async function main() {
       const defs = mergeDefs(...inputs.map(readLibrary));
       writeFileSync(file, stringifyLibrary(file.replace(/^.*\//, "").replace(/\.json$/, ""), defs));
       console.log(`${defs.length} part(s): ${defs.map((d) => d.type).join(", ")} -> ${file}`);
+      break;
+    }
+    case "url": {
+      const circuit = readCircuit(pos[0]);
+      const result = resolveCircuit(circuit);
+      if (result.errors.length) fail2(`${pos[0]} has errors (run check first):
+${result.errors.join("\n")}`);
+      const url = opts["--base"] ? circuitLink(circuit, opts["--base"]) : circuitLink(circuit);
+      if (url.length > 8e3) console.error(`note: the link is ${url.length} characters long; some chat apps cut long links (send the JSON or SVG instead)`);
+      console.log(url);
       break;
     }
     case "new": {

@@ -7,7 +7,7 @@ import { planAssembly } from "../src/assembly.js";
 import { createBoard } from "../src/board.js";
 import { describe, kitList, resolveCircuit } from "../src/circuit.js";
 import { bodyBox, coordsOf, layoutIssues, partSpec, previewPlacement } from "../src/inspect.js";
-import { emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "../src/io.js";
+import { circuitLink, emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "../src/io.js";
 import { OpError, applyOps } from "../src/ops.js";
 import { createRegistry, fromJson } from "../src/parts/registry.js";
 import { renderSvg } from "../src/render.js";
@@ -54,6 +54,7 @@ const COMMANDS = {
   lib: ["lib    <out.json> <circuit.json|library.json ...>", 2, Infinity, {}],
   plan: ["plan   <circuit.json>", 1, 1, {}],
   new: ["new    <circuit.json> [full|half|mini]", 1, 2, {}],
+  url: ["url    <circuit.json> [--base https://…/]", 1, 1, { "--base": "value" }],
 };
 
 const USAGE = `usage:\n${Object.values(COMMANDS)
@@ -285,6 +286,15 @@ async function main() {
       const defs = mergeDefs(...inputs.map(readLibrary));
       writeFileSync(file, stringifyLibrary(file.replace(/^.*\//, "").replace(/\.json$/, ""), defs));
       console.log(`${defs.length} part(s): ${defs.map((d) => d.type).join(", ")} -> ${file}`);
+      break;
+    }
+    case "url": {
+      const circuit = readCircuit(pos[0]);
+      const result = resolveCircuit(circuit);
+      if (result.errors.length) fail(`${pos[0]} has errors (run check first):\n${result.errors.join("\n")}`);
+      const url = opts["--base"] ? circuitLink(circuit, opts["--base"]) : circuitLink(circuit);
+      if (url.length > 8000) console.error(`note: the link is ${url.length} characters long; some chat apps cut long links (send the JSON or SVG instead)`);
+      console.log(url);
       break;
     }
     case "new": {

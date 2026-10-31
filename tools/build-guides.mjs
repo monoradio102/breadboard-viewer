@@ -54,6 +54,7 @@ bb.check()                      // 検証結果とネットリスト (テキス�
 bb.svg()                        // アニメーション付き SVG / bb.svg({ time: 1500 }) で静止画
 await bb.png({ time: 1500 })    // PNG の Blob (background: null で透過)
 bb.get()                        // 現在の回路 JSON
+bb.link()                       // この回路を開くリンク (#data=…)
 bb.help()
 \`\`\`
 

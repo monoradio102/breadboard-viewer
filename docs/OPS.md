@@ -39,6 +39,7 @@ bb.parts()          // 使える部品
 bb.undo(); bb.redo()
 bb.play(); bb.pause(); bb.seek(1500)   // アニメーションの再生 / 一時停止 / 時刻指定
 bb.svg({ time: 1500 })                 // その瞬間の静止画SVG
+bb.link()                              // この回路を開くリンク (https://…/#data=…)
 await bb.png({ background: null })     // その瞬間の透過PNG (Blob)
 ```
 

@@ -83,6 +83,9 @@ npm run serve   # http://localhost:8000 で開く
 - 右: 選択中の部品のプロパティと、回路のJSON。JSONを編集すると、すぐに図に反映されます
 - ツールバーの両端の「◧」「◨」で、左右のパネルを畳めます (画面が狭いとき用。状態はブラウザに記憶されます)
 - JSON / SVG ファイルは、ページにドロップしても読み込めます
+- 「リンクをコピー」: 回路をまるごと入れたリンク (`#data=<回路 JSON の Base64URL>`) を作ります。開くだけで同じ回路が表示されます。回路はリンクの `#` 以降に入っているので、サーバーには送られません
+- 開いた回路 (リンク、サンプル、ファイル) は、編集するまでブラウザに保存しません。開いただけで、前に作業していた回路が消えることはありません
+- リンクやファイルの回路は、文字として描くだけで、スクリプトとしては実行しません (ページはこのサイトのスクリプトしか動かさない設定です)
 
 ## コマンドライン (AIエージェント向け)
 
@@ -91,6 +94,7 @@ npm run serve   # http://localhost:8000 で開く
 ```bash
 node tools/bb.mjs parts                                      # 使える部品とピン名の一覧
 node tools/bb.mjs new my.json half                           # 空の回路を作る
+node tools/bb.mjs url examples/oled-hello.json               # エディタで開けるリンク (#data=…)
 node tools/bb.mjs apply my.json '[{"op":"addPart","type":"led","at":"a10"}]'  # 編集操作を適用する
 node tools/bb.mjs check examples/blink-nano.json             # 検証とネットリストの表示
 node tools/bb.mjs check examples/xiao-voice.json --layout --json  # 見た目の問題も含めて JSON で
@@ -118,6 +122,7 @@ bb.apply(ops)   // 編集操作を適用する (docs/OPS.md)
 bb.check()      // 検証結果とネットリスト (テキスト)
 bb.inspect(hole)// 穴にあるものとネット
 bb.svg()        // 回路データ入りのSVG
+bb.link()       // この回路を開くリンク (#data=…)
 bb.help()
 ```
 

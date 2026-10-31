@@ -2,7 +2,7 @@
 import { BOARD_TYPES } from "./board.js";
 import { describe, kitList, resolveCircuit, stripOf } from "./circuit.js";
 import { kitInfo } from "./wires.js";
-import { emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "./io.js";
+import { circuitFromLink, circuitLink, emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "./io.js";
 import { fromJson } from "./parts/registry.js";
 import { OP_NAMES, OpError, applyOps, normalize } from "./ops.js";
 import { planAssembly } from "./assembly.js";
@@ -61,7 +61,9 @@ const undoStack = { past: [], future: [] };
 // ---- state ----
 
 // Replaces the circuit. record=false is used for undo/redo and the initial load.
-function commit(next, { record = true, updateEditor = true } = {}) {
+// save=false for opening a circuit (link, example, file, bb.load): it is saved to the
+// browser only once it is edited, so opening something never overwrites earlier work.
+function commit(next, { record = true, updateEditor = true, save = true } = {}) {
   next = normalize(next);
   if (record && JSON.stringify(next) !== JSON.stringify(circuit)) {
     undoStack.past.push(circuit);
@@ -92,6 +94,9 @@ function commit(next, { record = true, updateEditor = true } = {}) {
   el.redo.disabled = !undoStack.future.length;
   renderPartList();
   renderInspector();
+  if (!save) return;
+  // edited: from now on a reload shows the saved copy, not the link it came from
+  if (location.hash.startsWith("#data=")) history.replaceState(null, "", location.pathname + location.search);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(circuit));
   } catch {
@@ -1081,7 +1086,7 @@ async function svgToPng(svg, { scale = 2, background = null } = {}) {
 }
 $("btn-new").addEventListener("click", () => {
   view = null;
-  commit(emptyCircuit());
+  commit(emptyCircuit(), { save: false });
 });
 $("btn-open").addEventListener("click", () => el.file.click());
 el.file.addEventListener("change", async () => {
@@ -1106,7 +1111,7 @@ function loadText(text) {
   try {
     selection = null;
     view = null;
-    commit(parseCircuitText(text));
+    commit(parseCircuitText(text), { save: false });
   } catch (e) {
     showMessages([`読み込めませんでした: ${e.message}`], []);
   }
@@ -1172,7 +1177,7 @@ window.bb = {
   load: (c) => {
     selection = null;
     view = null;
-    commit(typeof c === "string" ? parseCircuitText(c) : c);
+    commit(typeof c === "string" ? parseCircuitText(c) : c, { save: false });
     return report();
   },
   /** My parts library: list / add definitions (kept in this browser). */
@@ -1227,6 +1232,8 @@ window.bb = {
       params: Object.fromEntries(Object.entries(d.params ?? {}).map(([k, s]) => [k, s.default])),
       pins: d.pins(Object.fromEntries(Object.entries(d.params ?? {}).map(([k, s]) => [k, s.default]))).map((p) => p.name),
     })),
+  /** A link that opens this circuit in the editor (https://…/#data=…). */
+  link: () => circuitLink(circuit, location.origin + location.pathname),
   /** SVG with the circuit embedded; { time: ms } gives a still frame. */
   svg: (opts = {}) => renderSvg(result, { embed: circuit, captions: showCaptions, assembly: assemblyMode, ...opts }),
   /** PNG (Blob) of the frame at { time } (default: now); background null = transparent. */
@@ -1243,12 +1250,43 @@ window.bb = {
   zoom: (factor) => zoomCenter(factor),
   ops: OP_NAMES,
   help: () =>
-    "bb.get() / bb.load(json) / bb.apply([{op:'addPart',type:'led',at:'a10'}, ...]) / bb.check() / bb.inspect('a10') / bb.parts() / bb.undo() — 詳細は docs/OPS.md",
+    "bb.get() / bb.load(json) / bb.apply([{op:'addPart',type:'led',at:'a10'}, ...]) / bb.check() / bb.inspect('a10') / bb.parts() / bb.undo() / bb.link() — 詳細は docs/OPS.md",
 };
+
+// ---- links (#data=…) ----
+
+// Opens the circuit in the address bar's #data=… (not saved until edited). True if there was one.
+function openLink() {
+  let linked;
+  try {
+    linked = circuitFromLink(location.hash);
+  } catch (e) {
+    showMessages([`リンクの回路を読み込めませんでした: ${e.message}`], []);
+    return true;
+  }
+  if (!linked) return false;
+  selection = null;
+  view = null;
+  commit(linked, { save: false });
+  el.status.textContent = "リンクの回路を開きました (編集するまでブラウザには保存しません)";
+  return true;
+}
+window.addEventListener("hashchange", openLink);
+
+$("btn-link").addEventListener("click", async () => {
+  const url = circuitLink(circuit, location.origin + location.pathname);
+  try {
+    await navigator.clipboard.writeText(url);
+    el.status.textContent = `リンクをコピーしました (${url.length} 文字。回路のデータがすべて入っています)`;
+  } catch {
+    prompt("この回路のリンク", url);
+  }
+});
 
 // ---- start ----
 
 (async () => {
+  if (openLink()) return;
   // ?example=<name> opens a bundled example (used by the README links)
   const example = new URLSearchParams(location.search).get("example");
   if (example && /^[\w-]+$/.test(example)) {
@@ -1265,6 +1303,6 @@ window.bb = {
   if (saved) commit(saved, { record: false });
   else {
     const res = await fetch("examples/blink-nano.json");
-    commit(parseCircuitText(await res.text()), { record: false });
+    commit(parseCircuitText(await res.text()), { record: false, save: false });
   }
 })();

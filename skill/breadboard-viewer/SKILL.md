@@ -71,7 +71,8 @@ PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx pl
 - DIP の IC は 1 番ピンを f 行に置くと溝をまたぐ (例: `"at": "f10"`)
 - 組み込みにない部品は、データシートを調べて `partDefs` に JSON で定義する (`units: "mm"` でデータシートの寸法をそのまま書ける)
 - 定義した部品は、ライブラリにまとめて使い回せる: `node "$SKILL_DIR/bb.mjs" lib my-parts.json circuit.json` で集め、`node "$SKILL_DIR/bb.mjs" apply c.json ops.json --lib my-parts.json` で使う
-- 結果を人に渡すときは、回路の JSON か、書き出した SVG (回路データ入り) を渡す。エディタ (https://monoradio102.github.io/breadboard-viewer/) にドロップすると編集できる
+- 結果を人に渡すときは、エディタで開けるリンクが手軽: `node "$SKILL_DIR/bb.mjs" url circuit.json` で `https://monoradio102.github.io/breadboard-viewer/#data=<回路 JSON の Base64URL>` を出す (クリックするだけで開ける。回路はリンクの中にあり、サーバーには送られない)。
+  リンクが長すぎる (数千文字を超える) ときや、ファイルで渡したいときは、回路の JSON か、書き出した SVG (回路データ入り) を渡す。エディタにドロップすると編集できる
 
 ## ドキュメント
 

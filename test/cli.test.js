@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { resolveCircuit } from "../src/circuit.js";
 import { coordsOf, layoutIssues, previewPlacement } from "../src/inspect.js";
@@ -86,4 +87,14 @@ test("layout flags a bend that is too large and wires that leave the board", () 
   assert.ok(issues.some((l) => l.startsWith("W1 の bend 1 が大きすぎます")));
   assert.ok(issues.some((l) => l.startsWith("W2 がボードの外にはみ出しています")));
   assert.ok(!issues.some((l) => l.startsWith("W3")));
+});
+
+test("url makes a #data= link that decodes back to the circuit", async () => {
+  const { circuitFromLink } = await import("../src/io.js");
+  const out = bb("url", "examples/oled-hello.json").stdout.trim();
+  assert.match(out, /^https:\/\/monoradio102\.github\.io\/breadboard-viewer\/#data=[A-Za-z0-9_-]+$/);
+  const original = JSON.parse(readFileSync(new URL("../examples/oled-hello.json", import.meta.url), "utf8"));
+  assert.deepEqual(circuitFromLink(out), original);
+  assert.throws(() => circuitFromLink("#data=!!"), /Base64URL/);
+  assert.equal(circuitFromLink("#other"), null);
 });
