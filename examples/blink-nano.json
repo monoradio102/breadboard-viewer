@@ -10,5 +10,34 @@
   "wires": [
     { "from": "c22", "to": "T-22", "color": "black" },
     { "from": "a4", "to": "T-4", "color": "black" }
-  ]
+  ],
+  "animation": {
+    "duration": 2000,
+    "loop": true,
+    "tracks": [
+      {
+        "target": "D1",
+        "keys": [
+          {
+            "t": 0,
+            "on": true
+          },
+          {
+            "t": 1000,
+            "on": false
+          }
+        ]
+      }
+    ],
+    "captions": [
+      {
+        "t": 0,
+        "text": "digitalWrite(13, HIGH) → LED 点灯"
+      },
+      {
+        "t": 1000,
+        "text": "digitalWrite(13, LOW) → LED 消灯"
+      }
+    ]
+  }
 }

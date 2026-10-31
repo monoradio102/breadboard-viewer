@@ -1,6 +1,6 @@
 // Part registry: built-in parts plus declarative JSON part definitions
 // (the ones embedded in a circuit's "partDefs" — see docs/FORMAT.md).
-import { g, n, rect, shapesToSvg, text } from "../svg.js";
+import { esc, g, n, rect, shapesToSvg, tag, text } from "../svg.js";
 import { BUILTIN_PARTS } from "./builtin.js";
 import { centroid, leg } from "./common.js";
 
@@ -39,6 +39,14 @@ export function fromJson(def) {
   const mount = def.mount === "leads" ? "leads" : "rigid";
   const shapes = def.shapes ?? [];
   const label = def.label ?? def.name ?? def.type;
+  const display = def.display ?? null;
+  const conditions = [...new Set(shapes.map((s) => s.when).filter(Boolean))];
+  const states = { ...(def.states ?? {}) };
+  for (const cond of conditions) {
+    const name = parseCondition(cond).name;
+    states[name] ??= { type: "bool", default: false };
+  }
+  if (display) states.text ??= { type: "string", default: display.text ?? "" };
   return {
     type: def.type,
     name: def.name ?? def.type,
@@ -46,19 +54,60 @@ export function fromJson(def) {
     description: def.description ?? "",
     mount,
     params: def.params ?? {},
+    states,
+    // `when` shapes are shown only while their condition holds; a display draws one text per value
+    animate: ({ values }) => ({
+      ...Object.fromEntries(conditions.map((cond) => [`when:${cond}`, (s) => ({ opacity: testCondition(cond, s) ? 1 : 0 })])),
+      ...(display ? Object.fromEntries(values("text").map((v, i) => [`text:${i}`, (s) => ({ opacity: String(s.text) === v ? 1 : 0 })])) : {}),
+    }),
     pins: () => pins,
+    // drawing bounds relative to the first pin, in pitch units (only needed when it leaves the board)
+    extent: def.extent ? [def.extent[0] - o.x, def.extent[1] - o.y, def.extent[2] - o.x, def.extent[3] - o.y].map((v) => v * scale) : undefined,
     internal: () => def.internal ?? [],
     source: def.source,
     json: def,
     render:
       mount === "rigid"
-        ? () =>
-            shapes.length
-              ? g(shapesToSvg(shapes), { transform: `scale(${n(scale)}) translate(${n(-o.x)} ${n(-o.y)})` })
+        ? ({ anim, values }) =>
+            shapes.length || display
+              ? g(shapesToSvg(shapes, (s) => (s.when ? anim(`when:${s.when}`) : null)) + (display ? displayText(display, values("text"), anim) : ""), {
+                  transform: `scale(${n(scale)}) translate(${n(-o.x)} ${n(-o.y)})`,
+                })
               : fallbackBox(pins, label)
         : ({ pins: placed }) => genericLeads(placed, label),
     builtin: false,
   };
+}
+
+// "on", "!on", "mode=run"
+function parseCondition(cond) {
+  const m = /^(!?)([\w-]+)(?:=(.*))?$/.exec(String(cond).trim());
+  if (!m) throw new Error(`when "${cond}" の書き方が不正です ("on", "!on", "mode=run" の形)`);
+  return { not: m[1] === "!", name: m[2], value: m[3] };
+}
+
+function testCondition(cond, s) {
+  const c = parseCondition(cond);
+  const v = s[c.name];
+  const hit = c.value === undefined ? Boolean(v) && v !== "false" : String(v) === c.value;
+  return c.not ? !hit : hit;
+}
+
+function displayText(d, values, anim) {
+  const size = d.size ?? 1.6;
+  const lineH = size * 1.25;
+  return values
+    .map((v, i) =>
+      tag(
+        "text",
+        { x: d.x, y: d.y, "font-size": size, "font-family": "monospace", fill: d.color ?? "#7fd3ff", ...anim(`text:${i}`) },
+        v
+          .split("\n")
+          .map((line, j) => tag("tspan", { x: d.x, dy: j === 0 ? size : lineH }, esc(line)))
+          .join(""),
+      ),
+    )
+    .join("");
 }
 
 function fallbackBox(pins, label) {

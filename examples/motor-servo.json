@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "title": "トランジスタでモーター駆動 + サーボ",
+  "board": "full",
+  "parts": [
+    { "id": "U1", "type": "nano", "at": "h3" },
+    { "id": "Q1", "type": "transistor", "pins": ["c40", "c41", "c42"] },
+    { "id": "R1", "type": "resistor", "value": "1k", "pins": ["d42", "g42"] },
+    { "id": "M1", "type": "motor", "pins": { "+": "b48", "-": "b41" } },
+    { "id": "D1", "type": "diode", "model": "1N4007", "pins": { "A": "d41", "K": "d48" } },
+    { "id": "S1", "type": "servo", "at": "a52" }
+  ],
+  "wires": [
+    { "id": "W1", "from": "a4", "to": "T-4", "color": "black", "note": "GND" },
+    { "id": "W2", "from": "a6", "to": "T+6", "color": "red", "note": "5V" },
+    { "id": "W3", "from": "j10", "to": "j42", "color": "green", "note": "D5 → R1" },
+    { "id": "W4", "from": "a40", "to": "T-40", "color": "black" },
+    { "id": "W5", "from": "a48", "to": "T+48", "color": "red" },
+    { "id": "W6", "from": "b52", "to": "T-52", "color": "black" },
+    { "id": "W7", "from": "b53", "to": "T+53", "color": "red" },
+    { "id": "W8", "from": "i14", "to": "i54", "color": "orange", "note": "D9" },
+    { "id": "W9", "from": "h54", "to": "c54", "color": "orange" }
+  ],
+  "animation": {
+    "duration": 4000,
+    "loop": true,
+    "tracks": [
+      {
+        "target": "M1",
+        "keys": [
+          {
+            "t": 0,
+            "speed": 0
+          },
+          {
+            "t": 600,
+            "speed": 150
+          },
+          {
+            "t": 3000,
+            "speed": 150
+          },
+          {
+            "t": 3800,
+            "speed": 0
+          }
+        ]
+      },
+      {
+        "target": "W3",
+        "keys": [
+          {
+            "t": 0,
+            "flow": true
+          },
+          {
+            "t": 3000,
+            "flow": false
+          }
+        ]
+      },
+      {
+        "target": "S1",
+        "keys": [
+          {
+            "t": 0,
+            "angle": 0
+          },
+          {
+            "t": 2000,
+            "angle": 180
+          },
+          {
+            "t": 4000,
+            "angle": 0
+          }
+        ]
+      },
+      {
+        "target": "W8",
+        "keys": [
+          {
+            "t": 0,
+            "flow": true
+          }
+        ]
+      }
+    ],
+    "captions": [
+      {
+        "t": 0,
+        "text": "D5 を HIGH → Q1 がオン → モーターが回る / D9 でサーボを 0°→180°"
+      },
+      {
+        "t": 2000,
+        "text": "サーボを 180°→0° に戻す"
+      },
+      {
+        "t": 3000,
+        "text": "D5 を LOW → モーター停止 (D1 が逆起電力を逃がす)"
+      }
+    ]
+  }
+}

@@ -25,6 +25,10 @@ const el = {
   wireColor: $("wire-color"),
   undo: $("btn-undo"),
   redo: $("btn-redo"),
+  player: $("player"),
+  play: $("btn-play"),
+  animTime: $("anim-time"),
+  animLabel: $("anim-label"),
 };
 
 let circuit = normalize(emptyCircuit());
@@ -111,7 +115,56 @@ function draw(previewResult = result, extra = {}) {
     svg.style.width = `${w * zoom}px`;
     svg.style.maxWidth = "none";
   }
+  syncPlayer();
 }
+
+// ---- animation player ----
+// Re-rendering creates new CSS animations; they are re-synced to the shared clock here.
+
+const player = { playing: true, start: performance.now(), time: 0 };
+
+function playerTime() {
+  return player.playing ? performance.now() - player.start : player.time;
+}
+
+function syncPlayer() {
+  const tl = result.timeline;
+  el.player.hidden = !tl?.animated;
+  if (!tl?.animated) return;
+  const t = playerTime();
+  for (const a of el.stage.querySelector("svg")?.getAnimations({ subtree: true }) ?? []) {
+    a.currentTime = t;
+    if (!player.playing) a.pause();
+  }
+  el.play.textContent = player.playing ? "⏸" : "▶";
+}
+
+function setPlaying(playing) {
+  if (playing === player.playing) return;
+  if (playing) player.start = performance.now() - player.time;
+  else player.time = playerTime();
+  player.playing = playing;
+  syncPlayer();
+}
+
+function seek(t) {
+  player.time = t;
+  player.start = performance.now() - t;
+  syncPlayer();
+}
+
+function tickPlayer() {
+  const tl = result.timeline;
+  if (tl?.animated) {
+    const t = playerTime();
+    const local = tl.loop ? t % tl.duration : Math.min(t, tl.duration);
+    el.animTime.max = String(tl.duration);
+    if (document.activeElement !== el.animTime) el.animTime.value = String(local);
+    el.animLabel.textContent = `${(local / 1000).toFixed(1)}s / ${(tl.duration / 1000).toFixed(1)}s`;
+  }
+  requestAnimationFrame(tickPlayer);
+}
+requestAnimationFrame(tickPlayer);
 
 function showMessages(errors, warnings, extra) {
   const items = [...(extra ? [["error", extra]] : []), ...errors.map((m) => ["error", m]), ...warnings.map((m) => ["warn", m])];
@@ -260,6 +313,9 @@ window.addEventListener("keydown", (ev) => {
   } else if (mod && ev.key.toLowerCase() === "y") {
     ev.preventDefault();
     redo();
+  } else if (ev.key === " " && result.timeline?.animated) {
+    ev.preventDefault();
+    setPlaying(!player.playing);
   } else if (!selection) {
     return;
   } else if (ev.key === "Delete" || ev.key === "Backspace") {
@@ -455,6 +511,11 @@ for (const c of Object.keys(WIRE_COLORS)) {
   el.wireColor.append(Object.assign(document.createElement("option"), { value: c, textContent: c }));
 }
 el.wireColor.value = "red";
+el.play.addEventListener("click", () => setPlaying(!player.playing));
+el.animTime.addEventListener("input", () => {
+  setPlaying(false);
+  seek(Number(el.animTime.value));
+});
 el.undo.addEventListener("click", undo);
 el.redo.addEventListener("click", redo);
 
@@ -552,6 +613,13 @@ window.bb = {
   undo,
   redo,
   select,
+  /** Animation playback: play(), pause(), seek(ms). */
+  play: () => setPlaying(true),
+  pause: () => setPlaying(false),
+  seek: (ms) => {
+    setPlaying(false);
+    seek(ms);
+  },
   /** Validation result and netlist as text. */
   check: () => describe(result),
   /** What is at a hole: { hole, occupant, net }. */

@@ -1,9 +1,10 @@
 // Resolves a circuit JSON into placed parts, validates it and computes the netlist.
 import { boardStrips, createBoard, parseHole } from "./board.js";
+import { buildTimeline } from "./animation.js";
 import { createRegistry } from "./parts/registry.js";
 
 export const FORMAT_VERSION = 1;
-const RESERVED = new Set(["id", "type", "at", "rot", "pins", "note"]);
+const RESERVED = new Set(["id", "type", "at", "rot", "pins", "note", "state"]);
 const ROTATIONS = [0, 90, 180, 270];
 
 // Returns { board, registry, parts, wires, errors, warnings, nets }.
@@ -73,7 +74,8 @@ export function resolveCircuit(circuit) {
       if (netIds.size === 1) warnings.push(`${part.id}: 全てのピンが同じネット(${holes[0].net})につながっています (ショート)`);
     }
   }
-  return { board, registry, parts, wires, nets, netOfHole, occupied, errors, warnings };
+  const timeline = buildTimeline(parts, wires, circuit.animation, warnings);
+  return { board, registry, parts, wires, nets, netOfHole, occupied, timeline, errors, warnings };
 }
 
 function placePart(board, def, inst, id, errors, warnings) {

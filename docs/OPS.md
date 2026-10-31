@@ -33,6 +33,7 @@ bb.check()          // 検証結果とネットリスト
 bb.inspect("a10")   // { hole, occupant, net }
 bb.parts()          // 使える部品
 bb.undo(); bb.redo()
+bb.play(); bb.pause(); bb.seek(1500)   // アニメーションの再生 / 一時停止 / 時刻指定
 ```
 
 ## op の一覧
@@ -46,10 +47,13 @@ bb.undo(); bb.redo()
 | `update` | `id`, `set` | 部品または配線のキーを変更します。`set` の値に `null` を指定すると、そのキーを削除します。`id` も変更できますが、`type` は変更できません |
 | `remove` | `id` | 部品または配線を削除します |
 | `addWire` | `from`, `to`, (`color`, `id`, `via`, `note`) | ジャンパ線を追加します。`id` を省略すると `W1`, `W2`… を自動で付けます |
+| `animate` | `target`, `keys`, (`replace` = true) | 部品または配線のアニメーションのキーを設定します。`replace: false` にすると、既存のキーに追加します |
+| `setAnimation` | `duration`, `loop`, `captions`, `tracks` のうち必要なもの / `clear: true` | アニメーションの設定を上書きでマージします。`clear: true` でアニメーションを削除します |
 | `setBoard` | `board` | ボードの種類を変更します (`full` / `half` / `mini`) |
 | `setTitle` | `title` | タイトルを変更します |
 
 配線のIDは、読み込んだ時点で自動的に付けられます (`W1`, `W2`, …)。
+部品や配線を削除したりIDを変えたりすると、アニメーションの `target` も自動で追従します。
 
 ## おすすめの進め方 (AI向け)
 
@@ -57,4 +61,5 @@ bb.undo(); bb.redo()
 2. `addPart` で部品を置きます。ICやモジュールは `at` で溝をまたぐように置き、抵抗やLEDは `pins` で穴を指定します。
 3. `addWire` で配線します。
 4. `node tools/bb.mjs check` で、ネットリストが意図どおりか確認します。
-5. 必要に応じて `render -o out.png` で見た目を確認します。
+5. 動作を見せたい場合は、`animate` でキーを、`setAnimation` で長さやキャプションを設定します。
+6. 必要に応じて `render -o out.png` で見た目を確認します (PNGは時刻0の状態です)。

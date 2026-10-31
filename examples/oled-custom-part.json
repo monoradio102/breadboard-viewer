@@ -7,29 +7,130 @@
       "type": "oled-ssd1306-i2c",
       "name": "0.96インチ OLED (I2C)",
       "category": "表示",
-      "description": "SSD1306 128x64 I2Cモジュール。ピン: GND, VCC, SCL, SDA",
+      "description": "SSD1306 128x64 I2Cモジュール。ピン: GND, VCC, SCL, SDA。text 状態で画面の文字をアニメーションできる。",
       "units": "mm",
       "mount": "rigid",
       "pins": [
-        { "name": "GND", "x": 0, "y": 0 },
-        { "name": "VCC", "x": 2.54, "y": 0 },
-        { "name": "SCL", "x": 5.08, "y": 0 },
-        { "name": "SDA", "x": 7.62, "y": 0 }
+        {
+          "name": "GND",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "name": "VCC",
+          "x": 2.54,
+          "y": 0
+        },
+        {
+          "name": "SCL",
+          "x": 5.08,
+          "y": 0
+        },
+        {
+          "name": "SDA",
+          "x": 7.62,
+          "y": 0
+        }
       ],
       "shapes": [
-        { "type": "rect", "x": -9.84, "y": -2.2, "w": 27.3, "h": 27.8, "r": 1.2, "fill": "#1b3a6b" },
-        { "type": "rect", "x": -8.4, "y": 4.2, "w": 24.4, "h": 14.5, "fill": "#0b0b0b", "stroke": "#333", "strokeWidth": 0.3 },
-        { "type": "text", "x": 3.81, "y": 11.4, "text": "SSD1306 128x64", "size": 1.8, "fill": "#7fd3ff" },
-        { "type": "rect", "x": -0.45, "y": -0.45, "w": 0.9, "h": 0.9, "fill": "#c9a74a" },
-        { "type": "rect", "x": 2.09, "y": -0.45, "w": 0.9, "h": 0.9, "fill": "#c9a74a" },
-        { "type": "rect", "x": 4.63, "y": -0.45, "w": 0.9, "h": 0.9, "fill": "#c9a74a" },
-        { "type": "rect", "x": 7.17, "y": -0.45, "w": 0.9, "h": 0.9, "fill": "#c9a74a" },
-        { "type": "text", "x": 0, "y": 1.9, "text": "GND", "size": 1.0 },
-        { "type": "text", "x": 2.54, "y": 1.9, "text": "VCC", "size": 1.0 },
-        { "type": "text", "x": 5.08, "y": 1.9, "text": "SCL", "size": 1.0 },
-        { "type": "text", "x": 7.62, "y": 1.9, "text": "SDA", "size": 1.0 }
+        {
+          "type": "rect",
+          "x": -9.84,
+          "y": -2.2,
+          "w": 27.3,
+          "h": 27.8,
+          "r": 1.2,
+          "fill": "#1b3a6b"
+        },
+        {
+          "type": "rect",
+          "x": -8.4,
+          "y": 4.2,
+          "w": 24.4,
+          "h": 14.5,
+          "fill": "#0b0b0b",
+          "stroke": "#333",
+          "strokeWidth": 0.3
+        },
+        {
+          "type": "text",
+          "x": 3.81,
+          "y": 11.4,
+          "text": "SSD1306 128x64",
+          "size": 1.8,
+          "fill": "#7fd3ff",
+          "when": "!text"
+        },
+        {
+          "type": "rect",
+          "x": -0.45,
+          "y": -0.45,
+          "w": 0.9,
+          "h": 0.9,
+          "fill": "#c9a74a"
+        },
+        {
+          "type": "rect",
+          "x": 2.09,
+          "y": -0.45,
+          "w": 0.9,
+          "h": 0.9,
+          "fill": "#c9a74a"
+        },
+        {
+          "type": "rect",
+          "x": 4.63,
+          "y": -0.45,
+          "w": 0.9,
+          "h": 0.9,
+          "fill": "#c9a74a"
+        },
+        {
+          "type": "rect",
+          "x": 7.17,
+          "y": -0.45,
+          "w": 0.9,
+          "h": 0.9,
+          "fill": "#c9a74a"
+        },
+        {
+          "type": "text",
+          "x": 0,
+          "y": 1.9,
+          "text": "GND",
+          "size": 1
+        },
+        {
+          "type": "text",
+          "x": 2.54,
+          "y": 1.9,
+          "text": "VCC",
+          "size": 1
+        },
+        {
+          "type": "text",
+          "x": 5.08,
+          "y": 1.9,
+          "text": "SCL",
+          "size": 1
+        },
+        {
+          "type": "text",
+          "x": 7.62,
+          "y": 1.9,
+          "text": "SDA",
+          "size": 1
+        }
       ],
-      "source": { "note": "寸法は一般的な0.96インチモジュールの概略値" }
+      "source": {
+        "note": "寸法は一般的な0.96インチモジュールの概略値"
+      },
+      "display": {
+        "x": -7.4,
+        "y": 5,
+        "size": 2,
+        "color": "#7fd3ff"
+      }
     }
   ],
   "parts": [
@@ -37,11 +138,54 @@
     { "id": "DISP1", "type": "oled-ssd1306-i2c", "at": "d24" }
   ],
   "wires": [
-    { "from": "a4", "to": "T-4", "color": "black" },
-    { "from": "a6", "to": "T+6", "color": "red" },
-    { "from": "a24", "to": "T-24", "color": "black" },
-    { "from": "a25", "to": "T+25", "color": "red" },
-    { "from": "c9", "to": "c26", "color": "yellow", "note": "A5 = SCL" },
-    { "from": "b10", "to": "b27", "color": "green", "note": "A4 = SDA" }
-  ]
+    { "id": "W1", "from": "a4", "to": "T-4", "color": "black" },
+    { "id": "W2", "from": "a6", "to": "T+6", "color": "red" },
+    { "id": "W3", "from": "a24", "to": "T-24", "color": "black" },
+    { "id": "W4", "from": "a25", "to": "T+25", "color": "red" },
+    { "id": "W5", "from": "c9", "to": "c26", "color": "yellow", "note": "A5 = SCL" },
+    { "id": "W6", "from": "b10", "to": "b27", "color": "green", "note": "A4 = SDA" }
+  ],
+  "animation": {
+    "duration": 4000,
+    "loop": true,
+    "tracks": [
+      {
+        "target": "DISP1",
+        "keys": [
+          {
+            "t": 0,
+            "text": "Hello,\nbreadboard!"
+          },
+          {
+            "t": 2000,
+            "text": "Temp: 23.5C\nHum : 41%"
+          }
+        ]
+      },
+      {
+        "target": "W5",
+        "keys": [
+          {
+            "t": 0,
+            "flow": true
+          }
+        ]
+      },
+      {
+        "target": "W6",
+        "keys": [
+          {
+            "t": 0,
+            "flow": true
+          }
+        ]
+      }
+    ],
+    "captions": [
+      {
+        "t": 0,
+        "text": "I2C (A4=SDA, A5=SCL) で OLED に表示"
+      }
+    ]
+  }
 }

@@ -8,6 +8,7 @@
 2. 編集は、JSONを直接書き換えても、編集操作 (`node tools/bb.mjs apply`, [docs/OPS.md](docs/OPS.md)) を使っても構いません。編集操作を使うと、IDの自動採番、空き場所の検索、ピンが穴から外れていないかのチェックが受けられます。部品の `type` とピン名は `node tools/bb.mjs parts` で確認できます。
 3. 編集したら、必ず `node tools/bb.mjs check <file>` を実行します。エラーがなく、ネットリストが意図どおりになっていることを確認してください。
 4. 見た目を確認したいときは、`node tools/bb.mjs render <file> -o out.png` で画像にします。
+5. 動作を説明したいときは、アニメーション (`animation`) を付けます。書き方は `docs/FORMAT.md` の「アニメーション」、操作は `animate` / `setAnimation` です。
 
 ## 組み込みにない部品を使うとき
 
@@ -16,10 +17,12 @@
    - `pins` は部品を上から見た座標で書き、ブレッドボードに挿すピンは2.54mmの格子に乗るようにします。
    - 表面実装 (SMD) の部品は、変換基板 (DIP化モジュール) に載せた状態のピン配置にします。
    - 出典は `source` に書いておきます (例: `{"lcsc": "C2040", "datasheet": "https://..."}`)。
-3. `check` でピンが穴の位置に来ていることを確認し、`render` で見た目を確認します。
+3. 光る・表示が変わるなどの動きがある部品は、図形に `when` を付けたり、`display` を定義したりして、アニメーションできるようにします。
+4. `check` でピンが穴の位置に来ていることを確認し、`render` で見た目を確認します。
 
 ## コードを変更するとき
 
 - 依存パッケージなし、ビルド不要の ES Modules です。`src/` はブラウザとNodeの両方で動くようにしてください (`app.js` 以外ではDOMを使わないこと)。
+- 新しい組み込み部品に動きを付けるときは、`states` (状態の定義) と `animate` (状態からCSSへの変換) を書き、`render` の中で動く要素に `anim(name)` の属性を付けます (`src/parts/builtin.js` の `led` や `servo` が例です)。
 - 回路を変更する処理は `src/ops.js` に op として追加し、UI (`src/app.js`)、`window.bb`、CLI (`tools/bb.mjs`) からはそれを呼ぶようにしてください。
 - `npm test` が通ることを確認してください。

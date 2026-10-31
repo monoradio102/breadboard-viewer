@@ -33,8 +33,9 @@ export const g = (inner, a = {}) => tag("g", a, inner);
 
 // Declarative shapes used by JSON part definitions (see docs/FORMAT.md).
 // { "type": "rect" | "circle" | "line" | "polygon" | "path" | "text", ...geometry, fill, stroke, strokeWidth, opacity }
-export function shapesToSvg(shapes = []) {
-  return shapes.map(shapeToSvg).join("");
+// extra(shape) may return additional attributes for a shape (used for animated shapes).
+export function shapesToSvg(shapes = [], extra = () => ({})) {
+  return shapes.map((s) => shapeToSvg(s, extra(s) ?? {})).join("");
 }
 
 function style(s, defaults) {
@@ -47,25 +48,27 @@ function style(s, defaults) {
   };
 }
 
-function shapeToSvg(s) {
+function shapeToSvg(s, extra) {
   switch (s.type) {
     case "rect":
-      return rect(s.x, s.y, s.w, s.h, { ...style(s, { fill: "#333" }), rx: s.r });
+      return rect(s.x, s.y, s.w, s.h, { ...style(s, { fill: "#333" }), rx: s.r, ...extra });
     case "circle":
-      return circle(s.cx, s.cy, s.r, style(s, { fill: "#333" }));
+      return circle(s.cx, s.cy, s.r, { ...style(s, { fill: "#333" }), ...extra });
     case "line":
       return line(s.x1, s.y1, s.x2, s.y2, {
         ...style(s, { stroke: "#333" }),
         "stroke-width": s.strokeWidth ?? 0.1,
         "stroke-linecap": "round",
+        ...extra,
       });
     case "polygon":
       return tag("polygon", {
         points: (s.points ?? []).map(([x, y]) => `${n(x)},${n(y)}`).join(" "),
         ...style(s, { fill: "#333" }),
+        ...extra,
       });
     case "path":
-      return tag("path", { d: s.d, ...style(s, { fill: "none", stroke: "#333" }) });
+      return tag("path", { d: s.d, ...style(s, { fill: "none", stroke: "#333" }), ...extra });
     case "text":
       return text(s.x, s.y, s.text ?? "", {
         "font-size": s.size ?? 0.6,
@@ -73,6 +76,7 @@ function shapeToSvg(s) {
         "dominant-baseline": "central",
         fill: s.fill ?? "#fff",
         "font-weight": s.bold ? "bold" : undefined,
+        ...extra,
       });
     default:
       return "";

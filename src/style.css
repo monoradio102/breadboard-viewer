@@ -417,3 +417,23 @@ button.danger {
   gap: 6px;
   flex-wrap: wrap;
 }
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.player[hidden] {
+  display: none;
+}
+
+.player input[type="range"] {
+  width: 160px;
+}
+
+.anim-label {
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  min-width: 4em;
+}

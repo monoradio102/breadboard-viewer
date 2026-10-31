@@ -1,4 +1,6 @@
 // Renders a resolved circuit (see circuit.js) to an SVG string.
+import { EFFECT_CSS, captionTrack, compileCss, cssDecl, initialState, valuesOf } from "./animation.js";
+import { rotate } from "./circuit.js";
 import { circle, esc, g, line, n, rect, tag, text } from "./svg.js";
 
 export const SCALE = 24; // px per pitch unit for the default SVG size
@@ -21,16 +23,41 @@ export const WIRE_COLORS = {
 //   embed     = circuit    store the circuit JSON in <metadata> (so the SVG can be re-imported)
 //   selection = id         highlight a part or wire and draw its drag handles (editor only)
 //   tempWire  = {a, b, color}  a wire being drawn (editor only)
+//   animate   = true       include the animation (CSS keyframes); false draws the t=0 state only
 export function renderSvg(result, options = {}) {
   const { board } = result;
   const labels = options.labels ?? true;
+  const tl = result.timeline;
+  const animate = (options.animate ?? true) && tl?.animated;
+  const svgId = `bb-${hash(JSON.stringify([result.parts.map((p) => p.inst), result.wires.map((w) => [w.id, w.from, w.to]), tl?.duration]))}`;
+  const animEls = [];
+  // Per-target drawing context: initial state, and anim(name) -> attributes for an animated element.
+  const ctxFor = (id, animateDef, params) => {
+    const track = tl.tracks.get(id);
+    const values = (name) => valuesOf(track, name);
+    const maps = animateDef?.({ params, values }) ?? {};
+    const state = initialState(track);
+    return {
+      state,
+      values,
+      anim(name) {
+        const map = maps[name];
+        if (!map) return {};
+        if (animate && track.keys.length) animEls.push({ selector: `#${svgId} [data-anim="${cssString(`${id}:${name}`)}"]`, track, map });
+        return { "data-anim": `${id}:${name}`, style: cssDecl(map(state)) };
+      },
+    };
+  };
+
   const pad = 1;
-  const b = board.bounds;
-  const vb = [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2];
+  const b = contentBounds(result);
+  const captionH = tl?.captions.length ? 2.2 : 0;
+  const vb = [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2 + captionH];
   const body = [
     g(drawBoard(board), { class: "board" }),
-    g(result.parts.map((p) => drawPart(p)).join(""), { class: "parts" }),
-    g(result.wires.map(drawWire).join(""), { class: "wires" }),
+    g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params))).join(""), { class: "parts" }),
+    g(result.wires.map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
+    captionH ? drawCaptions(tl, b, animEls, svgId, animate) : "",
     labels ? g(result.parts.map(drawLabel).join(""), { class: "labels", "pointer-events": "none" }) : "",
     g(drawProblems(result), { class: "problems" }),
     options.selection ? g(drawSelection(result, options.selection), { class: "selection" }) : "",
@@ -39,12 +66,66 @@ export function renderSvg(result, options = {}) {
   const meta = options.embed
     ? `<metadata id="breadboard-circuit" data-format="breadboard-viewer/v1">${esc(JSON.stringify(options.embed))}</metadata>`
     : "";
+  const style = `<style>${EFFECT_CSS}${animate ? compileCss(animEls, tl, svgId) : ""}</style>`;
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.map(n).join(" ")}" ` +
+    `<svg xmlns="http://www.w3.org/2000/svg" id="${svgId}" viewBox="${vb.map(n).join(" ")}" ` +
     `width="${n(vb[2] * SCALE)}" height="${n(vb[3] * SCALE)}">` +
     meta +
+    style +
     body +
     `</svg>`
+  );
+}
+
+// Board bounds, grown to include parts that declare an `extent` reaching off the board.
+function contentBounds(result) {
+  const b = result.board.bounds;
+  let [x0, y0, x1, y1] = [b.x, b.y, b.x + b.w, b.y + b.h];
+  for (const part of result.parts) {
+    const e = part.def.extent;
+    if (!e || !part.transform) continue;
+    const { x, y, rot } = part.transform;
+    for (const [cx, cy] of [[e[0], e[1]], [e[2], e[1]], [e[0], e[3]], [e[2], e[3]]]) {
+      const [dx, dy] = rotate(cx, cy, rot);
+      x0 = Math.min(x0, x + dx);
+      y0 = Math.min(y0, y + dy);
+      x1 = Math.max(x1, x + dx);
+      y1 = Math.max(y1, y + dy);
+    }
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+const wireAnimate = () => ({ flow: (s) => ({ opacity: s.flow ? 1 : 0 }) });
+
+function hash(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+const cssString = (s) => String(s).replace(/["\\]/g, "\\$&");
+
+function drawCaptions(tl, b, animEls, svgId, animate) {
+  const track = captionTrack(tl.captions);
+  const state = initialState(track);
+  const y = b.y + b.h + 1.6;
+  return g(
+    tl.captions
+      .map((c, i) => {
+        const map = (s) => ({ opacity: Number(s.caption) === i ? 1 : 0 });
+        if (animate) animEls.push({ selector: `#${svgId} [data-anim="caption:${i}"]`, track, map });
+        return text(b.x + b.w / 2, y, c.text, {
+          "font-size": 0.8,
+          fill: "#263238",
+          "text-anchor": "middle",
+          "dominant-baseline": "central",
+          "data-anim": `caption:${i}`,
+          style: cssDecl(map(state)),
+        });
+      })
+      .join(""),
+    { class: "captions", "pointer-events": "none" },
   );
 }
 
@@ -79,26 +160,35 @@ function drawBoard(board) {
   return out.join("");
 }
 
-function drawPart(part) {
+function drawPart(part, ctx) {
   const attrs = { class: "part", "data-id": part.id, "data-type": part.type };
   if (part.def.mount === "leads") {
-    return g(part.def.render({ pins: part.pins, params: part.params, inst: part.inst }), attrs);
+    return g(part.def.render({ ...ctx, pins: part.pins, params: part.params, inst: part.inst }), attrs);
   }
   const t = part.transform;
   const local = part.def.pins(part.params);
-  return g(part.def.render({ pins: local, params: part.params, inst: part.inst }), {
+  return g(part.def.render({ ...ctx, pins: local, params: part.params, inst: part.inst }), {
     ...attrs,
     transform: `translate(${n(t.x)} ${n(t.y)}) rotate(${t.rot})`,
   });
 }
 
-function drawWire(w) {
+function drawWire(w, ctx) {
   const color = WIRE_COLORS[w.color] ?? w.color ?? WIRE_COLORS.blue;
   const pts = [w.a, ...w.via, w.b].map((p) => `${n(p.x)},${n(p.y)}`).join(" ");
   const common = { points: pts, fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" };
+  const flows = ctx.state.flow || ctx.values("flow").includes("true");
+  // the timeline toggles the group; the dashes inside run their own endless animation
+  const flow = flows
+    ? g(tag("polyline", { ...common, stroke: "#fff", "stroke-width": 0.14, "stroke-dasharray": "0.3 0.5", class: "bb-flow" }), {
+        "pointer-events": "none",
+        ...ctx.anim("flow"),
+      })
+    : "";
   return g(
     tag("polyline", { ...common, stroke: "rgba(0,0,0,.35)", "stroke-width": 0.36 }) +
       tag("polyline", { ...common, stroke: color, "stroke-width": 0.26 }) +
+      flow +
       circle(w.a.x, w.a.y, 0.13, { fill: "#a7adb3" }) +
       circle(w.b.x, w.b.y, 0.13, { fill: "#a7adb3" }),
     { class: "wire", "data-id": w.id, "data-from": w.from, "data-to": w.to },

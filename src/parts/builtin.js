@@ -6,7 +6,7 @@
 //
 // Leads parts draw in board coordinates (ctx.pins are absolute positions).
 // Rigid parts draw in local coordinates (first pin at the origin); the renderer applies at/rot.
-import { circle, line, n, rect, tag, text } from "../svg.js";
+import { circle, g, line, n, rect, tag, text } from "../svg.js";
 import {
   bandColors,
   centroid,
@@ -58,14 +58,28 @@ const led = {
   description: "5mm砲弾型LED。ピンAがアノード(+, 長い足)、Kがカソード(-)。",
   mount: "leads",
   params: { color: { default: "red", options: Object.keys(LED_COLORS), description: "発光色" } },
+  states: {
+    on: { type: "bool", default: false, description: "点灯" },
+    brightness: { type: "number", default: 1, description: "明るさ 0〜1 (点灯中のみ)" },
+  },
+  animate: () => ({
+    glow: (s) => ({ opacity: s.on ? clamp(Number(s.brightness), 0, 1) : 0 }),
+  }),
   pins: () => inline(["A", "K"]),
-  render({ pins: [a, b], params }) {
+  render({ pins: [a, b], params, anim }) {
     const c = LED_COLORS[params.color] ?? params.color;
     const body =
       circle(0, 0, 0.95, { fill: c, stroke: "rgba(0,0,0,.35)", "stroke-width": 0.06, opacity: 0.92 }) +
       // flat edge marks the cathode side
       line(0.78, -0.55, 0.78, 0.55, { stroke: "rgba(0,0,0,.45)", "stroke-width": 0.08 }) +
-      circle(-0.3, -0.3, 0.22, { fill: "#fff", opacity: 0.55 });
+      circle(-0.3, -0.3, 0.22, { fill: "#fff", opacity: 0.55 }) +
+      g(
+        circle(0, 0, 1.9, { fill: c, opacity: 0.18 }) +
+          circle(0, 0, 1.35, { fill: c, opacity: 0.35 }) +
+          circle(0, 0, 0.95, { fill: c }) +
+          circle(0, 0, 0.6, { fill: "#fff", opacity: 0.75 }),
+        { ...anim("glow"), "pointer-events": "none" },
+      );
     return leg(a, b) + onAxis(a, b, body);
   },
 };
@@ -208,11 +222,23 @@ const button = {
     ["1", "2"],
     ["3", "4"],
   ],
-  render() {
+  states: { pressed: { type: "bool", default: false, description: "押されている" } },
+  animate: () => ({
+    cap: (s) => ({ transform: s.pressed ? "scale(.82)" : "scale(1)" }),
+    finger: (s) => ({ opacity: s.pressed ? 1 : 0 }),
+  }),
+  render({ anim }) {
     return (
       rect(-0.35, 0.25, 2.7, 2.5, { rx: 0.15, fill: "#2b2b2b", stroke: "#111", "stroke-width": 0.05 }) +
-      circle(1, 1.5, 0.75, { fill: "#555", stroke: "#111", "stroke-width": 0.05 }) +
-      circle(1, 1.5, 0.55, { fill: "#6b6b6b" })
+      g(
+        g(circle(0, 0, 0.75, { fill: "#555", stroke: "#111", "stroke-width": 0.05 }) + circle(0, 0, 0.55, { fill: "#6b6b6b" }), anim("cap")) +
+          g(
+            circle(0, 0, 0.95, { fill: "#f2c19a", opacity: 0.55, stroke: "#c98b5e", "stroke-width": 0.06 }) +
+              text(0, 0, "PUSH", { "font-size": 0.32, fill: "#7a3e12", "text-anchor": "middle", "dominant-baseline": "central", "font-weight": "bold" }),
+            { ...anim("finger"), "pointer-events": "none" },
+          ),
+        { transform: "translate(1 1.5)" },
+      )
     );
   },
 };
@@ -246,11 +272,15 @@ const buzzer = {
     { name: "+", x: 0, y: 0 },
     { name: "-", x: 3, y: 0 },
   ],
-  render() {
+  states: { on: { type: "bool", default: false, description: "鳴っている" } },
+  animate: () => ({ waves: (s) => ({ opacity: s.on ? 1 : 0 }) }),
+  render({ anim }) {
+    const ring = (cls) => circle(0, 0, 3.2, { fill: "none", stroke: "#ffb300", "stroke-width": 0.14, class: cls });
     return (
       circle(1.5, 0, 2.35, { fill: "#1b1b1b", stroke: "#000", "stroke-width": 0.05 }) +
       circle(1.5, 0, 0.35, { fill: "#000", stroke: "#444", "stroke-width": 0.05 }) +
-      text(0, -1.1, "+", { "font-size": 0.7, fill: "#ddd", "text-anchor": "middle", "dominant-baseline": "central" })
+      text(0, -1.1, "+", { "font-size": 0.7, fill: "#ddd", "text-anchor": "middle", "dominant-baseline": "central" }) +
+      g(g(ring("bb-wave") + ring("bb-wave bb-wave2"), anim("waves")), { transform: "translate(1.5 0)", "pointer-events": "none" })
     );
   },
 };
@@ -376,6 +406,123 @@ const pico = {
   },
 };
 
+const motor = {
+  type: "motor",
+  name: "DCモーター",
+  category: "出力",
+  description: "FA-130型など。上から見た図にプロペラを付けて描く。speed (rpm) で回転アニメーション。",
+  mount: "leads",
+  params: {},
+  states: { speed: { type: "rate", default: 0, description: "回転数 rpm (負で逆回転)。キー間は直線的に変化" } },
+  animate: () => ({ rotor: (s) => ({ transform: `rotate(${Math.round(s.speedAngle * 10) / 10}deg)` }) }),
+  pins: () => [
+    { name: "+", x: 0, y: 0 },
+    { name: "-", x: 3, y: 0 },
+  ],
+  render({ pins: [a, b], anim }) {
+    const c = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const blade = "M 0 -0.25 C 1.2 -0.6 2.3 -0.45 2.6 0 C 2.3 0.45 1.2 0.6 0 0.25 Z";
+    return (
+      leg(a, c) +
+      leg(b, c) +
+      g(
+        circle(0, 0, 1.6, { fill: "#cfd4d8", stroke: "#8b9399", "stroke-width": 0.08 }) +
+          circle(0, 0, 1.1, { fill: "#b5bcc2" }) +
+          text(-1.15, -1.15, "+", { "font-size": 0.55, fill: "#c62828", "text-anchor": "middle", "dominant-baseline": "central", "font-weight": "bold" }) +
+          g(
+            tag("path", { d: blade, fill: "#ff9800", opacity: 0.88, stroke: "#c66900", "stroke-width": 0.05 }) +
+              tag("path", { d: blade, fill: "#ff9800", opacity: 0.88, stroke: "#c66900", "stroke-width": 0.05, transform: "rotate(180)" }) +
+              circle(0, 0, 0.35, { fill: "#333" }),
+            anim("rotor"),
+          ),
+        { transform: `translate(${n(c.x)} ${n(c.y)})` },
+      )
+    );
+  },
+};
+
+const servo = {
+  type: "servo",
+  name: "サーボ (SG90)",
+  category: "出力",
+  description: "3ピンのコネクタをブレッドボードに挿した状態。ピン: GND(茶), VCC(赤), SIG(橙)。本体はコネクタの上側に描く。angle (0〜180°) でアニメーション。",
+  mount: "rigid",
+  params: {},
+  states: { angle: { type: "number", default: 90, description: "ホーンの角度 0〜180°" } },
+  animate: () => ({ horn: (s) => ({ transform: `rotate(${-Math.round(Number(s.angle) * 10) / 10}deg)` }) }),
+  pins: () => inline(["GND", "VCC", "SIG"]),
+  extent: [-4.7, -9.2, 7.1, 0.6],
+  render({ anim }) {
+    const cable = ["#6d4c41", "#e53935", "#fb8c00"]
+      .map((c, i) => tag("path", { d: `M ${i} 0 C ${i} -1.6 ${0.7 + i * 0.3} -2 ${0.7 + i * 0.3} -3.2`, fill: "none", stroke: c, "stroke-width": 0.18 }))
+      .join("");
+    const arm = "M -0.45 0 A 0.45 0.45 0 0 1 0.45 0 L 3 -0.12 A 0.2 0.2 0 0 1 3 0.12 L 0.45 0 A 0.45 0.45 0 0 1 -0.45 0 Z";
+    return (
+      rect(-0.5, -0.5, 3, 1, { fill: "#222", rx: 0.1 }) +
+      cable +
+      rect(-3.4, -8.1, 9.2, 4.8, { rx: 0.3, fill: "#2c6fbb", stroke: "#1d4f87", "stroke-width": 0.08 }) +
+      rect(-4.6, -6.4, 11.6, 1.2, { rx: 0.2, fill: "#2c6fbb", stroke: "#1d4f87", "stroke-width": 0.06 }) +
+      circle(-1.3, -5.7, 1.6, { fill: "#3a80cc", stroke: "#1d4f87", "stroke-width": 0.06 }) +
+      text(3.2, -5.7, "SG90", { "font-size": 0.7, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" }) +
+      g(
+        g(tag("path", { d: arm, fill: "#f5f5f5", stroke: "#9e9e9e", "stroke-width": 0.06 }) + circle(0, 0, 0.25, { fill: "#bbb" }), anim("horn")),
+        { transform: "translate(-1.3 -5.7)" },
+      )
+    );
+  },
+};
+
+// segments lit for each character (a..g)
+const SEG_FONT = {
+  0: "abcdef", 1: "bc", 2: "abdeg", 3: "abcdg", 4: "bcfg", 5: "acdfg", 6: "acdefg", 7: "abc", 8: "abcdefg", 9: "abcdfg",
+  A: "abcefg", B: "cdefg", C: "adef", D: "bcdeg", E: "adefg", F: "aefg", H: "bcefg", L: "def", P: "abefg", U: "bcdef",
+  "-": "g", "_": "d", " ": "",
+};
+
+// segment rectangles in the digit's local frame (center of the digit at 0,0)
+const SEG_RECTS = {
+  a: [-0.85, -2.45, 1.7, 0.4],
+  b: [0.95, -2.2, 0.4, 2.0],
+  c: [0.95, 0.2, 0.4, 2.0],
+  d: [-0.85, 2.05, 1.7, 0.4],
+  e: [-1.35, 0.2, 0.4, 2.0],
+  f: [-1.35, -2.2, 0.4, 2.0],
+  g: [-0.85, -0.2, 1.7, 0.4],
+};
+
+const seg7 = {
+  type: "seg7",
+  name: "7セグメントLED (1桁)",
+  category: "表示",
+  description: "0.56インチ1桁 (5161AS型, カソードコモン)。中央の溝をまたいで置く (列間隔6)。text の1文字を表示するアニメーション。",
+  mount: "rigid",
+  params: { color: { default: "red", options: Object.keys(LED_COLORS), description: "発光色" } },
+  states: {
+    text: { type: "string", default: "", description: "表示する1文字 (0-9, A-F, H, L, P, U, -)" },
+    dp: { type: "bool", default: false, description: "小数点" },
+  },
+  animate: () => ({
+    ...Object.fromEntries(
+      Object.keys(SEG_RECTS).map((seg) => [seg, (s) => ({ opacity: (SEG_FONT[String(s.text ?? "").toUpperCase()[0] ?? " "] ?? "").includes(seg) ? 1 : 0 })]),
+    ),
+    dp: (s) => ({ opacity: s.dp ? 1 : 0 }),
+  }),
+  pins: () => dualRow(10, 6, ["E", "D", "COM", "C", "DP", "B", "A", "COM2", "F", "G"]),
+  internal: () => [["COM", "COM2"]],
+  render({ params, anim }) {
+    const c = LED_COLORS[params.color] ?? params.color;
+    const segs = Object.entries(SEG_RECTS)
+      .map(([seg, [x, y, w, h]]) => rect(x, y, w, h, { rx: 0.15, fill: "#3a2626" }) + rect(x, y, w, h, { rx: 0.15, fill: c, ...anim(seg) }))
+      .join("");
+    return (
+      rect(-0.75, -6.75, 5.5, 7.5, { rx: 0.15, fill: "#1a1a1a", stroke: "#000", "stroke-width": 0.05 }) +
+      g(segs, { transform: "translate(2 -3) skewX(-6)" }) +
+      circle(3.75, -0.6, 0.22, { fill: "#3a2626" }) +
+      circle(3.75, -0.6, 0.22, { fill: c, ...anim("dp") })
+    );
+  },
+};
+
 export const BUILTIN_PARTS = [
   resistor,
   led,
@@ -388,6 +535,9 @@ export const BUILTIN_PARTS = [
   button,
   trimmer,
   buzzer,
+  motor,
+  servo,
+  seg7,
   header,
   dip,
   ne555,

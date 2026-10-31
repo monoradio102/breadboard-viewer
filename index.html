@@ -16,6 +16,7 @@
           <option value="">サンプルを開く…</option>
           <option value="blink-nano">Arduino Nano で Lチカ</option>
           <option value="pico-button">Pico でボタン入力とLED</option>
+          <option value="motor-servo">モーターとサーボ (アニメーション)</option>
           <option value="oled-custom-part">カスタム部品 (OLED)</option>
         </select>
         <button id="btn-new" type="button">新規</button>
@@ -40,6 +41,11 @@
           <button id="btn-redo" type="button" title="やり直し (Ctrl+Shift+Z)">↷</button>
           <label>ボード <select id="board-type"></select></label>
           <label>配線の色 <select id="wire-color"></select></label>
+          <span id="player" class="player" hidden>
+            <button id="btn-play" type="button" title="再生 / 一時停止 (Space)">⏸</button>
+            <input id="anim-time" type="range" min="0" max="1000" value="0" aria-label="アニメーションの時刻" />
+            <span id="anim-label" class="anim-label">0.0s</span>
+          </span>
           <span class="spacer"></span>
           <button id="btn-zoom-out" type="button" title="縮小">−</button>
           <button id="btn-zoom-fit" type="button" title="幅に合わせる">全体</button>

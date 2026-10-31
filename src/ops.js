@@ -11,6 +11,8 @@
 //   { "op": "remove", "id": "R1" }
 //   { "op": "addWire", "from": "a1", "to": "T-1", "color": "black" }
 //   { "op": "setBoard", "board": "full" }
+//   { "op": "animate", "target": "D1", "keys": [{ "t": 0, "on": true }, { "t": 500, "on": false }] }
+//   { "op": "setAnimation", "duration": 1000, "captions": [{ "t": 0, "text": "..." }] }
 // See docs/OPS.md for the full list.
 import { createBoard } from "./board.js";
 import { findFreeSpot, resolveCircuit, rotate } from "./circuit.js";
@@ -24,7 +26,7 @@ const fail = (msg) => {
 
 const ID_PREFIX = {
   resistor: "R", led: "D", diode: "D", capacitor: "C", electrolytic: "C", cds: "CDS", transistor: "Q",
-  regulator: "U", button: "SW", trimmer: "VR", buzzer: "BZ", header: "J",
+  regulator: "U", button: "SW", trimmer: "VR", buzzer: "BZ", header: "J", motor: "M", servo: "SV", seg7: "DS",
 };
 
 // Gives every wire an id, so wires can be addressed by ops.
@@ -142,19 +144,19 @@ const OPS = {
     if (wireIndex >= 0) {
       const wire = clean({ ...c.wires[wireIndex], ...set });
       if (wire.id !== id && c.wires.some((w) => w.id === wire.id)) fail(`ID "${wire.id}" は既に使われています`);
-      return { circuit: { ...c, wires: c.wires.map((w, i) => (i === wireIndex ? wire : w)) }, id: wire.id };
+      return { circuit: retarget({ ...c, wires: c.wires.map((w, i) => (i === wireIndex ? wire : w)) }, id, wire.id), id: wire.id };
     }
     const { inst, index } = partInfo(c, id);
     if ("type" in set) fail("type は変更できません (remove して addPart してください)");
     const next = clean({ ...inst, ...set });
     if (next.id !== id && findPart(c, next.id, false)) fail(`ID "${next.id}" は既に使われています`);
-    return { circuit: replacePart(c, index, next), id: next.id };
+    return { circuit: retarget(replacePart(c, index, next), id, next.id), id: next.id };
   },
 
   remove(c, { id }) {
-    if (c.wires.some((w) => w.id === id)) return { circuit: { ...c, wires: c.wires.filter((w) => w.id !== id) } };
+    if (c.wires.some((w) => w.id === id)) return { circuit: retarget({ ...c, wires: c.wires.filter((w) => w.id !== id) }, id, null) };
     partInfo(c, id);
-    return { circuit: { ...c, parts: c.parts.filter((p) => p.id !== id) } };
+    return { circuit: retarget({ ...c, parts: c.parts.filter((p) => p.id !== id) }, id, null) };
   },
 
   addWire(c, { op, id, from, to, ...rest }) {
@@ -164,6 +166,30 @@ const OPS = {
     const wid = id ?? nextId(c, "W");
     if (c.wires.some((w) => w.id === wid) || findPart(c, wid, false)) fail(`ID "${wid}" は既に使われています`);
     return { circuit: { ...c, wires: [...c.wires, { id: wid, from, to, ...rest }] }, id: wid };
+  },
+
+  // Sets the keys of one target's track (replace: false appends to the existing keys).
+  animate(c, { target, keys = [], replace = true }) {
+    const exists = c.parts.some((p) => p.id === target) || c.wires.some((w) => w.id === target);
+    if (!exists) fail(`target "${target}" の部品・配線が見つかりません`);
+    if (!Array.isArray(keys) || keys.some((k) => !Number.isFinite(Number(k?.t)))) fail("keys は {t, ...状態} の配列です");
+    const anim = { duration: 2000, loop: true, ...(c.animation ?? {}) };
+    const tracks = [...(anim.tracks ?? [])];
+    const i = tracks.findIndex((t) => t.target === target);
+    const merged = replace || i < 0 ? keys : [...tracks[i].keys, ...keys];
+    const track = { target, keys: [...merged].sort((a, b) => a.t - b.t) };
+    if (i < 0) tracks.push(track);
+    else tracks[i] = track;
+    return { circuit: { ...c, animation: { ...anim, tracks } }, id: target };
+  },
+
+  // Merges duration / loop / captions / tracks into the animation; clear: true removes it.
+  setAnimation(c, { clear, op, ...fields }) {
+    if (clear) {
+      const { animation, ...rest } = c;
+      return { circuit: rest };
+    }
+    return { circuit: { ...c, animation: { duration: 2000, loop: true, tracks: [], ...(c.animation ?? {}), ...fields } } };
   },
 
   setBoard(c, { board }) {
@@ -244,6 +270,13 @@ function nextId(c, prefix) {
 
 function defaultPrefix(def) {
   return def.category === "IC" || def.category === "マイコンボード" ? "U" : "X";
+}
+
+// Keeps animation tracks pointing at renamed targets; to = null drops the target's track.
+function retarget(c, from, to) {
+  if (!c.animation?.tracks || from === to) return c;
+  const tracks = c.animation.tracks.flatMap((t) => (t.target !== from ? [t] : to === null ? [] : [{ ...t, target: to }]));
+  return { ...c, animation: { ...c.animation, tracks } };
 }
 
 // `null` in an update means "remove this key".
