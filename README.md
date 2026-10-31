@@ -5,6 +5,22 @@ Claude Code や Codex などのAIエージェントが、読み書きしやす�
 
 **エディタ: https://monoradio102.github.io/breadboard-viewer/**
 
+![AI が書く JSON と、それを描いたブレッドボードの配線図](docs/images/json-to-circuit.png)
+
+## AI が書くのは JSON だけ
+
+AI は、座標も絵も扱いません。部品をどの穴に挿すかと、どのピン同士をつなぐかを JSON で書くだけです。
+上の画像の左が AI の書いたもの ([docs/hello-ops.json](docs/hello-ops.json)) で、右がそれを描いた結果です。
+
+- **穴の名前とピンの名前で書く**: `"at": "b14"`、`"U1.D4"`、電源レールは `"T+"` / `"T-"`。人が配線図を読むときと同じ言葉です
+- **配線は自動にも任せられる**: `autoWire` にネットリスト (どのピンをつなぐか) を渡すと、交差や部品の上を避けて線を引きます。部品を動かすときは `keepConnections` で、つながりを保ったまま配線を付け替えます
+- **編集は操作 (op) の列**: まとめて送って、1つでも失敗すれば何も変わりません。エラーには理由と直し方が入ります (例: 「穴 T-30 はこのボードにありません。…近い穴: T-29」)
+- **AI が自分で確かめられる**: `check` がネットリスト (どのピン同士がつながっているか) と、ショート・抵抗なしの LED・電圧違いなどの注意を、テキストか JSON で返します。`check --layout` は、部品の重なりや隠れた配線などの見た目の問題を文字で返します
+- **同じ JSON からは、いつも同じ絵**: SVG / PNG / アニメーション / 組み立て手順の画像を、依存のない1ファイルの CLI (`bb.mjs`) で書き出します
+- **手引きつき**: [llms.txt](https://monoradio102.github.io/breadboard-viewer/llms.txt) か Claude のスキルを渡すだけで、Claude Code・Codex・ChatGPT が使い方を覚えます
+
+## AI に使わせる
+
 **AIに使わせるとき**は、Claude Code や Codex に次のURLを渡してください。リポジトリのクローンは不要です。
 回路の書き方、1ファイルのコマンドラインツール (`dist/bb.mjs`)、ブラウザからの操作方法がまとまっています。
 
@@ -146,7 +162,8 @@ bb.help()
 | `docs/FORMAT.md` | 回路ファイルの形式 |
 | `docs/OPS.md` | 編集操作 |
 | `examples/` | サンプル回路 |
-| `docs/images/` | README用の画像 (`npm run images` で生成) |
+| `docs/images/` | README用の画像 (`npm run images` で生成。`json-to-circuit.png` は `npm run card`) |
+| `docs/hello-ops.json` | README の先頭の画像に載せている、AI が書く JSON の例 |
 | `tools/bb.mjs` | コマンドライン |
 | `dist/bb.mjs` | コマンドラインを1ファイルにまとめたもの (`npm run build` で生成。Pagesから配布) |
 | `docs/agent/common.md` | AIエージェント向けの手引きの本文 (`llms.txt` と `SKILL.md` の元) |

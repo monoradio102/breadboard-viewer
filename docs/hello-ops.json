@@ -1,0 +1,13 @@
+[
+  { "op": "addPart", "type": "xiao", "id": "U1",
+    "at": "d28", "rot": 180, "model": "ESP32S3" },
+  { "op": "addPart", "type": "ssd1306", "id": "DISP1",
+    "at": "b14", "idLabel": false },
+  { "op": "autoWire", "nets": {
+      "SDA": ["U1.D4", "DISP1.SDA"],
+      "SCL": ["U1.D5", "DISP1.SCL"],
+      "GND": ["U1.GND", "DISP1.GND", "T-", "B-"],
+      "3V3": ["U1.3V3", "DISP1.VCC", "T+", "B+"] } },
+  { "op": "update", "id": "DISP1", "set": { "state": {
+    "text": "Hello\nBreadboard\nViewer!\n\\(^o^)/" } } }
+]
