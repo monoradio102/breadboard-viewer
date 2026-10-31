@@ -69,9 +69,9 @@ node bb.mjs frames circuit.json -o asm --assembly --fps 30              # 組み
    置く前に `node bb.mjs place xiao --at h3 --rot 180 --in circuit.json` で、各ピンの穴・本体が覆う範囲・ぶつかりを確かめる
 2. `apply` で部品を置き、配線する (操作の一覧は https://monoradio102.github.io/breadboard-viewer/docs/OPS.md)。JSON を直接書いてもよい
 3. 必ず `check` を実行し、エラーがなく、ネットリストが意図どおりか確かめる。`NOTE` (参考) は電気的なよくあるミス (電源どうしのショート、抵抗なしの LED、GND 未接続、電圧の過不足など) なので、意図したものでなければ直す
-4. `node bb.mjs check circuit.json --layout` で見た目の問題 (本体の重なり、本体の下に隠れた配線の端、ほかの穴の真上を通る配線、ラベルの重なり) を文字で確かめ、最後に `render` で画像にして確かめる。
+4. `node bb.mjs check circuit.json --layout` で見た目の問題 (本体の重なり、本体の下に隠れた配線の端、ほかの穴の真上を通る配線、ラベルの重なり、大きすぎる bend、ボードの外にはみ出す配線) を文字で確かめ、最後に `render` で画像にして確かめる。
    結果を機械的に読むときは `check --json`。静止画を確かめるだけなら、SVG を `rsvg-convert -o out.png circuit.svg` で PNG にしてもよい (アニメーションは止まった状態)
-5. 動作を説明するときは `animate` / `setAnimation` でアニメーションを付ける。複数の配線をまとめて動かすときは `target` に配列か、`animation.groups` の名前を使う。
+5. 動作を説明するときは `animate` / `setAnimation` でアニメーションを付ける。複数の部品・配線をまとめて動かすときは `target` に配列か、`animation.groups` の名前を使う (`target: ["D3", "WL"]` に `{"on": true, "flow": true}` と書くと、LED には on、配線には flow が振り分けられる)。
    部品の状態で表せない演出は SVG を書いて `addOverlay` で流し込む。1 回きりの動きは `restart: true` (表示された時刻から SVG の時計が始まる)、消し方は `fadeOut` (ミリ秒) で指定する
 6. 組み方を説明するときは `setSteps` で組み立て手順を書く (`autoSteps` で自動生成もできる)。部品を並べたところから順に配置していく様子を描ける。
    トレイの位置や時間は `setAssembly` で指定し、`node bb.mjs plan circuit.json` で各手順の時刻・トレイの位置と重なりを確かめる
@@ -87,8 +87,8 @@ PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx pl
 - 穴: `a1`〜`j63` (行 a〜j × 列)。同じ列の a〜e、f〜j がそれぞれ導通。e と f の間が中央の溝
 - 電源レール: `T+5`, `T-5` (上), `B+5`, `B-5` (下)。各レールは端から端まで導通。穴は列 3 から 5 個ずつ、6 列ごと (3-7, 9-13, 15-19, …)
 - 部品の置き方: `at` (1 番ピンの穴) + `rot`、`pins` (抵抗や LED など足を曲げられる部品の穴を個別に)、`pos: [x, y]` (ボードの外)
-- 座標: 列 n の x = n + 1。行の y は a=4 … e=8、f=11 … j=15。レールの y は T+=1, T-=2, B+=17, B-=18 (`node bb.mjs coords h3 T-5` でも確かめられる)
-- 配線の `bend` は、正の値で from → to の向きに対して右側 (画面上) に膨らむ
+- 座標: 列 n の x = n + 1。行の y は a=4 … e=8、f=11 … j=15。レールの y は T+=1, T-=2, B+=17, B-=18 (`node bb.mjs coords h3 T-5 --in circuit.json` でも確かめられる。`--in` か `--board` がないと full ボードとして計算する)
+- 配線の `bend` は線の長さに対する割合 (マスの数ではない。0.1〜0.3 くらいが目安)。正の値で from → to の向きに対して右側 (画面上) に膨らむ
 - 配線の描き方は回路の `"wireStyle"` で選ぶ: `"flex"` (既定値。曲がるジャンパ線) / `"kit"` (市販のジャンパ線キット。板に沿って直角に折れ、色は長さで決まる)。
   キットで描くと `check` の最後に、使う線が長さごとに出る。整理された組み方を見せたいときは、縦か横にまっすぐつなげる穴を選ぶ
 - 配線の端: 穴の名前、または `"部品ID.ピン名"` (ボード外の部品のピンや、端子)

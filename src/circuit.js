@@ -71,7 +71,8 @@ export function resolveCircuit(circuit) {
     const part = dot > 0 ? byId.get(String(ref).slice(0, dot)) : null;
     const pin = part?.pins.find((p) => p.name === String(ref).slice(dot + 1));
     if (!pin) {
-      errors.push(`${who}: "${ref}" はこのボードの穴でも、部品のピン (例: "SV1.SIG") でもありません`);
+      const hint = board.missingHint(ref);
+      errors.push(hint ? `${who}: 穴 ${ref} はこのボードにありません。${hint}` : `${who}: "${ref}" はこのボードの穴でも、部品のピン (例: "SV1.SIG") でもありません`);
       return null;
     }
     return { node: pin.node, pos: { x: pin.x, y: pin.y } };

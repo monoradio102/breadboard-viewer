@@ -416,7 +416,10 @@ function withoutRot({ rot, ...rest }) {
 
 // A wire end is a hole of the board or "PartId.PinName".
 function checkEnd(c, ref) {
-  if (boardOf(c).has(ref)) return;
+  const board = boardOf(c);
+  if (board.has(ref)) return;
+  const hint = board.missingHint(ref);
+  if (hint) fail(`穴 ${ref} はこのボードにありません。${hint}`);
   const dot = String(ref).indexOf(".");
   const inst = dot > 0 ? c.parts.find((p) => p.id === String(ref).slice(0, dot)) : null;
   if (!inst) fail(`"${ref}" はこのボードの穴でも、部品のピン (例: "SV1.SIG") でもありません`);

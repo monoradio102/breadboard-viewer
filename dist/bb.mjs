@@ -60,6 +60,15 @@ function createBoard(type = "half") {
     railY: RAIL_Y,
     has: (id) => holes.has(id),
     pos: (id) => holes.get(id) ?? null,
+    // why a hole name that parses is not on this board, with the nearest hole that is ("" if fine)
+    missingHint(id) {
+      const h = parseHole(id);
+      if (!h || holes.has(id)) return "";
+      if (h.kind === "main") return h.col > spec.cols ? `\u3053\u306E\u30DC\u30FC\u30C9 (${type}) \u306E\u5217\u306F 1\u301C${spec.cols} \u3067\u3059` : "";
+      if (!spec.rails) return `\u3053\u306E\u30DC\u30FC\u30C9 (${type}) \u306B\u306F\u96FB\u6E90\u30EC\u30FC\u30EB\u304C\u3042\u308A\u307E\u305B\u3093`;
+      const near = rcols.reduce((a, c) => Math.abs(c - h.col) < Math.abs(a - h.col) ? c : a);
+      return `\u96FB\u6E90\u30EC\u30FC\u30EB\u306E\u7A74\u306F\u5217 ${rcols[0]} \u304B\u30895\u500B\u305A\u3064\u30016\u5217\u3054\u3068\u3067\u3059 (\u3053\u306E\u30DC\u30FC\u30C9\u3067\u306F ${rcols[0]}\u301C${rcols.at(-1)})\u3002\u8FD1\u3044\u7A74: ${h.rail}${near}`;
+    },
     holeAt(x, y) {
       const rx = Math.round(x * 1e3) / 1e3;
       const ry = Math.round(y * 1e3) / 1e3;
@@ -100,24 +109,30 @@ function buildTimeline(parts, wires, animation, warnings = [], overlays = []) {
   const keysOf = new Map([...targets.keys()].map((id) => [id, []]));
   const expand = (target) => Array.isArray(target) ? target : Array.isArray(groups[target]) ? groups[target] : [target];
   for (const [i, tr] of (anim?.tracks ?? []).entries()) {
-    for (const id of expand(tr.target)) {
-      const target = targets.get(id);
-      if (!target) {
-        warnings.push(`animation.tracks[${i}]: target "${id}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
+    const ids = expand(tr.target).filter((id) => {
+      if (targets.has(id)) return true;
+      warnings.push(`animation.tracks[${i}]: target "${id}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
+      return false;
+    });
+    const label = ids.length > 1 ? `[${ids.join(", ")}]` : ids[0];
+    for (const key of tr.keys ?? []) {
+      const t = Number(key.t);
+      if (!ids.length) continue;
+      if (!Number.isFinite(t)) {
+        warnings.push(`animation ${label}: \u30AD\u30FC\u306B t (\u30DF\u30EA\u79D2) \u304C\u3042\u308A\u307E\u305B\u3093`);
         continue;
       }
-      for (const key of tr.keys ?? []) {
-        const t = Number(key.t);
-        if (!Number.isFinite(t)) {
-          warnings.push(`animation ${id}: \u30AD\u30FC\u306B t (\u30DF\u30EA\u79D2) \u304C\u3042\u308A\u307E\u305B\u3093`);
-          continue;
-        }
-        for (const name of Object.keys(key)) {
-          if (name !== "t" && !(name in target.specs)) {
-            warnings.push(`animation ${id}: \u72B6\u614B "${name}" \u306F\u3042\u308A\u307E\u305B\u3093 (\u4F7F\u3048\u308B\u3082\u306E: ${Object.keys(target.specs).join(", ") || "\u306A\u3057"})`);
-          }
-        }
-        keysOf.get(id).push({ ...key, t });
+      const names = Object.keys(key).filter((name) => name !== "t");
+      for (const name of names) {
+        if (ids.some((id) => name in targets.get(id).specs)) continue;
+        const usable = [...new Set(ids.flatMap((id) => Object.keys(targets.get(id).specs)))];
+        warnings.push(`animation ${label}: \u72B6\u614B "${name}" \u306F\u3042\u308A\u307E\u305B\u3093 (\u4F7F\u3048\u308B\u3082\u306E: ${usable.join(", ") || "\u306A\u3057"})`);
+      }
+      for (const id of ids) {
+        const specs = targets.get(id).specs;
+        const own = ids.length > 1 ? names.filter((name) => name in specs) : names;
+        if (ids.length > 1 && names.length && !own.length) continue;
+        keysOf.get(id).push({ ...Object.fromEntries(own.map((name) => [name, key[name]])), t });
       }
     }
   }
@@ -1799,7 +1814,8 @@ function resolveCircuit(circuit) {
     const part = dot > 0 ? byId.get(String(ref).slice(0, dot)) : null;
     const pin = part?.pins.find((p) => p.name === String(ref).slice(dot + 1));
     if (!pin) {
-      errors.push(`${who}: "${ref}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306E\u7A74\u3067\u3082\u3001\u90E8\u54C1\u306E\u30D4\u30F3 (\u4F8B: "SV1.SIG") \u3067\u3082\u3042\u308A\u307E\u305B\u3093`);
+      const hint = board.missingHint(ref);
+      errors.push(hint ? `${who}: \u7A74 ${ref} \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u3042\u308A\u307E\u305B\u3093\u3002${hint}` : `${who}: "${ref}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306E\u7A74\u3067\u3082\u3001\u90E8\u54C1\u306E\u30D4\u30F3 (\u4F8B: "SV1.SIG") \u3067\u3082\u3042\u308A\u307E\u305B\u3093`);
       return null;
     }
     return { node: pin.node, pos: { x: pin.x, y: pin.y } };
@@ -2715,7 +2731,8 @@ function coordsOf(result, ref) {
   const part = dot > 0 ? result.parts.find((p) => p.id === ref.slice(0, dot)) : null;
   const pin = part?.pins.find((p) => p.name === ref.slice(dot + 1));
   if (pin) return { ref, x: r2(pin.x), y: r2(pin.y), hole: pin.hole };
-  return { ref, error: "\u7A74\u3067\u3082\u90E8\u54C1\u306E\u30D4\u30F3\u3067\u3082 x,y \u3067\u3082\u3042\u308A\u307E\u305B\u3093" };
+  const hint = result.board.missingHint(ref);
+  return { ref, error: hint ? `\u3053\u306E\u30DC\u30FC\u30C9\u306B\u7A74 ${ref} \u306F\u3042\u308A\u307E\u305B\u3093\u3002${hint}` : "\u7A74\u3067\u3082\u90E8\u54C1\u306E\u30D4\u30F3\u3067\u3082 x,y \u3067\u3082\u3042\u308A\u307E\u305B\u3093" };
 }
 function partSpec(def) {
   const params = Object.fromEntries(Object.entries(def.params ?? {}).map(([k, s]) => [k, s.default]));
@@ -2738,8 +2755,8 @@ function layoutIssues(result) {
   const bodies = result.parts.map((p) => ({ part: p, box: bodyBox(p) }));
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
-      const [a, b] = [bodies[i], bodies[j]];
-      if (overlap(a.box, b.box) > 0.4) out.push(`${a.part.id} \u3068 ${b.part.id} \u306E\u672C\u4F53\u304C\u91CD\u306A\u3063\u3066\u3044\u307E\u3059`);
+      const [a, b2] = [bodies[i], bodies[j]];
+      if (overlap(a.box, b2.box) > 0.4) out.push(`${a.part.id} \u3068 ${b2.part.id} \u306E\u672C\u4F53\u304C\u91CD\u306A\u3063\u3066\u3044\u307E\u3059`);
     }
   }
   const covered = coveredBy(result);
@@ -2759,10 +2776,18 @@ function layoutIssues(result) {
       if (pts.some((q) => Math.hypot(q.x - u.p.x, q.y - u.p.y) < 0.18)) out.push(`${w.id} \u304C\u7A74 ${u.hole} (${u.who}) \u306E\u771F\u4E0A\u3092\u901A\u3063\u3066\u3044\u307E\u3059`);
     }
   }
+  const b = result.board.bounds;
+  for (const w of result.wires) {
+    const bend = Number(w.bend) || 0;
+    if (Math.abs(bend) > 0.5 && !w.kit) out.push(`${w.id} \u306E bend ${bend} \u304C\u5927\u304D\u3059\u304E\u307E\u3059 (\u7DDA\u306E\u9577\u3055\u306B\u5BFE\u3059\u308B\u5272\u5408\u3067\u3059\u30020.1\u301C0.3 \u304F\u3089\u3044\u304C\u76EE\u5B89)`);
+    if (!result.board.has(w.from) || !result.board.has(w.to)) continue;
+    const off = wirePoints(w).some((q) => q.x < b.x - 0.3 || q.x > b.x + b.w + 0.3 || q.y < b.y - 0.3 || q.y > b.y + b.h + 0.3);
+    if (off) out.push(`${w.id} \u304C\u30DC\u30FC\u30C9\u306E\u5916\u306B\u306F\u307F\u51FA\u3057\u3066\u3044\u307E\u3059 (bend / via \u3092\u78BA\u304B\u3081\u3066\u304F\u3060\u3055\u3044)`);
+  }
   const labels = result.parts.map((p) => ({ part: p, box: labelBox(p) })).filter((l) => l.box);
   for (const l of labels) {
-    for (const b of bodies) {
-      if (b.part !== l.part && overlap(l.box, b.box) > 0.1) out.push(`${l.part.id} \u306E\u30E9\u30D9\u30EB\u304C ${b.part.id} \u306B\u91CD\u306A\u3063\u3066\u3044\u307E\u3059 (idLabel \u3067\u305A\u3089\u305B\u307E\u3059)`);
+    for (const b2 of bodies) {
+      if (b2.part !== l.part && overlap(l.box, b2.box) > 0.1) out.push(`${l.part.id} \u306E\u30E9\u30D9\u30EB\u304C ${b2.part.id} \u306B\u91CD\u306A\u3063\u3066\u3044\u307E\u3059 (idLabel \u3067\u305A\u3089\u305B\u307E\u3059)`);
     }
     for (const m of labels) {
       if (m.part.id > l.part.id && overlap(l.box, m.box) > 0.05) out.push(`${l.part.id} \u3068 ${m.part.id} \u306E\u30E9\u30D9\u30EB\u304C\u91CD\u306A\u3063\u3066\u3044\u307E\u3059`);
@@ -3205,7 +3230,10 @@ function withoutRot({ rot, ...rest }) {
   return rest;
 }
 function checkEnd(c, ref) {
-  if (boardOf(c).has(ref)) return;
+  const board = boardOf(c);
+  if (board.has(ref)) return;
+  const hint = board.missingHint(ref);
+  if (hint) fail(`\u7A74 ${ref} \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u3042\u308A\u307E\u305B\u3093\u3002${hint}`);
   const dot = String(ref).indexOf(".");
   const inst = dot > 0 ? c.parts.find((p) => p.id === String(ref).slice(0, dot)) : null;
   if (!inst) fail(`"${ref}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306E\u7A74\u3067\u3082\u3001\u90E8\u54C1\u306E\u30D4\u30F3 (\u4F8B: "SV1.SIG") \u3067\u3082\u3042\u308A\u307E\u305B\u3093`);
@@ -3557,7 +3585,13 @@ async function main() {
     case "coords": {
       const circuit = opts["--in"] ? readCircuit(opts["--in"]) : { ...emptyCircuit(), board: opts["--board"] ?? "full" };
       const result = resolveCircuit(circuit);
-      for (const ref of pos) console.log(JSON.stringify(coordsOf(result, ref)));
+      const assumed = !opts["--in"] && !opts["--board"];
+      for (const ref of pos) {
+        const out = { ...coordsOf(result, ref), board: circuit.board };
+        const missing = assumed && result.board.has(ref) ? ["half", "mini"].filter((b) => !createBoard(b).has(ref)) : [];
+        if (missing.length) out.note = `\u30DC\u30FC\u30C9\u3092\u6307\u5B9A\u3057\u3066\u3044\u306A\u3044\u306E\u3067 full \u3067\u8A08\u7B97\u3057\u307E\u3057\u305F\u3002${missing.join(" / ")} \u306B\u306F\u3053\u306E\u7A74\u306F\u3042\u308A\u307E\u305B\u3093 (--in circuit.json \u304B --board \u3067\u6307\u5B9A\u3067\u304D\u307E\u3059)`;
+        console.log(JSON.stringify(out));
+      }
       break;
     }
     case "plan": {

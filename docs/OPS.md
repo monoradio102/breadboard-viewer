@@ -58,7 +58,7 @@ await bb.png({ background: null })     // その瞬間の透過PNG (Blob)
 | `autoSteps` | なし | 組み立て手順を自動で作って設定します (モジュール・IC → ほかの部品 → 配線) |
 | `setAssembly` | `tray`, `trayOrigin`, `trayWidth`, `timing`, `introText`, `outroText`, `numbering` のうち必要なもの / `clear: true` | 組み立ての設定をマージします。`tray` と `timing` はキーごとにマージされ、値に `null` を書くとそのキーを消します |
 | `definePart` | `def` | 独自部品の定義 (`partDefs` の1件) を追加します。同じ `type` があれば差し替えます |
-| `animate` | `target`, `keys`, (`replace` = true) | 部品・配線・演出のアニメーションのキーを設定します。`target` はID、IDの配列、または `animation.groups` の名前。`replace: false` にすると、既存のキーに追加します |
+| `animate` | `target`, `keys`, (`replace` = true) | 部品・配線・演出のアニメーションのキーを設定します。`target` はID、IDの配列、または `animation.groups` の名前 (複数のときは、状態を持つものだけに振り分けます)。`replace: false` にすると、既存のキーに追加します |
 | `setAnimation` | `duration`, `loop`, `captions`, `tracks`, `groups` のうち必要なもの / `clear: true` | アニメーションの設定を上書きでマージします。`clear: true` でアニメーションを削除します |
 | `setBoard` | `board` | ボードの種類を変更します (`full` / `half` / `mini`) |
 | `setWireStyle` | `style` | 配線の描き方を変更します (`flex`: 曲がるジャンパ線 / `kit`: ジャンパ線キット。`docs/FORMAT.md` の「配線の描き方」)。1本だけ変えるときは `update` で `style` を設定します |

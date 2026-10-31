@@ -65,7 +65,7 @@ test("problems are reported, not thrown", () => {
   assert.match(all, /"z9"/);
   assert.match(all, /未知の部品タイプ "nope"/);
   assert.match(all, /U1\..*穴の位置に来ません/);
-  assert.match(all, /"j99"/);
+  assert.match(all, /j99/);
   assert.match(r.warnings.join("\n"), /未知のパラメータ "colour"/);
 });
 

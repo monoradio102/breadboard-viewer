@@ -39,27 +39,35 @@ export function buildTimeline(parts, wires, animation, warnings = [], overlays =
   const groups = anim?.groups && typeof anim.groups === "object" ? anim.groups : {};
   const keysOf = new Map([...targets.keys()].map((id) => [id, []]));
 
-  // a track's target: an id, an array of ids, or the name of a group in animation.groups
+  // a track's target: an id, an array of ids, or the name of a group in animation.groups.
+  // With several targets, each state goes to the targets that have it (an LED gets "on",
+  // a wire "flow"); a state none of them has is a warning.
   const expand = (target) => (Array.isArray(target) ? target : Array.isArray(groups[target]) ? groups[target] : [target]);
   for (const [i, tr] of (anim?.tracks ?? []).entries()) {
-    for (const id of expand(tr.target)) {
-      const target = targets.get(id);
-      if (!target) {
-        warnings.push(`animation.tracks[${i}]: target "${id}" が見つかりません`);
+    const ids = expand(tr.target).filter((id) => {
+      if (targets.has(id)) return true;
+      warnings.push(`animation.tracks[${i}]: target "${id}" が見つかりません`);
+      return false;
+    });
+    const label = ids.length > 1 ? `[${ids.join(", ")}]` : ids[0];
+    for (const key of tr.keys ?? []) {
+      const t = Number(key.t);
+      if (!ids.length) continue;
+      if (!Number.isFinite(t)) {
+        warnings.push(`animation ${label}: キーに t (ミリ秒) がありません`);
         continue;
       }
-      for (const key of tr.keys ?? []) {
-        const t = Number(key.t);
-        if (!Number.isFinite(t)) {
-          warnings.push(`animation ${id}: キーに t (ミリ秒) がありません`);
-          continue;
-        }
-        for (const name of Object.keys(key)) {
-          if (name !== "t" && !(name in target.specs)) {
-            warnings.push(`animation ${id}: 状態 "${name}" はありません (使えるもの: ${Object.keys(target.specs).join(", ") || "なし"})`);
-          }
-        }
-        keysOf.get(id).push({ ...key, t });
+      const names = Object.keys(key).filter((name) => name !== "t");
+      for (const name of names) {
+        if (ids.some((id) => name in targets.get(id).specs)) continue;
+        const usable = [...new Set(ids.flatMap((id) => Object.keys(targets.get(id).specs)))];
+        warnings.push(`animation ${label}: 状態 "${name}" はありません (使えるもの: ${usable.join(", ") || "なし"})`);
+      }
+      for (const id of ids) {
+        const specs = targets.get(id).specs;
+        const own = ids.length > 1 ? names.filter((name) => name in specs) : names;
+        if (ids.length > 1 && names.length && !own.length) continue;
+        keysOf.get(id).push({ ...Object.fromEntries(own.map((name) => [name, key[name]])), t });
       }
     }
   }

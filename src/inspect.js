@@ -98,7 +98,8 @@ export function coordsOf(result, ref) {
   const part = dot > 0 ? result.parts.find((p) => p.id === ref.slice(0, dot)) : null;
   const pin = part?.pins.find((p) => p.name === ref.slice(dot + 1));
   if (pin) return { ref, x: r2(pin.x), y: r2(pin.y), hole: pin.hole };
-  return { ref, error: "穴でも部品のピンでも x,y でもありません" };
+  const hint = result.board.missingHint(ref);
+  return { ref, error: hint ? `このボードに穴 ${ref} はありません。${hint}` : "穴でも部品のピンでも x,y でもありません" };
 }
 
 // Shape and settings of a part type with default params (for `parts --json`).
@@ -146,6 +147,15 @@ export function layoutIssues(result) {
       if (ends.some((e) => Math.hypot(e.x - u.p.x, e.y - u.p.y) < 0.5)) continue;
       if (pts.some((q) => Math.hypot(q.x - u.p.x, q.y - u.p.y) < 0.18)) out.push(`${w.id} が穴 ${u.hole} (${u.who}) の真上を通っています`);
     }
+  }
+  // bend is a fraction of the wire's length, not a number of holes: 1 bows out as far as the wire is long
+  const b = result.board.bounds;
+  for (const w of result.wires) {
+    const bend = Number(w.bend) || 0;
+    if (Math.abs(bend) > 0.5 && !w.kit) out.push(`${w.id} の bend ${bend} が大きすぎます (線の長さに対する割合です。0.1〜0.3 くらいが目安)`);
+    if (!result.board.has(w.from) || !result.board.has(w.to)) continue;
+    const off = wirePoints(w).some((q) => q.x < b.x - 0.3 || q.x > b.x + b.w + 0.3 || q.y < b.y - 0.3 || q.y > b.y + b.h + 0.3);
+    if (off) out.push(`${w.id} がボードの外にはみ出しています (bend / via を確かめてください)`);
   }
   // id labels on top of other parts or labels
   const labels = result.parts.map((p) => ({ part: p, box: labelBox(p) })).filter((l) => l.box);

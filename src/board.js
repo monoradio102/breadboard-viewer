@@ -70,6 +70,15 @@ export function createBoard(type = "half") {
     railY: RAIL_Y,
     has: (id) => holes.has(id),
     pos: (id) => holes.get(id) ?? null,
+    // why a hole name that parses is not on this board, with the nearest hole that is ("" if fine)
+    missingHint(id) {
+      const h = parseHole(id);
+      if (!h || holes.has(id)) return "";
+      if (h.kind === "main") return h.col > spec.cols ? `このボード (${type}) の列は 1〜${spec.cols} です` : "";
+      if (!spec.rails) return `このボード (${type}) には電源レールがありません`;
+      const near = rcols.reduce((a, c) => (Math.abs(c - h.col) < Math.abs(a - h.col) ? c : a));
+      return `電源レールの穴は列 ${rcols[0]} から5個ずつ、6列ごとです (このボードでは ${rcols[0]}〜${rcols.at(-1)})。近い穴: ${h.rail}${near}`;
+    },
     holeAt(x, y) {
       const rx = Math.round(x * 1000) / 1000;
       const ry = Math.round(y * 1000) / 1000;

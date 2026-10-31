@@ -93,7 +93,7 @@ node tools/bb.mjs apply my.json '[{"op":"addPart","type":"led","at":"a10"}]'  # 
 node tools/bb.mjs check examples/blink-nano.json             # 検証とネットリストの表示
 node tools/bb.mjs check examples/xiao-voice.json --layout --json  # 見た目の問題も含めて JSON で
 node tools/bb.mjs place xiao --at h3 --rot 180               # 置いたときのピンの穴・覆う範囲・ぶつかり
-node tools/bb.mjs coords h3 T-5 U1.D3                        # 穴やピンの座標
+node tools/bb.mjs coords h3 T-5 U1.D3 --in my.json            # 穴やピンの座標 (--in か --board でボードを指定)
 node tools/bb.mjs parts --json --type xiao                   # ピンの相対位置と本体の範囲
 node tools/bb.mjs lib my-parts.json examples/oled-custom-part.json            # 独自部品を集めてライブラリにする
 node tools/bb.mjs apply my.json '[{"op":"addPart","type":"oled-ssd1306-i2c","at":"d24"}]' --lib my-parts.json  # ライブラリの部品を使う

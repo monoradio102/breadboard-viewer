@@ -159,3 +159,21 @@ test("overlay fadeIn / fadeOut and restart start times", () => {
   assert.match(renderSvg(r), /data-restart="1000" data-cycle="3000"/);
   assert.match(renderSvg(r, { time: 1200 }), /data-anim="FX:fx" style="opacity:0.5"/);
 });
+
+test("a track over a part and a wire gives each the states it has", () => {
+  const r = resolveCircuit({
+    board: "half",
+    parts: [{ id: "D3", type: "led", pins: { A: "a10", K: "a11" } }],
+    wires: [{ id: "WL", from: "b11", to: "T-11" }],
+    animation: {
+      duration: 1000,
+      tracks: [{ target: ["D3", "WL"], keys: [{ t: 0, on: true, flow: true }, { t: 500, on: false, flow: false }, { t: 800, blink: 1 }] }],
+    },
+  });
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /\[D3, WL\]: 状態 "blink"/);
+  assert.equal(r.timeline.tracks.get("D3").stateAt(100).on, true);
+  assert.equal(r.timeline.tracks.get("D3").stateAt(600).on, false);
+  assert.equal(r.timeline.tracks.get("WL").stateAt(100).flow, true);
+  assert.equal(r.timeline.tracks.get("WL").stateAt(600).flow, false);
+});

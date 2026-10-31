@@ -62,3 +62,28 @@ test("layout issues: overlapping bodies, hidden wire ends, wires over holes, lab
   assert.match(issues, /W2 が穴 a30 \(R1\.1\) の真上を通っています/);
   assert.deepEqual(coordsOf(r, "MIC1.SD"), { ref: "MIC1.SD", x: 15, y: 7, hole: "d14" });
 });
+
+test("coords says which board it assumed, and points to the nearest rail hole", () => {
+  const [t30] = bb("coords", "T-30").stdout.trim().split("\n").map((l) => JSON.parse(l));
+  assert.equal(t30.board, "full");
+  assert.match(t30.note, /half \/ mini にはこの穴はありません/);
+  const half = JSON.parse(bb("coords", "T-30", "--board", "half").stdout);
+  assert.match(half.error, /近い穴: T-29/);
+  const r = resolveCircuit({ board: "half", wires: [{ from: "a29", to: "T-30" }] });
+  assert.match(r.errors[0], /穴 T-30 はこのボードにありません。.*近い穴: T-29/);
+});
+
+test("layout flags a bend that is too large and wires that leave the board", () => {
+  const r = resolveCircuit({
+    board: "half",
+    wires: [
+      { id: "W1", from: "c5", to: "c15", bend: 1 },
+      { id: "W2", from: "a5", to: "a15", bend: -0.5 },
+      { id: "W3", from: "e5", to: "e15", bend: 0.2 },
+    ],
+  });
+  const issues = layoutIssues(r);
+  assert.ok(issues.some((l) => l.startsWith("W1 の bend 1 が大きすぎます")));
+  assert.ok(issues.some((l) => l.startsWith("W2 がボードの外にはみ出しています")));
+  assert.ok(!issues.some((l) => l.startsWith("W3")));
+});

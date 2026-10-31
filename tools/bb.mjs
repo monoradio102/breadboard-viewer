@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
 import { join } from "node:path";
 import { planAssembly } from "../src/assembly.js";
+import { createBoard } from "../src/board.js";
 import { describe, kitList, resolveCircuit } from "../src/circuit.js";
 import { bodyBox, coordsOf, layoutIssues, partSpec, previewPlacement } from "../src/inspect.js";
 import { emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "../src/io.js";
@@ -235,7 +236,14 @@ async function main() {
     case "coords": {
       const circuit = opts["--in"] ? readCircuit(opts["--in"]) : { ...emptyCircuit(), board: opts["--board"] ?? "full" };
       const result = resolveCircuit(circuit);
-      for (const ref of pos) console.log(JSON.stringify(coordsOf(result, ref)));
+      // without --in / --board the full board is assumed: say so when a smaller board lacks the hole
+      const assumed = !opts["--in"] && !opts["--board"];
+      for (const ref of pos) {
+        const out = { ...coordsOf(result, ref), board: circuit.board };
+        const missing = assumed && result.board.has(ref) ? ["half", "mini"].filter((b) => !createBoard(b).has(ref)) : [];
+        if (missing.length) out.note = `ボードを指定していないので full で計算しました。${missing.join(" / ")} にはこの穴はありません (--in circuit.json か --board で指定できます)`;
+        console.log(JSON.stringify(out));
+      }
       break;
     }
     case "plan": {
