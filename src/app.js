@@ -208,7 +208,13 @@ el.stage.addEventListener("pointerdown", (ev) => {
   const partEl = ev.target.closest(".part");
   const wireEl = ev.target.closest(".wire");
   if (handleEl) {
-    drag = { kind: "handle", id: handleEl.dataset.owner, handle: handleEl.dataset.handle };
+    const { owner, handle } = handleEl.dataset;
+    if (handle.startsWith("via:") && isDoubleClick(`${owner}/${handle}`)) {
+      removeVia(owner, Number(handle.slice(4)));
+      ev.preventDefault();
+      return;
+    }
+    drag = { kind: "handle", id: owner, handle };
   } else if (partEl) {
     select(partEl.dataset.id);
     const part = result.parts.find((p) => p.id === partEl.dataset.id);
@@ -247,6 +253,19 @@ el.stage.addEventListener("pointermove", (ev) => {
     if (!to || to === drag.lastTo) return;
     drag.lastTo = to;
     ops = [{ op: "move", id: drag.id, to }];
+  } else if (/^(via|insert):/.test(drag.handle)) {
+    const point = snapPoint(pt);
+    const key = JSON.stringify(point);
+    if (key === drag.lastTo) return;
+    drag.lastTo = key;
+    const wire = circuit.wires.find((w) => w.id === drag.id);
+    const via = [...(wire.via ?? [])];
+    const [kind, index] = drag.handle.split(":");
+    if (kind === "insert") via.splice(Number(index), 0, point);
+    else via[Number(index)] = point;
+    // adding a bend point to a plain wire makes it a smooth curve
+    const set = kind === "insert" && wire.shape === undefined ? { via, shape: "curve" } : { via };
+    ops = [{ op: "update", id: drag.id, set }];
   } else {
     const to = holeNear(pt);
     if (!to || to === drag.lastTo) return;
@@ -279,7 +298,31 @@ function endDrag() {
   } else draw();
 }
 
+// Via points snap to a half-pitch grid; a point on a hole is stored as the hole name.
+function snapPoint(pt) {
+  const x = Math.round(pt.x * 2) / 2;
+  const y = Math.round(pt.y * 2) / 2;
+  return result.board.holeAt(x, y) ?? [x, y];
+}
+
 el.stage.addEventListener("pointerup", endDrag);
+
+// Double-click on a via point removes it. Detected by hand: the SVG is re-rendered between
+// the clicks, so the browser's dblclick event does not reach the handle.
+let lastHandleDown = { key: null, time: 0 };
+
+function isDoubleClick(key) {
+  const now = performance.now();
+  const hit = lastHandleDown.key === key && now - lastHandleDown.time < 400;
+  lastHandleDown = { key: hit ? null : key, time: now };
+  return hit;
+}
+
+function removeVia(wireId, index) {
+  const wire = circuit.wires.find((w) => w.id === wireId);
+  const via = (wire.via ?? []).filter((_, i) => i !== index);
+  tryApply([{ op: "update", id: wire.id, set: { via: via.length ? via : null } }]);
+}
 el.stage.addEventListener("pointercancel", () => {
   drag = null;
   draw();
@@ -357,7 +400,7 @@ function renderInspector() {
   const wire = circuit.wires.find((w) => w.id === selection);
   if (!part && !wire) {
     box.append(
-      node("p", "部品をクリックで選択・ドラッグで移動。空いた穴からドラッグでジャンパ線。R で回転、Delete で削除、矢印キーで1マス移動。", "hint"),
+      node("p", "部品をクリックで選択・ドラッグで移動。空いた穴からドラッグでジャンパ線。線を選んで「＋」をドラッグすると曲げられます (経由点はダブルクリックで削除)。R で回転、Delete で削除、矢印キーで1マス移動。", "hint"),
     );
     return;
   }
@@ -375,6 +418,10 @@ function renderInspector() {
   } else {
     const colors = Object.keys(WIRE_COLORS);
     box.append(field("color", wire.color ?? "blue", (v) => tryApply([{ op: "update", id, set: { color: v } }]), colors));
+    box.append(field("shape", wire.shape ?? "straight", (v) => tryApply([{ op: "update", id, set: { shape: v === "straight" ? null : v } }]), ["straight", "curve"], "curve: 経由点をなめらかに通る"));
+    box.append(
+      field("bend", wire.bend ?? 0, (v) => tryApply([{ op: "update", id, set: { bend: Number(v) ? Number(v) : null } }]), undefined, "経由点がないときの弧の大きさ (例: 0.2, 負で逆向き)"),
+    );
     box.append(field("from", wire.from, (v) => tryApply([{ op: "update", id, set: { from: v } }])));
     box.append(field("to", wire.to, (v) => tryApply([{ op: "update", id, set: { to: v } }])));
   }

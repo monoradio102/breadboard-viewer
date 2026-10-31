@@ -59,10 +59,13 @@ export function resolveCircuit(circuit) {
       else occupy(hole, `${id}.${key}`);
       ends.push(board.pos(hole));
     }
-    const via = (w.via ?? []).map((h) => {
-      if (!board.has(h)) warnings.push(`${id}: via "${h}" はこのボードにない穴です`);
-      return board.pos(h);
+    // via points: hole names or [x, y] in pitch units (they only shape the drawing)
+    const via = (w.via ?? []).map((v) => {
+      if (Array.isArray(v) && v.length === 2 && v.every(Number.isFinite)) return { x: v[0], y: v[1] };
+      if (!board.has(v)) warnings.push(`${id}: via ${JSON.stringify(v)} は穴の名前でも [x, y] でもありません`);
+      return board.pos(v);
     });
+    if (w.shape !== undefined && !["straight", "curve"].includes(w.shape)) warnings.push(`${id}: shape は "straight" か "curve" です`);
     if (ends[0] && ends[1]) wires.push({ ...w, id, a: ends[0], b: ends[1], via: via.filter(Boolean) });
   });
 

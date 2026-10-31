@@ -173,21 +173,45 @@ function drawPart(part, ctx) {
   });
 }
 
+// SVG path of a wire: straight segments through the via points, or (shape: "curve") a
+// Catmull-Rom spline through them. `bend` bows the wire sideways by that fraction of its length.
+export function wirePath(w) {
+  let pts = [w.a, ...w.via, w.b];
+  const bend = Number(w.bend) || 0;
+  const curve = w.shape === "curve" || (bend && pts.length === 2);
+  if (bend && pts.length === 2) {
+    const dx = w.b.x - w.a.x;
+    const dy = w.b.y - w.a.y;
+    pts = [w.a, { x: (w.a.x + w.b.x) / 2 - dy * bend, y: (w.a.y + w.b.y) / 2 + dx * bend }, w.b];
+  }
+  if (!curve || pts.length < 3) return `M ${pts.map((p) => `${n(p.x)} ${n(p.y)}`).join(" L ")}`;
+  let d = `M ${n(pts[0].x)} ${n(pts[0].y)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] ?? p2;
+    const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
+    const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
+    d += ` C ${n(c1.x)} ${n(c1.y)} ${n(c2.x)} ${n(c2.y)} ${n(p2.x)} ${n(p2.y)}`;
+  }
+  return d;
+}
+
 function drawWire(w, ctx) {
   const color = WIRE_COLORS[w.color] ?? w.color ?? WIRE_COLORS.blue;
-  const pts = [w.a, ...w.via, w.b].map((p) => `${n(p.x)},${n(p.y)}`).join(" ");
-  const common = { points: pts, fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" };
+  const common = { d: wirePath(w), fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" };
   const flows = ctx.state.flow || ctx.values("flow").includes("true");
   // the timeline toggles the group; the dashes inside run their own endless animation
   const flow = flows
-    ? g(tag("polyline", { ...common, stroke: "#fff", "stroke-width": 0.14, "stroke-dasharray": "0.3 0.5", class: "bb-flow" }), {
+    ? g(tag("path", { ...common, stroke: "#fff", "stroke-width": 0.14, "stroke-dasharray": "0.3 0.5", class: "bb-flow" }), {
         "pointer-events": "none",
         ...ctx.anim("flow"),
       })
     : "";
   return g(
-    tag("polyline", { ...common, stroke: "rgba(0,0,0,.35)", "stroke-width": 0.36 }) +
-      tag("polyline", { ...common, stroke: color, "stroke-width": 0.26 }) +
+    tag("path", { ...common, stroke: "rgba(0,0,0,.35)", "stroke-width": 0.36 }) +
+      tag("path", { ...common, stroke: color, "stroke-width": 0.26 }) +
       flow +
       circle(w.a.x, w.a.y, 0.13, { fill: "#a7adb3" }) +
       circle(w.b.x, w.b.y, 0.13, { fill: "#a7adb3" }),
@@ -254,9 +278,23 @@ function drawSelection(result, id) {
   }
   const wire = result.wires.find((w) => w.id === id);
   if (wire) {
-    const pts = [wire.a, ...wire.via, wire.b].map((p) => `${n(p.x)},${n(p.y)}`).join(" ");
+    const pts = [wire.a, ...wire.via, wire.b];
+    // "+" handles in the middle of each segment add a via point when dragged
+    const inserts = pts.slice(1).map((p, i) => {
+      const q = pts[i];
+      const mx = (p.x + q.x) / 2;
+      const my = (p.y + q.y) / 2;
+      return g(
+        circle(mx, my, 0.24, { fill: ACCENT, opacity: 0.85 }) +
+          line(mx - 0.13, my, mx + 0.13, my, { stroke: "#fff", "stroke-width": 0.06 }) +
+          line(mx, my - 0.13, mx, my + 0.13, { stroke: "#fff", "stroke-width": 0.06 }),
+        { "data-handle": `insert:${i}`, "data-owner": wire.id, style: "cursor:copy" },
+      );
+    });
     return (
-      tag("polyline", { points: pts, fill: "none", stroke: ACCENT, "stroke-width": 0.12, "stroke-dasharray": "0.3 0.2", "pointer-events": "none" }) +
+      tag("path", { d: wirePath(wire), fill: "none", stroke: ACCENT, "stroke-width": 0.12, "stroke-dasharray": "0.3 0.2", "pointer-events": "none" }) +
+      inserts.join("") +
+      wire.via.map((p, i) => handle(p.x, p.y, wire.id, `via:${i}`)).join("") +
       handle(wire.a.x, wire.a.y, wire.id, "from") +
       handle(wire.b.x, wire.b.y, wire.id, "to")
     );

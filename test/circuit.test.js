@@ -105,3 +105,21 @@ test("SVG export embeds the circuit and can be imported again", () => {
   assert.deepEqual(parseCircuitText(svg), c);
   assert.deepEqual(parseCircuitText(stringifyCircuit(c)), c);
 });
+
+test("wires: via points as holes or [x, y], curves and bend", async () => {
+  const { wirePath } = await import("../src/render.js");
+  const r = resolveCircuit({
+    board: "half",
+    wires: [
+      { id: "W1", from: "a1", to: "a10", via: ["c5", [6.5, 2.5]], shape: "curve" },
+      { id: "W2", from: "j1", to: "j10", bend: 0.2 },
+      { id: "W3", from: "j11", to: "j20", via: ["zz"], shape: "wavy" },
+    ],
+  });
+  assert.deepEqual(r.wires[0].via, [{ x: 6, y: 6 }, { x: 6.5, y: 2.5 }]);
+  assert.match(wirePath(r.wires[0]), /^M 2 4 C /);
+  assert.match(wirePath(r.wires[1]), / C /);
+  assert.equal(wirePath({ ...r.wires[1], bend: 0 }), "M 2 15 L 11 15");
+  assert.match(r.warnings.join("\n"), /W3: via "zz"/);
+  assert.match(r.warnings.join("\n"), /W3: shape は/);
+});
