@@ -56,13 +56,17 @@
             <span id="anim-label" class="anim-label">0.0s</span>
             <label title="アニメーション1周の長さ (秒)">長さ <input id="anim-duration" type="number" min="0.1" step="0.1" value="2" />秒</label>
             <label title="繰り返し再生"><input id="anim-loop" type="checkbox" checked />ループ</label>
+            <label title="キャプションを表示 (書き出す画像にも反映)"><input id="anim-captions" type="checkbox" checked />キャプション</label>
           </span>
           <span class="spacer"></span>
-          <button id="btn-zoom-out" type="button" title="縮小">−</button>
-          <button id="btn-zoom-fit" type="button" title="幅に合わせる">全体</button>
-          <button id="btn-zoom-in" type="button" title="拡大">＋</button>
+          <button id="btn-zoom-out" type="button" title="縮小 (ホイール)">−</button>
+          <button id="btn-zoom-fit" type="button" title="全体を表示">全体</button>
+          <button id="btn-zoom-in" type="button" title="拡大 (ホイール)">＋</button>
         </div>
-        <div id="stage" class="stage" aria-label="ブレッドボード"></div>
+        <div class="stage-area">
+          <div id="stage" class="stage" aria-label="ブレッドボード"></div>
+          <div id="caption" class="caption-layer" hidden></div>
+        </div>
         <div id="status" class="status">穴にカーソルを合わせると位置とネットを表示します</div>
       </section>
 

@@ -24,9 +24,10 @@ export const WIRE_COLORS = {
 //   selection = id         highlight a part or wire and draw its drag handles (editor only)
 //   tempWire  = {a, b, color}  a wire being drawn (editor only)
 //   animate   = true       include the animation (CSS keyframes); false draws the t=0 state only
-//   margin    = 0          extra space around the content (the editor's workspace for off-board parts)
-//   viewBox   = "x y w h"  fixed view (the editor keeps the view still while dragging)
+//   margin    = 0          extra space around the content
+//   viewBox   = "x y w h"  view to show (the editor's pan / zoom); default fits the content
 //   time      = ms         draw a still frame at this time of the animation (no CSS animation)
+//   captions  = true       draw animation captions as a band over the bottom of the view
 export function renderSvg(result, options = {}) {
   const { board } = result;
   const labels = options.labels ?? true;
@@ -57,16 +58,16 @@ export function renderSvg(result, options = {}) {
 
   const pad = 1;
   const b = contentBounds(result, options.margin ?? 0);
-  const captionH = tl?.captions.length ? 2.2 : 0;
-  const vb = options.viewBox ? String(options.viewBox).split(/[\s,]+/).map(Number) : [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2 + captionH];
+  const vb = options.viewBox ? String(options.viewBox).split(/[\s,]+/).map(Number) : [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2];
+  const captions = (options.captions ?? true) && tl?.captions.length > 0;
   const body = [
     g(drawBoard(board), { class: "board" }),
     g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params))).join(""), { class: "parts" }),
     g(result.wires.map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
     g(result.parts.filter((p) => p.offboard).map(drawTerminals).join(""), { class: "terminals" }),
     g(result.overlays.map((o) => drawOverlay(o, ctxFor(o.id, overlayAnimate))).join(""), { class: "overlays" }),
-    captionH ? drawCaptions(tl, b, animEls, svgId, animate, stateOf) : "",
     labels ? g(result.parts.map(drawLabel).join(""), { class: "labels", "pointer-events": "none" }) : "",
+    captions ? drawCaptions(tl, vb, animEls, svgId, animate, stateOf) : "",
     g(drawProblems(result), { class: "problems" }),
     options.selection ? g(drawSelection(result, options.selection), { class: "selection" }) : "",
     options.tempWire ? g(drawTempWire(options.tempWire), { class: "temp-wire", "pointer-events": "none" }) : "",
@@ -87,7 +88,7 @@ export function renderSvg(result, options = {}) {
 
 // Board bounds, grown to include off-board parts, parts that declare an `extent` reaching
 // off the board, and wires; then `margin` on every side.
-function contentBounds(result, margin = 0) {
+export function contentBounds(result, margin = 0) {
   const b = result.board.bounds;
   let [x0, y0, x1, y1] = [b.x, b.y, b.x + b.w, b.y + b.h];
   const add = (x, y, pad = 0) => {
@@ -144,23 +145,23 @@ function hash(s) {
 
 const cssString = (s) => String(s).replace(/["\\]/g, "\\$&");
 
-function drawCaptions(tl, b, animEls, svgId, animate, stateOf) {
+// Captions are a layer over the bottom of the view: a dark band with the current line.
+function drawCaptions(tl, vb, animEls, svgId, animate, stateOf) {
   const track = captionTrack(tl.captions);
   const state = stateOf(track);
-  const y = b.y + b.h + 1.6;
+  const [x, y, w, h] = vb;
+  const bandH = Math.min(2.2, h * 0.12);
   return g(
     tl.captions
       .map((c, i) => {
         const map = (s) => ({ opacity: Number(s.caption) === i ? 1 : 0 });
         if (animate) animEls.push({ selector: `#${svgId} [data-anim="caption:${i}"]`, track, map });
-        return text(b.x + b.w / 2, y, c.text, {
-          "font-size": 0.8,
-          fill: "#263238",
-          "text-anchor": "middle",
-          "dominant-baseline": "central",
-          "data-anim": `caption:${i}`,
-          style: cssDecl(map(state)),
-        });
+        const size = Math.min(bandH * 0.42, (w * 0.92) / Math.max(1, [...c.text].length));
+        return g(
+          rect(x, y + h - bandH, w, bandH, { fill: "rgba(20,24,28,.72)" }) +
+            text(x + w / 2, y + h - bandH / 2, c.text, { "font-size": size, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" }),
+          { "data-anim": `caption:${i}`, style: cssDecl(map(state)) },
+        );
       })
       .join(""),
     { class: "captions", "pointer-events": "none" },

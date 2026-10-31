@@ -3,10 +3,10 @@ import { BOARD_TYPES } from "./board.js";
 import { describe, resolveCircuit, stripOf } from "./circuit.js";
 import { emptyCircuit, parseCircuitText, stringifyCircuit } from "./io.js";
 import { OP_NAMES, OpError, applyOps, normalize } from "./ops.js";
-import { WIRE_COLORS, renderSvg } from "./render.js";
+import { WIRE_COLORS, contentBounds, renderSvg } from "./render.js";
 
 const STORAGE_KEY = "breadboard-viewer:last";
-const WORKSPACE = 6; // free space around the board for off-board parts (pitch units)
+const CAPTIONS_KEY = "breadboard-viewer:captions";
 const PART_MIME = "application/x-breadboard-part";
 
 const $ = (id) => document.getElementById(id);
@@ -32,6 +32,8 @@ const el = {
   animLabel: $("anim-label"),
   animDuration: $("anim-duration"),
   animLoop: $("anim-loop"),
+  captionsToggle: $("anim-captions"),
+  caption: $("caption"),
   exportMenu: $("export"),
 };
 
@@ -39,7 +41,8 @@ let circuit = normalize(emptyCircuit());
 let result = resolveCircuit(circuit);
 let selection = null; // id of the selected part or wire
 let drag = null;
-let zoom = null; // null = fit to width
+let view = null; // visible area {x, y, w, h} in pitch units (pan / zoom); null = fit on next draw
+let showCaptions = readCaptionsSetting();
 const undoStack = { past: [], future: [] };
 
 // ---- state ----
@@ -112,17 +115,65 @@ function select(id) {
 
 // ---- drawing ----
 
+// The whole stage is one canvas; `view` decides which part of the (unbounded) plane is shown.
+// Captions are not drawn into the editor's SVG but shown in an HTML layer over the stage.
 function draw(previewResult = result, extra = {}) {
-  // while dragging, the view keeps its size so the content does not shift under the pointer
-  const viewBox = drag?.viewBox;
-  el.stage.innerHTML = renderSvg(previewResult, { selection, margin: WORKSPACE, viewBox, ...extra });
-  const svg = el.stage.querySelector("svg");
-  if (zoom) {
-    const w = Number(svg.getAttribute("width"));
-    svg.style.width = `${w * zoom}px`;
-    svg.style.maxWidth = "none";
-  }
+  if (!view) fitView();
+  el.stage.innerHTML = renderSvg(previewResult, { selection, viewBox: viewBoxText(), captions: false, ...extra });
   syncPlayer();
+}
+
+const viewBoxText = () => `${view.x} ${view.y} ${view.w} ${view.h}`;
+
+function stageSize() {
+  const r = el.stage.getBoundingClientRect();
+  return { w: Math.max(1, r.width), h: Math.max(1, r.height) };
+}
+
+// Shows the whole circuit, keeping the stage's aspect ratio.
+function fitView() {
+  const b = contentBounds(result, 1.5);
+  const { w: sw, h: sh } = stageSize();
+  const k = Math.min(sw / b.w, sh / b.h); // px per pitch unit
+  const w = sw / k;
+  const h = sh / k;
+  view = { x: b.x + b.w / 2 - w / 2, y: b.y + b.h / 2 - h / 2, w, h };
+}
+
+// Updates the view without re-rendering (pan / zoom must stay smooth).
+function applyView() {
+  el.stage.querySelector("svg")?.setAttribute("viewBox", viewBoxText());
+}
+
+function zoomAt(factor, cx, cy) {
+  const w = Math.min(600, Math.max(4, view.w * factor));
+  const f = w / view.w;
+  view = { x: cx - (cx - view.x) * f, y: cy - (cy - view.y) * f, w, h: view.h * f };
+  applyView();
+}
+
+function zoomCenter(factor) {
+  zoomAt(factor, view.x + view.w / 2, view.y + view.h / 2);
+}
+
+// keep the scale when the stage changes size
+new ResizeObserver(() => {
+  if (!view) return;
+  const svg = el.stage.querySelector("svg");
+  const { w: sw, h: sh } = stageSize();
+  const k = svg ? svg.getBoundingClientRect().width / view.w || sw / view.w : sw / view.w;
+  const cx = view.x + view.w / 2;
+  const cy = view.y + view.h / 2;
+  view = { x: cx - sw / k / 2, y: cy - sh / k / 2, w: sw / k, h: sh / k };
+  applyView();
+}).observe(el.stage);
+
+function readCaptionsSetting() {
+  try {
+    return localStorage.getItem(CAPTIONS_KEY) !== "off";
+  } catch {
+    return true;
+  }
 }
 
 // ---- animation player ----
@@ -178,6 +229,7 @@ function tickPlayer() {
     if (document.activeElement !== el.animTime) el.animTime.value = String(local);
     el.animLabel.textContent = `${(local / 1000).toFixed(1)}s / ${(tl.duration / 1000).toFixed(1)}s`;
   }
+  updateCaption();
   requestAnimationFrame(tickPlayer);
 }
 requestAnimationFrame(tickPlayer);
@@ -238,7 +290,15 @@ function onBoard(x, y) {
 const half = (v) => Math.round(v * 2) / 2;
 
 el.stage.addEventListener("pointerdown", (ev) => {
-  if (ev.button !== 0 || !el.stage.querySelector("svg")) return;
+  if (!el.stage.querySelector("svg")) return;
+  if (ev.button === 1) {
+    // middle button pans from anywhere
+    drag = { kind: "pan", x: ev.clientX, y: ev.clientY, view: { ...view } };
+    el.stage.setPointerCapture(ev.pointerId);
+    ev.preventDefault();
+    return;
+  }
+  if (ev.button !== 0) return;
   const pt = svgPoint(ev);
   const handleEl = ev.target.closest("[data-handle]");
   const pinEl = ev.target.closest("[data-pin]");
@@ -273,17 +333,22 @@ el.stage.addEventListener("pointerdown", (ev) => {
   } else {
     const hole = holeNear(pt);
     if (selection) select(null);
-    if (!hole) return;
-    drag = { kind: "wire", from: hole, fromPos: result.board.pos(hole) };
+    // empty space: drag the whole view
+    drag = hole ? { kind: "wire", from: hole, fromPos: result.board.pos(hole) } : { kind: "pan", x: ev.clientX, y: ev.clientY, view: { ...view } };
   }
   drag.preview = null;
-  drag.viewBox = el.stage.querySelector("svg").getAttribute("viewBox");
   el.stage.setPointerCapture(ev.pointerId);
   ev.preventDefault();
 });
 
 el.stage.addEventListener("pointermove", (ev) => {
   if (!el.stage.querySelector("svg") || !result.board) return;
+  if (drag?.kind === "pan") {
+    const k = el.stage.querySelector("svg").getBoundingClientRect().width / view.w;
+    view = { ...view, x: drag.view.x - (ev.clientX - drag.x) / k, y: drag.view.y - (ev.clientY - drag.y) / k };
+    el.stage.classList.add("panning");
+    return applyView();
+  }
   const pt = svgPoint(ev);
   if (!drag) return hover(pt);
   if (drag.kind === "wire") {
@@ -349,6 +414,8 @@ function endDrag() {
   if (!drag) return;
   const d = drag;
   drag = null;
+  el.stage.classList.remove("panning");
+  if (d.kind === "pan") return;
   if (d.kind === "wire") {
     if (d.to && d.to !== d.from) {
       const [id] = tryApply([{ op: "addWire", from: d.from, to: d.to, color: el.wireColor.value }]) ?? [];
@@ -495,7 +562,7 @@ function renderInspector() {
       const set = (v) => tryApply([{ op: "update", id, set: { [key]: typeof spec.default === "number" ? Number(v) : v } }]);
       box.append(field(key, part.params[key] ?? "", set, spec.options, spec.description));
     }
-    box.append(node("p", part.pins.map((p) => `${p.name}=${p.hole ?? "?"}`).join("  "), "pins"));
+    box.append(node("p", part.pins.map((p) => `${p.name}=${p.hole ?? (part.offboard ? "ボード外" : "?")}`).join("  "), "pins"));
   } else {
     const colors = Object.keys(WIRE_COLORS);
     box.append(field("color", wire.color ?? "blue", (v) => tryApply([{ op: "update", id, set: { color: v } }]), colors));
@@ -654,17 +721,44 @@ el.animTime.addEventListener("input", () => {
 el.undo.addEventListener("click", undo);
 el.redo.addEventListener("click", redo);
 
-function setZoom(z) {
-  zoom = z;
-  draw();
-}
-$("btn-zoom-in").addEventListener("click", () => setZoom((zoom ?? currentFitZoom()) * 1.25));
-$("btn-zoom-out").addEventListener("click", () => setZoom((zoom ?? currentFitZoom()) / 1.25));
-$("btn-zoom-fit").addEventListener("click", () => setZoom(null));
+$("btn-zoom-in").addEventListener("click", () => zoomCenter(1 / 1.25));
+$("btn-zoom-out").addEventListener("click", () => zoomCenter(1.25));
+$("btn-zoom-fit").addEventListener("click", () => {
+  fitView();
+  applyView();
+});
 
-function currentFitZoom() {
-  const svg = el.stage.querySelector("svg");
-  return svg.getBoundingClientRect().width / Number(svg.getAttribute("width"));
+// wheel / trackpad pinch zooms around the pointer
+el.stage.addEventListener(
+  "wheel",
+  (ev) => {
+    if (!view || !el.stage.querySelector("svg")) return;
+    ev.preventDefault();
+    const pt = svgPoint(ev);
+    const delta = ev.deltaMode === 1 ? ev.deltaY * 16 : ev.deltaY;
+    zoomAt(Math.exp(delta * (ev.ctrlKey ? 0.01 : 0.0015)), pt.x, pt.y);
+  },
+  { passive: false },
+);
+
+el.captionsToggle.checked = showCaptions;
+el.captionsToggle.addEventListener("change", () => {
+  showCaptions = el.captionsToggle.checked;
+  try {
+    localStorage.setItem(CAPTIONS_KEY, showCaptions ? "on" : "off");
+  } catch {
+    // storage unavailable
+  }
+  updateCaption();
+});
+
+// HTML caption layer over the stage, following the animation clock
+function updateCaption() {
+  const tl = result.timeline;
+  const t = localTime();
+  const current = tl?.animated ? [...tl.captions].reverse().find((c) => c.t <= t) : null;
+  el.caption.hidden = !showCaptions || !current;
+  if (current && el.caption.textContent !== current.text) el.caption.textContent = current.text;
 }
 
 // ---- import / export ----
@@ -685,9 +779,10 @@ $("btn-save").addEventListener("click", () => download(`${baseName()}.json`, str
 el.exportMenu.addEventListener("change", async () => {
   const kind = el.exportMenu.value;
   el.exportMenu.value = "";
-  if (kind === "svg-anim") return download(`${baseName()}.svg`, renderSvg(result, { embed: circuit }), "image/svg+xml");
+  const captions = showCaptions;
+  if (kind === "svg-anim") return download(`${baseName()}.svg`, renderSvg(result, { embed: circuit, captions }), "image/svg+xml");
   // still frames show the animation at the moment currently on screen
-  const svg = renderSvg(result, { embed: circuit, time: localTime() });
+  const svg = renderSvg(result, { embed: circuit, time: localTime(), captions });
   if (kind === "svg-still") return download(`${baseName()}.svg`, svg, "image/svg+xml");
   if (kind) download(`${baseName()}.png`, await svgToPng(svg, { background: kind === "png-white" ? "#fff" : null }), "image/png");
 });
@@ -713,7 +808,10 @@ async function svgToPng(svg, { scale = 2, background = null } = {}) {
     URL.revokeObjectURL(url);
   }
 }
-$("btn-new").addEventListener("click", () => commit(emptyCircuit()));
+$("btn-new").addEventListener("click", () => {
+  view = null;
+  commit(emptyCircuit());
+});
 $("btn-open").addEventListener("click", () => el.file.click());
 el.file.addEventListener("change", async () => {
   const f = el.file.files?.[0];
@@ -736,6 +834,7 @@ async function loadExample(name) {
 function loadText(text) {
   try {
     selection = null;
+    view = null;
     commit(parseCircuitText(text));
   } catch (e) {
     showMessages([`読み込めませんでした: ${e.message}`], []);
@@ -824,9 +923,15 @@ window.bb = {
       pins: d.pins(Object.fromEntries(Object.entries(d.params ?? {}).map(([k, s]) => [k, s.default]))).map((p) => p.name),
     })),
   /** SVG with the circuit embedded; { time: ms } gives a still frame. */
-  svg: (opts = {}) => renderSvg(result, { embed: circuit, ...opts }),
+  svg: (opts = {}) => renderSvg(result, { embed: circuit, captions: showCaptions, ...opts }),
   /** PNG (Blob) of the frame at { time } (default: now); background null = transparent. */
-  png: (opts = {}) => svgToPng(renderSvg(result, { time: opts.time ?? localTime() }), opts),
+  png: (opts = {}) => svgToPng(renderSvg(result, { time: opts.time ?? localTime(), captions: opts.captions ?? showCaptions }), opts),
+  /** Show the whole circuit / zoom (factor < 1 zooms in). */
+  fit: () => {
+    fitView();
+    applyView();
+  },
+  zoom: (factor) => zoomCenter(factor),
   ops: OP_NAMES,
   help: () =>
     "bb.get() / bb.load(json) / bb.apply([{op:'addPart',type:'led',at:'a10'}, ...]) / bb.check() / bb.inspect('a10') / bb.parts() / bb.undo() — 詳細は docs/OPS.md",

@@ -22,8 +22,8 @@ import { openCapture } from "./capture.mjs";
 
 const USAGE = `usage:
   bb.mjs check  <circuit.json>
-  bb.mjs render <circuit.json> [-o out.svg|out.png] [--time ms] [--transparent] [--scale n]
-  bb.mjs frames <circuit.json> -o <dir> [--fps 30] [--from ms] [--to ms] [--transparent] [--scale 1]
+  bb.mjs render <circuit.json> [-o out.svg|out.png] [--time ms] [--transparent] [--scale n] [--no-captions]
+  bb.mjs frames <circuit.json> -o <dir> [--fps 30] [--from ms] [--to ms] [--transparent] [--scale 1] [--no-captions]
   bb.mjs apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json]
   bb.mjs parts  [circuit.json]
   bb.mjs new    <circuit.json> [full|half|mini]`;
@@ -41,6 +41,7 @@ const timeArg = option("--time");
 const time = timeArg === undefined ? undefined : Number(timeArg);
 const out = option("-o");
 const transparent = flag("--transparent");
+const captions = !flag("--no-captions");
 const scale = option("--scale");
 const fps = Number(option("--fps") ?? 30);
 const from = option("--from");
@@ -62,11 +63,11 @@ switch (cmd) {
     const result = resolveCircuit(circuit);
     if (out?.endsWith(".png")) {
       // a PNG is one frame: the animated SVG paused at --time (default 0)
-      const cap = await openCapture(renderSvg(result), { scale: Number(scale ?? 2), transparent });
+      const cap = await openCapture(renderSvg(result, { captions }), { scale: Number(scale ?? 2), transparent });
       await cap.frame(time ?? 0, out);
       await cap.close();
     } else {
-      const svg = renderSvg(result, { embed: circuit, ...(time !== undefined ? { time } : {}) });
+      const svg = renderSvg(result, { embed: circuit, captions, ...(time !== undefined ? { time } : {}) });
       if (out) writeFileSync(out, svg);
       else process.stdout.write(svg);
     }
@@ -81,7 +82,7 @@ switch (cmd) {
     const end = Number(to ?? duration);
     const count = Math.max(1, Math.round(((end - start) / 1000) * fps));
     mkdirSync(out, { recursive: true });
-    const cap = await openCapture(renderSvg(result), { scale: Number(scale ?? 1), transparent });
+    const cap = await openCapture(renderSvg(result, { captions }), { scale: Number(scale ?? 1), transparent });
     for (let i = 0; i < count; i++) {
       await cap.frame(start + (i * 1000) / fps, join(out, `frame_${String(i).padStart(5, "0")}.png`));
     }
