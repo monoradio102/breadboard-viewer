@@ -14,6 +14,26 @@ Base URL: https://monoradio102.github.io/breadboard-viewer/
 curl -fsSLO https://monoradio102.github.io/breadboard-viewer/dist/bb.mjs
 ```
 
+## コードの実行環境からインターネットに出られない場合 (ChatGPT など)
+
+ChatGPT のコード実行環境 (コンテナ) では、`curl` や Python / Node.js からの通信は失敗します (DNS エラー)。`bb.mjs` は次のどちらかで入れます。
+
+1. ブラウジングツールで https://monoradio102.github.io/breadboard-viewer/dist/bb.mjs を開いてから、`container.download` でコンテナに保存する (例: `/mnt/data/bb.mjs`)
+2. ユーザーに `bb.mjs` をアップロードしてもらう (https://monoradio102.github.io/breadboard-viewer/dist/bb.mjs を保存したもの、または https://monoradio102.github.io/breadboard-viewer/skill/breadboard-viewer.zip の中のもの)
+
+入ったら、回路の JSON をファイルに書いて描画します。ブラウザ (Playwright) がなければ、PNG は Python の cairosvg か rsvg-convert で自動的に描きます (`pip install cairosvg` で入ります)。
+
+```bash
+node /mnt/data/bb.mjs check circuit.json
+node /mnt/data/bb.mjs render circuit.json -o circuit.png --time 1500   # PNG (ブラウザなしでも可)
+node /mnt/data/bb.mjs render circuit.json -o circuit.svg               # SVG (Node.js だけで動く)
+node /mnt/data/bb.mjs url circuit.json                                 # ユーザーがエディタで開けるリンク
+```
+
+- ブラウザなしの PNG では、影と、演出 SVG の中のアニメーションは描かれません (配線・部品・LED の状態などは同じに描かれます)
+- 日本語のフォントがない環境では、キャプションや部品の日本語が □ になります。そのときは `--no-captions` を付けるか、文字を英語にします
+- どうしても `bb.mjs` を入れられないときは、`url` と同じリンク (`https://monoradio102.github.io/breadboard-viewer/#data=<回路 JSON の Base64URL>`) をユーザーに渡します。開けば本家の描画で表示され、「画像を書き出す」で PNG / SVG を保存できます
+
 ## よく使う場合: Claude のスキルとしてインストール
 
 一度インストールすると、URL を渡さなくても、ブレッドボードの配線図を頼むだけで使われます。
@@ -78,7 +98,8 @@ node bb.mjs frames circuit.json -o asm --assembly --fps 30              # 組み
    トレイの位置や時間は `setAssembly` で指定し、`node bb.mjs plan circuit.json` で各手順の時刻・トレイの位置と重なりを確かめる
 
 SVG の出力と、parts / new / apply / check は Node.js 18 以上だけで動きます。
-PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx playwright install chromium`)。
+PNG と連番 PNG は、Playwright (`npm i playwright && npx playwright install chromium`) があればブラウザで描きます。
+ない環境では、Python の cairosvg (`pip install cairosvg`) か rsvg-convert で自動的に描きます (影と、演出 SVG の中のアニメーションは省かれます)。`--raster browser|cairosvg|rsvg` で選べます。
 インストール済みの Google Chrome を使うなら `--chrome`、ほかのブラウザなら `--browser-path <実行ファイル>` (このときブラウザのダウンロードは不要で、`npm i playwright-core` だけで動きます)。
 `render` / `frames` は `--viewbox "x y w h"` か `--focus U1,MIC1 [--margin 2]` で表示範囲を絞れます。`frames --jobs 4` で並列に書き出します。
 知らないオプションはエラーになります。

@@ -57,7 +57,7 @@ export function renderSvg(result, options = {}) {
         const map = maps[name];
         if (!map) return {};
         if (animate && track.keys.length) animEls.push({ selector: `#${svgId} [data-anim="${cssString(`${id}:${name}`)}"]`, track, map });
-        return { "data-anim": `${id}:${name}`, style: cssDecl(map(state)) };
+        return { "data-anim": `${id}:${name}`, ...stateAttrs(map(state), !animate) };
       },
     };
   };
@@ -158,6 +158,16 @@ function hash(s) {
   return (h >>> 0).toString(36);
 }
 
+// A state's CSS for an element. When it does not animate, a transform goes in the SVG
+// transform attribute instead: rasterizers without CSS transforms (cairosvg, rsvg) draw it too.
+function stateAttrs(props, still) {
+  if (!still || props.transform === undefined) return { style: cssDecl(props) };
+  const { transform, ...rest } = props;
+  return { transform: svgTransform(transform), ...(Object.keys(rest).length ? { style: cssDecl(rest) } : {}) };
+}
+// CSS transform functions -> SVG transform list: rotate(30deg) -> rotate(30), translate(1px,2px) -> translate(1 2)
+const svgTransform = (css) => String(css).replace(/(-?[\d.]+)(deg|px)/g, "$1").replace(/,\s*/g, " ");
+
 // ids and values from the circuit end up in the CSS (selectors, declarations); escape them so
 // they stay strings, and newlines so they cannot end one.
 const cssString = (s) => String(s).replace(/["\\]/g, "\\$&").replace(/[\n\r\f]/g, " ");
@@ -244,12 +254,13 @@ function drawPart(part, ctx, svgId) {
   return g(body, { ...attrs, ...shadow });
 }
 
-// drawIn: { offset } makes the wire paths drawable from 0 (offset 1) to fully drawn (offset 0)
+// drawIn: { offset } makes the wire paths drawable from 0 (offset 1) to fully drawn (offset 0).
+// With still: true a fully drawn wire gets no dashes (pathLength is not understood everywhere).
 function drawWire(w, ctx, drawIn = null) {
   const kit = w.kit ? kitInfo(w) : null;
   const color = kit ? KIT_WIRE_COLORS[kit.color] : WIRE_COLORS[w.color] ?? w.color ?? WIRE_COLORS.blue;
   const common = { d: wirePath(w), fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" };
-  const drawable = drawIn
+  const drawable = drawIn && !(drawIn.still && drawIn.offset <= 0)
     ? { pathLength: 1, class: "asm-path", style: `stroke-dasharray:1 1;stroke-dashoffset:${n(drawIn.offset)}` }
     : {};
   const path = (stroke, width, extra = {}) => tag("path", { ...common, stroke, "stroke-width": width, ...extra, ...drawable });
@@ -318,16 +329,9 @@ function drawLabel(part) {
   const spot = labelSpot(part);
   if (!spot) return "";
   const { x, y } = spot;
-  return text(x, y, part.id, {
-    "font-size": 0.5,
-    "font-weight": "bold",
-    fill: "#263238",
-    stroke: "#fff",
-    "stroke-width": 0.14,
-    "paint-order": "stroke",
-    "text-anchor": part.def.mount === "leads" ? "middle" : "start",
-    "dominant-baseline": "central",
-  });
+  const a = { "font-size": 0.5, "font-weight": "bold", "text-anchor": part.def.mount === "leads" ? "middle" : "start", "dominant-baseline": "central" };
+  // a white outline drawn under the text (paint-order is not understood by every renderer)
+  return text(x, y, part.id, { ...a, fill: "#fff", stroke: "#fff", "stroke-width": 0.14, "stroke-linejoin": "round" }) + text(x, y, part.id, { ...a, fill: "#263238" });
 }
 
 function drawProblems(result) {
@@ -451,7 +455,7 @@ function renderAssemblySvg(result, options) {
     const maps = animateDef?.({ params, values }) ?? {};
     // parts being assembled show their default state, not the animation's
     const state = { ...track.defaults, ...Object.fromEntries(track.rates.map((name) => [`${name}Angle`, 0])) };
-    return { state, values, anim: (name) => (maps[name] ? { "data-anim": `${id}:${name}`, style: cssDecl(maps[name](state)) } : {}) };
+    return { state, values, anim: (name) => (maps[name] ? { "data-anim": `${id}:${name}`, ...stateAttrs(maps[name](state), true) } : {}) };
   };
 
   const parts = result.parts.map((p) => {
@@ -462,7 +466,8 @@ function renderAssemblySvg(result, options) {
     const s = plan.stepOf.has(p.id) ? plan.start(plan.stepOf.get(p.id)) + plan.T.lead : 0;
     animated(p.id, rampTimes(s, plan.T.move), move);
     const inner = drawPart(p, ctxStatic(p.id, p.def.animate, p.params), svgId) + (labels ? drawLabel(p) : "") + drawTerminals(p);
-    return g(inner, { "data-asm": p.id, style: move(t) });
+    // a still frame places the part with an attribute, which every SVG renderer understands
+    return g(inner, still ? { "data-asm": p.id, transform: svgTransform(move(t).slice("transform:".length)) } : { "data-asm": p.id, style: move(t) });
   });
 
   const wires = (kit) => result.wires.filter((w) => !!w.kit === kit).map((w) => {
@@ -470,7 +475,7 @@ function renderAssemblySvg(result, options) {
     const s = plan.stepOf.has(w.id) ? plan.start(plan.stepOf.get(w.id)) + plan.T.lead : 0;
     animated(w.id, [0, s, s + 1], shown);
     animated(w.id, rampTimes(s, plan.T.draw), (tt) => `stroke-dashoffset:${r(1 - drawnAt(plan, w.id, tt))}`, `#${svgId} [data-asm="${cssString(w.id)}"] .asm-path`);
-    return g(drawWire(w, ctxStatic(w.id, wireAnimate), { offset: 1 - drawnAt(plan, w.id, t) }), { "data-asm": w.id, style: shown(t) });
+    return g(drawWire(w, ctxStatic(w.id, wireAnimate), { offset: 1 - drawnAt(plan, w.id, t), still }), { "data-asm": w.id, style: shown(t) });
   });
 
   const overlays = result.overlays.map((o) => {

@@ -10,6 +10,9 @@ Claude Code や Codex などのAIエージェントが、読み書きしやす�
 
 https://monoradio102.github.io/breadboard-viewer/llms.txt
 
+**ChatGPT で使うとき**は、ChatGPT のコード実行環境からはインターネットに出られないので、[dist/bb.mjs](https://monoradio102.github.io/breadboard-viewer/dist/bb.mjs) を保存してチャットにアップロードし、「この bb.mjs で描いて」と頼むのが確実です。
+ブラウザがない環境でも、PNG は Python の cairosvg で描きます (llms.txt に手順があります)。
+
 よく使う場合は、**Claude のスキル**としてインストールしておくと、URLを渡さなくても
 「ブレッドボードの配線図を描いて」と頼むだけで使われます (インストールのコマンドは llms.txt にあります)。
 claude.ai では [skill/breadboard-viewer.zip](skill/breadboard-viewer.zip) をスキルとしてアップロードします。

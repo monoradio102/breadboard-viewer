@@ -796,17 +796,11 @@ const inmp441 = {
       headerPins(pins) +
       // pin names inside the board (toward the centre), outlined so they stay readable
       pins
-        .map((p) =>
-          uprightText(p.x, p.y === 0 ? -0.55 : -w + 0.55, p.name, rot, {
-            "font-size": 0.36,
-            fill: "#fff",
-            stroke: "#3a1b58",
-            "stroke-width": 0.08,
-            "paint-order": "stroke",
-            "text-anchor": "middle",
-            "dominant-baseline": "central",
-          }),
-        )
+        .map((p) => {
+          const a = { "font-size": 0.36, "text-anchor": "middle", "dominant-baseline": "central" };
+          const y = p.y === 0 ? -0.55 : -w + 0.55;
+          return uprightText(p.x, y, p.name, rot, { ...a, fill: "#3a1b58", stroke: "#3a1b58", "stroke-width": 0.08 }) + uprightText(p.x, y, p.name, rot, { ...a, fill: "#fff" });
+        })
         .join("") +
       uprightText(1, -w / 2 + 0.95, "INMP441", rot, { "font-size": 0.3, fill: "#e0d0f0", "text-anchor": "middle", "dominant-baseline": "central" })
     );

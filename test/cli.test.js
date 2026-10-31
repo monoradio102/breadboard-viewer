@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { resolveCircuit } from "../src/circuit.js";
 import { coordsOf, layoutIssues, previewPlacement } from "../src/inspect.js";
 
@@ -97,4 +98,32 @@ test("url makes a #data= link that decodes back to the circuit", async () => {
   assert.deepEqual(circuitFromLink(out), original);
   assert.throws(() => circuitFromLink("#data=!!"), /Base64URL/);
   assert.equal(circuitFromLink("#other"), null);
+});
+
+test("still SVGs avoid what plain SVG renderers miss", async () => {
+  const { renderSvg } = await import("../src/render.js");
+  const r = resolveCircuit(JSON.parse(readFileSync(new URL("../examples/motor-servo.json", import.meta.url), "utf8")));
+  const still = renderSvg(r, { time: 1000 });
+  assert.ok(!/paint-order/.test(still));
+  assert.ok(!/transform:rotate/.test(still)); // states are SVG transform attributes
+  assert.match(still, /data-anim="S1:horn" transform="rotate\(/);
+  const flasher = resolveCircuit(JSON.parse(readFileSync(new URL("../examples/flasher-kit.json", import.meta.url), "utf8")));
+  const { planAssembly } = await import("../src/assembly.js");
+  const done = renderSvg(flasher, { assembly: true, time: planAssembly(flasher).duration - 1 }); // all steps done
+  assert.ok(!/pathLength/.test(done.replace(/<style>[\s\S]*?<\/style>/, ""))); // drawn wires: no dashes
+});
+
+const hasCairo = spawnSync("python3", ["-c", "import cairosvg"]).status === 0;
+test("PNG without a browser (--raster cairosvg)", { skip: hasCairo ? false : "cairosvg がないので省略" }, () => {
+  const out = new URL(`../.test-raster-${process.pid}.png`, import.meta.url);
+  try {
+    const r = bb("render", "examples/oled-hello.json", "-o", fileURLToPath(out), "--time", "5000", "--raster", "cairosvg", "--scale", "1");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /cairosvg/);
+    const png = readFileSync(out);
+    assert.equal(png.subarray(1, 4).toString(), "PNG");
+    assert.ok(png.length > 10000);
+  } finally {
+    rmSync(out, { force: true });
+  }
 });

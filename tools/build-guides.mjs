@@ -32,6 +32,26 @@ Base URL: ${BASE}
 curl -fsSLO ${BASE}dist/bb.mjs
 \`\`\`
 
+## コードの実行環境からインターネットに出られない場合 (ChatGPT など)
+
+ChatGPT のコード実行環境 (コンテナ) では、\`curl\` や Python / Node.js からの通信は失敗します (DNS エラー)。\`bb.mjs\` は次のどちらかで入れます。
+
+1. ブラウジングツールで ${BASE}dist/bb.mjs を開いてから、\`container.download\` でコンテナに保存する (例: \`/mnt/data/bb.mjs\`)
+2. ユーザーに \`bb.mjs\` をアップロードしてもらう (${BASE}dist/bb.mjs を保存したもの、または ${BASE}skill/${SKILL}.zip の中のもの)
+
+入ったら、回路の JSON をファイルに書いて描画します。ブラウザ (Playwright) がなければ、PNG は Python の cairosvg か rsvg-convert で自動的に描きます (\`pip install cairosvg\` で入ります)。
+
+\`\`\`bash
+node /mnt/data/bb.mjs check circuit.json
+node /mnt/data/bb.mjs render circuit.json -o circuit.png --time 1500   # PNG (ブラウザなしでも可)
+node /mnt/data/bb.mjs render circuit.json -o circuit.svg               # SVG (Node.js だけで動く)
+node /mnt/data/bb.mjs url circuit.json                                 # ユーザーがエディタで開けるリンク
+\`\`\`
+
+- ブラウザなしの PNG では、影と、演出 SVG の中のアニメーションは描かれません (配線・部品・LED の状態などは同じに描かれます)
+- 日本語のフォントがない環境では、キャプションや部品の日本語が □ になります。そのときは \`--no-captions\` を付けるか、文字を英語にします
+- どうしても \`bb.mjs\` を入れられないときは、\`url\` と同じリンク (\`${BASE}#data=<回路 JSON の Base64URL>\`) をユーザーに渡します。開けば本家の描画で表示され、「画像を書き出す」で PNG / SVG を保存できます
+
 ## よく使う場合: Claude のスキルとしてインストール
 
 一度インストールすると、URL を渡さなくても、ブレッドボードの配線図を頼むだけで使われます。

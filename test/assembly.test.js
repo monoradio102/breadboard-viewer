@@ -38,9 +38,9 @@ test("assembly SVG: animated keyframes, still frames per step, step captions", (
   const plan = planAssembly(r);
   const step0 = renderSvg(r, { assembly: true, time: plan.timeOfStep(0) });
   assert.doesNotMatch(step0, /@keyframes bb-[a-z0-9]+-a/);
-  assert.match(step0, /data-asm="R1" style="transform:translate\((?!0px,0px)/);
+  assert.match(step0, /data-asm="R1" transform="translate\((?!0 0\))/);
   const last = renderSvg(r, { assembly: true, time: plan.timeOfStep(plan.steps.length) });
-  assert.match(last, /data-asm="R1" style="transform:translate\(0px,0px\)"/);
+  assert.match(last, /data-asm="R1" transform="translate\(0 0\)"/);
   assert.match(last, /5\. c22 から − レールへ/);
 });
 

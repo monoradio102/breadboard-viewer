@@ -4,9 +4,20 @@
 // User SVG (part sprites / overlays) runs on its own clock inside <image>, so each one is opened
 // in a separate page with JavaScript disabled (its scripts never run, the network is blocked),
 // paused at t, captured as a transparent PNG and swapped into the frame.
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const SPRITE_PREFIX = "data:image/svg+xml;charset=utf-8,";
+
+// True when Playwright and its Chromium are installed (otherwise PNGs go through tools/raster.mjs).
+export function hasBrowser() {
+  try {
+    const path = loadPlaywright().chromium.executablePath();
+    return Boolean(path) && existsSync(path);
+  } catch {
+    return false;
+  }
+}
 
 // channel: "chrome" uses the installed Google Chrome; executablePath any Chromium-based browser.
 export async function launchBrowser({ channel, executablePath } = {}) {

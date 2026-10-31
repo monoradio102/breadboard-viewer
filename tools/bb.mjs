@@ -11,7 +11,8 @@ import { circuitLink, emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, s
 import { OpError, applyOps } from "../src/ops.js";
 import { createRegistry, fromJson } from "../src/parts/registry.js";
 import { renderSvg } from "../src/render.js";
-import { launchBrowser, openCapture } from "./capture.mjs";
+import { hasBrowser, launchBrowser, openCapture } from "./capture.mjs";
+import { NO_RASTERIZER, findRasterizer, rasterize } from "./raster.mjs";
 
 const VIEW = {
   "--viewbox": "value",
@@ -22,6 +23,7 @@ const VIEW = {
   "--transparent": "flag",
   "--scale": "value",
   "--no-captions": "flag",
+  "--raster": "value",
   "--assembly": "flag",
 };
 
@@ -30,14 +32,14 @@ const COMMANDS = {
   check: ["check  <circuit.json> [--json] [--layout]", 1, 1, { "--json": "flag", "--layout": "flag" }],
   render: [
     "render <circuit.json> [-o out.svg|out.png] [--time ms | --step k] [--assembly] [--transparent] [--scale n]\n" +
-      "              [--no-captions] [--viewbox \"x y w h\" | --focus ID,ID [--margin n]] [--chrome | --browser-path path]",
+      "              [--no-captions] [--viewbox \"x y w h\" | --focus ID,ID [--margin n]] [--chrome | --browser-path path | --raster rsvg|cairosvg]",
     1,
     1,
     { "-o": "value", "--time": "value", "--step": "value", ...VIEW },
   ],
   frames: [
     "frames <circuit.json> -o <dir> [--fps 30] [--from ms] [--to ms] [--jobs n] [--assembly] [--transparent] [--scale 1]\n" +
-      "              [--no-captions] [--viewbox \"x y w h\" | --focus ID,ID [--margin n]] [--chrome | --browser-path path]",
+      "              [--no-captions] [--viewbox \"x y w h\" | --focus ID,ID [--margin n]] [--chrome | --browser-path path | --raster rsvg|cairosvg]",
     1,
     1,
     { "-o": "value", "--fps": "value", "--from": "value", "--to": "value", "--jobs": "value", ...VIEW },
@@ -143,10 +145,16 @@ async function main() {
       const time = opts["--step"] !== undefined ? planAssembly(result).timeOfStep(num("--step")) : num("--time");
       const mode = { captions: !opts["--no-captions"], assembly, viewBox: viewBoxOf(result) };
       if (out?.endsWith(".png")) {
-        // a PNG is one frame: the animated SVG paused at --time (default 0)
-        const cap = await openCapture(renderSvg(result, mode), captureOptions(2));
-        await cap.frame(time ?? 0, out);
-        await cap.close();
+        const engine = pngEngine();
+        if (engine === "browser") {
+          // a PNG is one frame: the animated SVG paused at --time (default 0)
+          const cap = await openCapture(renderSvg(result, mode), captureOptions(2));
+          await cap.frame(time ?? 0, out);
+          await cap.close();
+        } else {
+          const { scale, transparent } = captureOptions(2);
+          rasterize(engine, [{ svg: renderSvg(result, { ...mode, time: time ?? 0 }), out }], { scale, transparent });
+        }
       } else {
         const svg = renderSvg(result, { embed: circuit, ...mode, ...(time !== undefined ? { time } : {}) });
         if (out) writeFileSync(out, svg);
@@ -166,20 +174,28 @@ async function main() {
       const count = Math.max(1, Math.round(((end - start) / 1000) * fps));
       const jobs = Math.max(1, Math.min(count, num("--jobs", Math.min(4, cpus().length))));
       mkdirSync(out, { recursive: true });
-      const svg = renderSvg(result, { captions: !opts["--no-captions"], assembly, viewBox: viewBoxOf(result) });
+      const mode = { captions: !opts["--no-captions"], assembly, viewBox: viewBoxOf(result) };
+      const frameFile = (i) => join(out, `frame_${String(i).padStart(5, "0")}.png`);
+      const engine = pngEngine();
+      if (engine !== "browser") {
+        const { scale, transparent } = captureOptions(1);
+        const jobs = Array.from({ length: count }, (_, i) => ({ svg: renderSvg(result, { ...mode, time: start + (i * 1000) / fps }), out: frameFile(i) }));
+        rasterize(engine, jobs, { scale, transparent });
+        printFrames(count, fps, start, end, 1, out);
+        break;
+      }
+      const svg = renderSvg(result, mode);
       // one browser, several capture pages in parallel, each taking every jobs-th frame
       const browser = await launchBrowser(captureOptions(1));
       const caps = await Promise.all(Array.from({ length: jobs }, () => openCapture(svg, { ...captureOptions(1), browser })));
       await Promise.all(
         caps.map(async (cap, j) => {
-          for (let i = j; i < count; i += jobs) await cap.frame(start + (i * 1000) / fps, join(out, `frame_${String(i).padStart(5, "0")}.png`));
+          for (let i = j; i < count; i += jobs) await cap.frame(start + (i * 1000) / fps, frameFile(i));
         }),
       );
       await Promise.all(caps.map((c) => c.close()));
       await browser.close();
-      console.log(`${count} frames (${fps} fps, ${start}–${end} ms, ${jobs} jobs) -> ${out}/frame_%05d.png`);
-      console.log(`mp4: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -pix_fmt yuv420p -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" out.mp4`);
-      console.log(`gif: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -vf "split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse" out.gif`);
+      printFrames(count, fps, start, end, jobs, out);
       break;
     }
     case "apply": {
@@ -342,6 +358,25 @@ function viewBoxOf(result) {
     else fail(`--focus: "${id}" という部品・配線・穴はありません`);
   }
   return [box.x0 - margin, box.y0 - margin, box.x1 - box.x0 + 2 * margin, box.y1 - box.y0 + 2 * margin];
+}
+
+function printFrames(count, fps, start, end, jobs, out) {
+  console.log(`${count} frames (${fps} fps, ${start}–${end} ms, ${jobs} jobs) -> ${out}/frame_%05d.png`);
+  console.log(`mp4: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -pix_fmt yuv420p -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" out.mp4`);
+  console.log(`gif: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -vf "split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse" out.gif`);
+}
+
+// What makes the PNGs: the browser (Playwright) when it is there, else rsvg-convert or Python's
+// cairosvg (--raster browser|rsvg|cairosvg to choose). Without a browser, the CSS / SMIL inside
+// overlay SVGs stays at its first frame and the soft shadows are left out.
+function pngEngine() {
+  const want = opts["--raster"] ?? "auto";
+  if (!["auto", "browser", "rsvg", "cairosvg"].includes(want)) fail("--raster は auto / browser / rsvg / cairosvg です");
+  if (want === "browser" || opts["--chrome"] || opts["--browser-path"] || (want === "auto" && hasBrowser())) return "browser";
+  const engine = findRasterizer(want);
+  if (!engine) fail(want === "auto" ? NO_RASTERIZER : `${want} が見つかりません。\n${NO_RASTERIZER}`, 1);
+  console.error(`PNG: ${engine.split(":")[0]} で描画します (ブラウザなし。演出 SVG のアニメーションと影は描かれません)`);
+  return engine;
 }
 
 function captureOptions(defaultScale) {
