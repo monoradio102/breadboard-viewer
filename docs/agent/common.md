@@ -72,6 +72,7 @@ Playwright がないか、その Chromium が起動できない環境では、�
 
 - 回路ファイルの形式: {{FORMAT}} (穴、部品、配線、独自部品、アニメーション、演出 SVG)
 - 編集操作 (ops): {{OPS}} (addPart, move, rotate, setPin, update, remove, addWire, addOverlay, animate, setAnimation)
+- 内蔵部品の一覧 (type、ピン名とピンの位置、パラメータ): {{BASE}}docs/PARTS.md (`parts` コマンドと同じ内容)
 
 ## サンプル回路 (JSON)
 

@@ -17,7 +17,7 @@ AI は、座標も絵も扱いません。部品をどの穴に挿すかと、�
 - **編集は操作 (op) の列**: まとめて送って、1つでも失敗すれば何も変わりません。エラーには理由と直し方が入ります (例: 「穴 T-30 はこのボードにありません。…近い穴: T-29」)
 - **AI が自分で確かめられる**: `check` がネットリスト (どのピン同士がつながっているか) と、ショート・抵抗なしの LED・電圧違いなどの注意を、テキストか JSON で返します。`check --layout` は、部品の重なりや隠れた配線などの見た目の問題を文字で返します
 - **同じ JSON からは、いつも同じ絵**: SVG / PNG / アニメーション / 組み立て手順の画像を、依存のない1ファイルの CLI (`bb.mjs`) で書き出します
-- **手引きつき**: [llms.txt](https://monoradio102.github.io/breadboard-viewer/llms.txt) か Claude のスキルを渡すだけで、Claude Code・Codex・ChatGPT が使い方を覚えます
+- **手引きつき**: [llms.txt](https://monoradio102.github.io/breadboard-viewer/llms.txt) か Claude のスキルを渡すだけで、Claude Code や Codex が使い方を覚えます
 
 ## AI に使わせる
 
@@ -26,9 +26,7 @@ AI は、座標も絵も扱いません。部品をどの穴に挿すかと、�
 
 https://monoradio102.github.io/breadboard-viewer/llms.txt
 
-**ChatGPT で使うとき**は、ChatGPT のコード実行環境からはこのサイトにも GitHub にも届きません。エディタ右上の「bb.mjs」(または [dist/bb.mjs](https://monoradio102.github.io/breadboard-viewer/dist/bb.mjs) を保存) でダウンロードしたファイルをチャットに添付し、llms.txt の URL と一緒に「この bb.mjs で描いて」と頼むのが確実です。
-(GitHub 連携で読ませることもできますが、大きなファイルを書き写すことになるので時間がかかります。)
-PNG は、コンテナにある Chromium を自動で使って描きます (Playwright がなくても可。llms.txt に手順があります)。
+**ChatGPT は現時点では非対応です。** コード実行環境からこのサイトにも GitHub にも届かず、ツールを動かして回路の検証や描画結果の確認ができないためです。
 
 よく使う場合は、**Claude のスキル**としてインストールしておくと、URLを渡さなくても
 「ブレッドボードの配線図を描いて」と頼むだけで使われます (インストールのコマンドは llms.txt にあります)。

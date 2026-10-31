@@ -1,4 +1,4 @@
-// PNG without Playwright, for sandboxes such as ChatGPT's code container or CI: still SVG frames
+// PNG without Playwright (sandboxes, CI, a machine with only Chrome installed): still SVG frames
 // drawn by an installed Chromium / Chrome in headless mode (same look as the editor), or by
 // rsvg-convert or Python's cairosvg (no shadows). Playwright stays the first choice where it is
 // installed: only it plays the CSS / SMIL inside overlay SVGs at the right moment.

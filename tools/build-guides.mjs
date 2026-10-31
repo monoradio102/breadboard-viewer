@@ -3,9 +3,11 @@
 //   llms.txt                         for agents given only the site URL
 //   skill/breadboard-viewer/         Agent Skill: SKILL.md + bb.mjs + FORMAT.md + OPS.md
 //   skill/breadboard-viewer.zip      the same folder, for uploading as a skill
-import { createHash } from "node:crypto";
+//   docs/PARTS.md                    the built-in parts (what `bb.mjs parts` prints), for agents without a shell
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { deflateRawSync } from "node:zlib";
+import { partSpec } from "../src/inspect.js";
+import { createRegistry } from "../src/parts/registry.js";
 
 const BASE = "https://monoradio102.github.io/breadboard-viewer/";
 const SKILL = "breadboard-viewer";
@@ -14,10 +16,6 @@ const read = (path) => readFileSync(new URL(path, root), "utf8");
 const fill = (text, vars) => text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k]);
 
 const common = read("docs/agent/common.md");
-// lets an agent that copied bb.mjs by hand check the copy (also written next to it)
-const bbBytes = readFileSync(new URL("dist/bb.mjs", root));
-const BB_SHA256 = createHash("sha256").update(bbBytes).digest("hex");
-writeFileSync(new URL("dist/bb.mjs.sha256", root), `${BB_SHA256}  bb.mjs\n`);
 const INSTALL = `d=~/.claude/skills/${SKILL}; mkdir -p "$d"; for f in SKILL.md bb.mjs FORMAT.md OPS.md; do curl -fsSL "${BASE}skill/${SKILL}/$f" -o "$d/$f"; done`;
 
 // ---- llms.txt ----
@@ -39,36 +37,10 @@ curl -fsSLO ${BASE}dist/bb.mjs
 
 ## コードの実行環境からインターネットに出られない場合 (ChatGPT など)
 
-ChatGPT のコード実行環境 (コンテナ) からは、\`curl\` などでこのサイトにも GitHub にも届きません (DNS エラー)。\`container.download\` でも取れないことがあります。
-**1回試して取れなければ、すぐにユーザーに \`bb.mjs\` の添付を頼んでください。** これが一番速く確実です。頼み方の例:
-
-> 描画には Breadboard Viewer のツール (bb.mjs、約${Math.round(bbBytes.length / 1024)}KB) が必要です。${BASE} の右上「bb.mjs」(または ${BASE}dist/bb.mjs を保存) からダウンロードして、このチャットに添付してください。
-
-添付されたファイルは \`/mnt/data/bb.mjs\` にあります。添付を待つあいだや、ユーザーが添付できないときは、\`url\` と同じリンク (下記) を先に渡します。
-
-ほかの方法 (時間がかかるので、ユーザーが添付できないときだけ):
-
-- **GitHub 連携があれば**、リポジトリ \`monoradio102/breadboard-viewer\` の \`dist/bb.mjs\` (依存なしの1ファイル) を読んで、コンテナにファイルとして書き出す。
-  大きいので、途中で切れたり書き損じたりしやすい。書き出したら \`sha256sum bb.mjs\` が \`${BB_SHA256}\` と一致するか確かめる (一致しないものは使わない)
-- \`src/\` 以下 (render.js, circuit.js と、それが import するファイル) をそのまま置けば、描画エンジンを直接呼べる:
-  \`import { resolveCircuit } from "./src/circuit.js"; import { renderSvg } from "./src/render.js"; renderSvg(resolveCircuit(circuit), { time: 1500 })\` (SVG 文字列が返る)
-
-**本家の描画エンジンを動かせないときに、自作の図 (手書きの SVG、matplotlib など) を配線図として出さないでください。** 見た目もピンの位置も本物と違うものになります。その場合は \`url\` のリンクを渡します。
-
-入ったら、回路の JSON をファイルに書いて描画します。
-
-\`\`\`bash
-node /mnt/data/bb.mjs check circuit.json
-node /mnt/data/bb.mjs render circuit.json -o circuit.png --time 1500   # PNG
-node /mnt/data/bb.mjs render circuit.json -o circuit.svg               # SVG (Node.js だけで動く)
-node /mnt/data/bb.mjs url circuit.json                                 # ユーザーがエディタで開けるリンク
-\`\`\`
-
-PNG は、使えるものを自動で選んで描きます: Playwright → インストール済みの Chromium / Chrome (\`chromium\` などが PATH にあればヘッドレスで実行。ChatGPT のコンテナには \`/usr/bin/chromium\` があります) → rsvg-convert → Python の cairosvg。
-Chromium で描けば、エディタと同じ見た目になります (rsvg-convert / cairosvg では影が省かれます)。\`--raster chrome --browser-path /usr/bin/chromium\` のように指定もできます。
-
-どうしても描けないときは、\`url\` と同じリンク (\`${BASE}#data=<回路 JSON の Base64URL>\`) をユーザーに渡します。開けば本家の描画で表示され、「画像を書き出す」で PNG / SVG を保存できます。
-リンクは、回路の JSON を UTF-8 のまま Base64URL (\`+\` → \`-\`、\`/\` → \`_\`、末尾の \`=\` なし) にしたものです。bb.mjs がなくても、Python などで作れます。
+このツールは、\`bb.mjs\` で回路を検証 (\`check\`) し、描画結果を確かめながら仕上げることを前提にしています。
+\`bb.mjs\` を取得できない環境 (ChatGPT のコード実行環境など、このサイトにも GitHub にも届かないもの) には対応していません。
+その場合はユーザーにそう伝え、シェルからインターネットに出られる環境 (Claude Code、Codex など) で使うよう案内してください。
+**自作の図 (手書きの SVG、matplotlib など) を、このツールの配線図として出さないでください。** 見た目もピンの位置も本物と違うものになります。
 
 ## よく使う場合: Claude のスキルとしてインストール
 
@@ -98,6 +70,38 @@ bb.help()
 
 ${fill(common, { CLI: "node bb.mjs", BASE, EDITOR: BASE, FORMAT: `${BASE}docs/FORMAT.md`, OPS: `${BASE}docs/OPS.md` })}`;
 writeFileSync(new URL("llms.txt", root), llms);
+
+// ---- docs/PARTS.md ----
+const num = (v) => String(Math.round(v * 100) / 100);
+const partsMd = [
+  "# 内蔵部品の一覧",
+  "",
+  "(`npm run build` で src/parts/ から生成しています。`node bb.mjs parts` と同じ内容です)",
+  "",
+  "- **ピン**: 1番ピンからの相対位置 (ピッチ単位、x は右、y は下)。`at` に1番ピンの穴を書くと、ほかのピンはこの位置の穴に入ります (`rot` で回転)",
+  "- **足を曲げられる部品** (抵抗、LED など) は `pins` で各ピンの穴を個別に書けます",
+  "- **中でつながっているピン**: 部品の内部で常に導通しているピンの組",
+  "- **本体の範囲**: 1番ピンから見た描画範囲 [x0, y0, x1, y1]",
+  "",
+  ...[...createRegistry([]).parts.values()].flatMap((def) => {
+    const spec = partSpec(def);
+    const params = Object.entries(spec.params).map(([k, p]) => `\`${k}\` (既定 ${JSON.stringify(p.default)}${p.description ? `: ${p.description}` : ""})`);
+    const states = Object.entries(spec.states).map(([k, st]) => `\`${k}\` (${st.type}${st.description ? `: ${st.description}` : ""})`);
+    return [
+      `## \`${def.type}\` ${def.name}`,
+      "",
+      ...(def.description ? [def.description, ""] : []),
+      `- ${def.mount === "leads" ? "足を曲げられる部品" : "足を曲げられない部品"} (${def.category ?? ""})`,
+      `- ピン: ${spec.pins.map((p) => `\`${p.name}\` (${num(p.x)}, ${num(p.y)})${p.insert === false ? " 端子" : ""}`).join(", ")}`,
+      ...(spec.internal.length ? [`- 中でつながっているピン: ${spec.internal.map((g) => g.join("=")).join(", ")}`] : []),
+      ...(params.length ? [`- パラメータ: ${params.join(", ")}`] : []),
+      ...(states.length ? [`- 状態 (アニメーション): ${states.join(", ")}`] : []),
+      ...(spec.extent ? [`- 本体の範囲: [${spec.extent.map(num).join(", ")}]`] : []),
+      "",
+    ];
+  }),
+].join("\n");
+writeFileSync(new URL("docs/PARTS.md", root), partsMd);
 
 // ---- skill ----
 const skillDir = new URL(`skill/${SKILL}/`, root);
