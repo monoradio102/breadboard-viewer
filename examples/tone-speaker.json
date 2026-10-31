@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "title": "スピーカーで音を鳴らす (tone)",
+  "board": "half",
+  "parts": [
+    { "id": "U1", "type": "nano", "at": "h3" },
+    { "id": "R1", "type": "resistor", "value": "100", "pins": ["j13", "j18"] },
+    { "id": "SP1", "type": "speaker", "pos": [24, 21.5], "rot": 180 }
+  ],
+  "wires": [
+    { "id": "W1", "from": "j6", "to": "B-6", "color": "black", "note": "GND" },
+    { "id": "OUT", "from": "i18", "to": "SP1.+", "color": "yellow", "bend": -0.2 },
+    { "id": "W2", "from": "SP1.-", "to": "B-21", "color": "black", "bend": 0.2 }
+  ],
+  "animation": {
+    "duration": 2000,
+    "loop": true,
+    "tracks": [
+      {
+        "target": "SP1",
+        "keys": [
+          {
+            "t": 0,
+            "on": true
+          },
+          {
+            "t": 1500,
+            "on": false
+          }
+        ]
+      },
+      {
+        "target": "OUT",
+        "keys": [
+          {
+            "t": 0,
+            "flow": true
+          },
+          {
+            "t": 1500,
+            "flow": false
+          }
+        ]
+      }
+    ],
+    "captions": [
+      {
+        "t": 0,
+        "text": "tone(8, 440) で D8 から 440Hz の矩形波"
+      },
+      {
+        "t": 1500,
+        "text": "noTone(8) で停止"
+      }
+    ]
+  }
+}

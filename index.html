@@ -18,12 +18,19 @@
           <option value="pico-button">Pico でボタン入力とLED</option>
           <option value="motor-servo">モーターとサーボ</option>
           <option value="distance-alarm">HC-SR04 で距離アラーム</option>
+          <option value="tone-speaker">スピーカーで音を鳴らす</option>
           <option value="oled-custom-part">カスタム部品 (OLED)</option>
         </select>
         <button id="btn-new" type="button">新規</button>
         <button id="btn-open" type="button" title="JSON または このアプリで書き出したSVG">開く</button>
         <button id="btn-save" type="button" title="回路をJSONで保存">JSON保存</button>
-        <button id="btn-svg" type="button" title="回路データ入りのSVGを保存">SVG書き出し</button>
+        <select id="export" aria-label="画像を書き出す" title="画像を書き出す (SVGには回路データも入ります)">
+          <option value="">画像を書き出す…</option>
+          <option value="png">PNG (透過, この瞬間)</option>
+          <option value="png-white">PNG (白背景, この瞬間)</option>
+          <option value="svg-still">SVG (静止画, この瞬間)</option>
+          <option value="svg-anim">SVG (アニメーション)</option>
+        </select>
         <button id="btn-share" type="button" class="primary" title="回路をURLに埋め込んでコピー">共有URL</button>
         <input id="file" type="file" accept=".json,.svg,application/json,image/svg+xml" hidden />
       </div>
@@ -47,6 +54,8 @@
             <button id="btn-play" type="button" title="再生 / 一時停止 (Space)">⏸</button>
             <input id="anim-time" type="range" min="0" max="1000" value="0" aria-label="アニメーションの時刻" />
             <span id="anim-label" class="anim-label">0.0s</span>
+            <label title="アニメーション1周の長さ (秒)">長さ <input id="anim-duration" type="number" min="0.1" step="0.1" value="2" />秒</label>
+            <label title="繰り返し再生"><input id="anim-loop" type="checkbox" checked />ループ</label>
           </span>
           <span class="spacer"></span>
           <button id="btn-zoom-out" type="button" title="縮小">−</button>

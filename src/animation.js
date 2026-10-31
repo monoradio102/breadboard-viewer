@@ -176,3 +176,9 @@ export function captionTrack(captions) {
     captions.map((c, i) => ({ t: c.t, caption: i })),
   );
 }
+
+// State at time t (ms) within one loop, including rate angles, for still frames.
+export function stateAtTime(track, t) {
+  if (!(t > 0)) return initialState(track);
+  return sampleTrack(track, t).at(-1).s;
+}

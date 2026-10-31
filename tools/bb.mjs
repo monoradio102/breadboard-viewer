@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // CLI for humans and AI agents.
 //   node tools/bb.mjs check  <circuit.json>                      validate and print the netlist
-//   node tools/bb.mjs render <circuit.json> [-o out.svg|out.png] render (PNG needs Playwright)
+//   node tools/bb.mjs render <circuit.json> [-o out.svg|out.png] [--time ms] [--transparent]
+//                                                                render (PNG needs Playwright); --time draws a
+//                                                                still frame of the animation
 //   node tools/bb.mjs apply  <circuit.json> <ops.json | '<json>'> [-o out.json]
 //                                                                apply edit ops (docs/OPS.md);
 //                                                                writes back to circuit.json unless -o
@@ -18,7 +20,7 @@ import { renderSvg } from "../src/render.js";
 
 const USAGE = `usage:
   bb.mjs check  <circuit.json>
-  bb.mjs render <circuit.json> [-o out.svg|out.png]
+  bb.mjs render <circuit.json> [-o out.svg|out.png] [--time ms] [--transparent]
   bb.mjs apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json]
   bb.mjs parts  [circuit.json]
   bb.mjs new    <circuit.json> [full|half|mini]
@@ -29,6 +31,10 @@ const DEFAULT_BASE = "https://monoradio102.github.io/breadboard-viewer/";
 const args = process.argv.slice(2);
 const baseIndex = args.indexOf("--base");
 const base = baseIndex >= 0 ? args.splice(baseIndex, 2)[1] : DEFAULT_BASE;
+const timeIndex = args.indexOf("--time");
+const time = timeIndex >= 0 ? Number(args.splice(timeIndex, 2)[1]) : undefined;
+const transparentIndex = args.indexOf("--transparent");
+const transparent = transparentIndex >= 0 && Boolean(args.splice(transparentIndex, 1));
 const outIndex = args.indexOf("-o");
 const out = outIndex >= 0 ? args.splice(outIndex, 2)[1] : null;
 const [cmd, file, extra] = args;
@@ -46,9 +52,11 @@ switch (cmd) {
     need(file);
     const circuit = readCircuit(file);
     const result = resolveCircuit(circuit);
-    const svg = renderSvg(result, { embed: circuit });
+    // a PNG cannot animate, so it is always a still frame (time 0 unless --time)
+    const still = time !== undefined || out?.endsWith(".png");
+    const svg = renderSvg(result, { embed: circuit, ...(still ? { time: time ?? 0 } : {}) });
     if (!out) process.stdout.write(svg);
-    else if (out.endsWith(".png")) await toPng(svg, out);
+    else if (out.endsWith(".png")) await toPng(svg, out, transparent);
     else writeFileSync(out, svg);
     for (const e of result.errors) console.error(`ERROR: ${e}`);
     break;
@@ -101,12 +109,12 @@ function need(ok) {
   process.exit(2);
 }
 
-async function toPng(svg, path) {
+async function toPng(svg, path, transparent) {
   // require() also finds a globally installed Playwright (NODE_PATH), which import() does not.
   const { chromium } = createRequire(import.meta.url)("playwright");
   const browser = await chromium.launch();
   const page = await browser.newPage({ deviceScaleFactor: 2 });
-  await page.setContent(`<body style="margin:0;background:#fff">${svg}</body>`);
-  await page.locator("svg").screenshot({ path });
+  await page.setContent(`<body style="margin:0;background:${transparent ? "transparent" : "#fff"}">${svg}</body>`);
+  await page.locator("svg").screenshot({ path, omitBackground: transparent });
   await browser.close();
 }

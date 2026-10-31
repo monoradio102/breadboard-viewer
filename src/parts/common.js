@@ -98,3 +98,8 @@ export function bandColors(ohms) {
   if (m === undefined) return null;
   return [COLORS[d1], COLORS[d2], m, GOLD];
 }
+
+// Text that stays readable when the part is rotated 180° (labels on off-board parts).
+export function uprightText(x, y, s, rot, attrs) {
+  return text(x, y, s, rot === 180 ? { ...attrs, transform: `rotate(180 ${n(x)} ${n(y)})` } : attrs);
+}

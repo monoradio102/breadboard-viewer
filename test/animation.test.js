@@ -92,3 +92,15 @@ test("animate / setAnimation ops, and tracks follow renames and removals", () =>
   assert.equal(circuit.animation, undefined);
   assert.throws(() => applyOps(circuit, [{ op: "animate", target: "NOPE", keys: [] }]), /NOPE/);
 });
+
+test("still frames: time draws the state at that moment without CSS animation", () => {
+  const r = resolveCircuit(load("motor-servo"));
+  const svg = renderSvg(r, { time: 1000 });
+  assert.doesNotMatch(svg, /<style>/);
+  // servo: 0° -> 180° over 2000 ms, so 90° at 1000 ms
+  assert.match(svg, /data-anim="S1:horn" style="transform:rotate\(-90deg\)"/);
+  // motor: ramps 0 -> 150 rpm over 600 ms, then holds; the angle is integrated
+  const m = /data-anim="M1:rotor" style="transform:rotate\(([\d.]+)deg\)"/.exec(svg);
+  assert.ok(m && Number(m[1]) > 500, `motor angle at 1 s: ${m?.[1]}`);
+  assert.match(renderSvg(r, { time: 3500 }), /data-anim="caption:2" style="opacity:1"/);
+});

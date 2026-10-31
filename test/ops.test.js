@@ -74,11 +74,47 @@ test("wires: add, update ends, remove", () => {
   ]);
   assert.equal(ids[0], "W3");
   assert.deepEqual(circuit.wires.map((w) => `${w.id}:${w.from}-${w.to}`), ["W2:a4-T-4", "W3:j3-B-4"]);
-  assert.throws(() => applyOps(circuit, [{ op: "addWire", from: "a1", to: "zz" }]), /ボードにない穴/);
+  assert.throws(() => applyOps(circuit, [{ op: "addWire", from: "a1", to: "zz" }]), /"zz" はこのボードの穴でも/);
 });
 
 test("a failing op aborts the whole batch and reports its index", () => {
   const before = load("blink-nano");
   assert.throws(() => applyOps(before, [{ op: "remove", id: "R1" }, { op: "remove", id: "NOPE" }]), /#2 remove/);
   assert.equal(before.parts.length, 3);
+});
+
+test("off-board parts: pos placement, pin-reference wires, nets", () => {
+  const { circuit } = applyOps({ board: "half" }, [
+    { op: "addPart", type: "nano", at: "h3" },
+    { op: "addPart", type: "servo", pos: [40, -6] },
+    { op: "addWire", from: "j14", to: "SV1.SIG", color: "orange" },
+    { op: "addWire", from: "SV1.GND", to: "B-3", color: "black" },
+    { op: "addWire", from: "j6", to: "B-4", color: "black" },
+  ]);
+  const r = resolveCircuit(circuit);
+  assert.deepEqual(r.errors, []);
+  const sig = r.nets.find((n) => n.pins.some((p) => p.ref === "SV1.SIG"));
+  assert.deepEqual(sig.pins.map((p) => p.ref).sort(), ["SV1.SIG", "U1.D9"]);
+  const gnd = r.nets.find((n) => n.pins.some((p) => p.ref === "SV1.GND"));
+  assert.ok(gnd.pins.some((p) => p.ref === "U1.GND"));
+  assert.deepEqual(r.wires[0].b, { x: 42, y: -6 }); // SIG is the third pin
+  assert.throws(() => applyOps(circuit, [{ op: "addWire", from: "a1", to: "SV1.NOPE" }]), /ピン "NOPE" はありません/);
+});
+
+test("off-board parts move back onto the board and take their wires along on rename / remove", () => {
+  let { circuit } = applyOps({ board: "half" }, [
+    { op: "addPart", type: "led", pos: [3, -5] },
+    { op: "addWire", from: "D1.A", to: "a5" },
+    { op: "animate", target: "W1", keys: [{ t: 0, flow: true }] },
+  ]);
+  circuit = applyOps(circuit, [{ op: "update", id: "D1", set: { id: "LED" } }]).circuit;
+  assert.equal(circuit.wires[0].from, "LED.A");
+  const onBoard = applyOps(circuit, [{ op: "move", id: "LED", to: "c10" }]).circuit;
+  assert.deepEqual(onBoard.parts[0].pins, ["c10", "c11"]);
+  assert.equal(onBoard.parts[0].pos, undefined);
+  const back = applyOps(onBoard, [{ op: "move", id: "LED", pos: [1, 1] }]).circuit;
+  assert.deepEqual(back.parts[0], { id: "LED", type: "led", pos: [1, 1] });
+  const removed = applyOps(circuit, [{ op: "remove", id: "LED" }]).circuit;
+  assert.deepEqual(removed.wires, []);
+  assert.deepEqual(removed.animation.tracks, []);
 });

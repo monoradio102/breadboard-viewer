@@ -5,6 +5,8 @@
 // An op is a JSON object, e.g.
 //   { "op": "addPart", "type": "led", "pins": ["a1", "a2"], "color": "green" }
 //   { "op": "move", "id": "R1", "to": "a10" }
+//   { "op": "move", "id": "SV1", "pos": [40, -8] }            (off the board)
+//   { "op": "addWire", "from": "j14", "to": "SV1.SIG" }       (wire to a pin of an off-board part)
 //   { "op": "rotate", "id": "U1" }
 //   { "op": "setPin", "id": "R1", "pin": "2", "to": "a14" }
 //   { "op": "update", "id": "R1", "set": { "value": "1k" } }
@@ -28,6 +30,7 @@ const ID_PREFIX = {
   resistor: "R", led: "D", diode: "D", capacitor: "C", electrolytic: "C", cds: "CDS", transistor: "Q",
   regulator: "U", button: "SW", trimmer: "VR", buzzer: "BZ", header: "J", motor: "M", servo: "SV", seg7: "DS",
   dht11: "U", hcsr04: "U", relay: "K", rgbled: "D", pot: "VR", lcd1602: "LCD",
+  speaker: "SP", battery: "BT",
 };
 
 // Gives every wire an id, so wires can be addressed by ops.
@@ -71,7 +74,9 @@ const OPS = {
     const def = registryFor(c).get(rest.type) ?? fail(`未知の部品タイプ "${rest.type}"`);
     const inst = { id: id ?? nextId(c, ID_PREFIX[def.type] ?? def.json?.prefix ?? defaultPrefix(def)), ...rest };
     if (findPart(c, inst.id, false)) fail(`ID "${inst.id}" は既に使われています`);
-    if (inst.at === undefined && inst.pins === undefined) {
+    if (inst.pos !== undefined) {
+      checkPos(inst.pos);
+    } else if (inst.at === undefined && inst.pins === undefined) {
       const spot = findFreeSpot(resolveCircuit(c), def, rest) ?? fail(`${def.name} を置ける空きが見つかりません`);
       if (def.mount === "leads") inst.pins = spot.pins;
       else inst.at = spot.at;
@@ -84,12 +89,21 @@ const OPS = {
     return { circuit: { ...c, parts: [...c.parts, inst] }, id: inst.id };
   },
 
-  move(c, { id, to }) {
+  // to: a hole (on the board), or pos: [x, y] (free placement off the board)
+  move(c, { id, to, pos }) {
     const { inst, index, def } = partInfo(c, id);
+    if (pos !== undefined) {
+      checkPos(pos);
+      const { at, pins, ...rest } = inst;
+      return { circuit: replacePart(c, index, { ...rest, pos }) };
+    }
     const board = boardOf(c);
     if (!board.has(to)) fail(`"${to}" はこのボードにない穴です`);
     let next;
-    if (inst.pins !== undefined) {
+    if (inst.pos !== undefined) {
+      const { pos: _, ...rest } = inst;
+      next = def.mount === "leads" ? { ...withoutRot(rest), pins: layoutHoles(c, def, inst, to, inst.rot ?? 0) } : { ...rest, at: to };
+    } else if (inst.pins !== undefined) {
       const holes = pinHoles(inst, def);
       const from = board.pos(holes[0]) ?? fail(`${id} のピンの位置が不正です`);
       const target = board.pos(to);
@@ -128,6 +142,7 @@ const OPS = {
   setPin(c, { id, pin, to }) {
     const { inst, index, def } = partInfo(c, id);
     if (def.mount !== "leads") fail(`${id} は足を曲げられない部品です (move を使ってください)`);
+    if (inst.pos !== undefined) fail(`${id} はボード外に置いた部品です (move の to で穴に挿してから動かしてください)`);
     if (!boardOf(c).has(to)) fail(`"${to}" はこのボードにない穴です`);
     const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
     const i = names.indexOf(String(pin));
@@ -151,19 +166,28 @@ const OPS = {
     if ("type" in set) fail("type は変更できません (remove して addPart してください)");
     const next = clean({ ...inst, ...set });
     if (next.id !== id && findPart(c, next.id, false)) fail(`ID "${next.id}" は既に使われています`);
-    return { circuit: retarget(replacePart(c, index, next), id, next.id), id: next.id };
+    let out = retarget(replacePart(c, index, next), id, next.id);
+    if (next.id !== id) {
+      // wires attached to the renamed part's pins follow it
+      const rename = (ref) => (isPinOf(ref, id) ? `${next.id}${String(ref).slice(id.length)}` : ref);
+      out = { ...out, wires: out.wires.map((w) => ({ ...w, from: rename(w.from), to: rename(w.to) })) };
+    }
+    return { circuit: out, id: next.id };
   },
 
+  // Removing a part also removes the wires attached to its pins ("R1.2").
   remove(c, { id }) {
     if (c.wires.some((w) => w.id === id)) return { circuit: retarget({ ...c, wires: c.wires.filter((w) => w.id !== id) }, id, null) };
     partInfo(c, id);
-    return { circuit: retarget({ ...c, parts: c.parts.filter((p) => p.id !== id) }, id, null) };
+    let next = { ...c, parts: c.parts.filter((p) => p.id !== id) };
+    for (const w of c.wires.filter((w) => isPinOf(w.from, id) || isPinOf(w.to, id))) next = retarget(next, w.id, null);
+    next.wires = c.wires.filter((w) => !isPinOf(w.from, id) && !isPinOf(w.to, id));
+    return { circuit: retarget(next, id, null) };
   },
 
   addWire(c, { op, id, from, to, ...rest }) {
-    const board = boardOf(c);
-    for (const h of [from, to]) if (!board.has(h)) fail(`"${h}" はこのボードにない穴です`);
-    if (from === to) fail("from と to が同じ穴です");
+    for (const h of [from, to]) checkEnd(c, h);
+    if (from === to) fail("from と to が同じです");
     const wid = id ?? nextId(c, "W");
     if (c.wires.some((w) => w.id === wid) || findPart(c, wid, false)) fail(`ID "${wid}" は既に使われています`);
     return { circuit: { ...c, wires: [...c.wires, { id: wid, from, to, ...rest }] }, id: wid };
@@ -271,6 +295,27 @@ function nextId(c, prefix) {
 
 function defaultPrefix(def) {
   return def.category === "IC" || def.category === "マイコンボード" ? "U" : "X";
+}
+
+const isPinOf = (ref, id) => String(ref).startsWith(`${id}.`);
+
+function checkPos(pos) {
+  if (!Array.isArray(pos) || pos.length !== 2 || !pos.every(Number.isFinite)) fail("pos は [x, y] (ピッチ単位) です");
+}
+
+function withoutRot({ rot, ...rest }) {
+  return rest;
+}
+
+// A wire end is a hole of the board or "PartId.PinName".
+function checkEnd(c, ref) {
+  if (boardOf(c).has(ref)) return;
+  const dot = String(ref).indexOf(".");
+  const inst = dot > 0 ? c.parts.find((p) => p.id === String(ref).slice(0, dot)) : null;
+  if (!inst) fail(`"${ref}" はこのボードの穴でも、部品のピン (例: "SV1.SIG") でもありません`);
+  const def = registryFor(c).get(inst.type) ?? fail(`未知の部品タイプ "${inst.type}"`);
+  const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
+  if (!names.includes(String(ref).slice(dot + 1))) fail(`${inst.id} にピン "${String(ref).slice(dot + 1)}" はありません (${names.join(", ")})`);
 }
 
 // Keeps animation tracks pointing at renamed targets; to = null drops the target's track.

@@ -6,6 +6,7 @@ import { OP_NAMES, OpError, applyOps, normalize } from "./ops.js";
 import { WIRE_COLORS, renderSvg } from "./render.js";
 
 const STORAGE_KEY = "breadboard-viewer:last";
+const WORKSPACE = 6; // free space around the board for off-board parts (pitch units)
 const PART_MIME = "application/x-breadboard-part";
 
 const $ = (id) => document.getElementById(id);
@@ -29,6 +30,9 @@ const el = {
   play: $("btn-play"),
   animTime: $("anim-time"),
   animLabel: $("anim-label"),
+  animDuration: $("anim-duration"),
+  animLoop: $("anim-loop"),
+  exportMenu: $("export"),
 };
 
 let circuit = normalize(emptyCircuit());
@@ -108,7 +112,9 @@ function select(id) {
 // ---- drawing ----
 
 function draw(previewResult = result, extra = {}) {
-  el.stage.innerHTML = renderSvg(previewResult, { selection, ...extra });
+  // while dragging, the view keeps its size so the content does not shift under the pointer
+  const viewBox = drag?.viewBox;
+  el.stage.innerHTML = renderSvg(previewResult, { selection, margin: WORKSPACE, viewBox, ...extra });
   const svg = el.stage.querySelector("svg");
   if (zoom) {
     const w = Number(svg.getAttribute("width"));
@@ -137,6 +143,16 @@ function syncPlayer() {
     if (!player.playing) a.pause();
   }
   el.play.textContent = player.playing ? "⏸" : "▶";
+  if (document.activeElement !== el.animDuration) el.animDuration.value = String(tl.duration / 1000);
+  el.animLoop.checked = tl.loop;
+}
+
+// Current position within one loop of the animation (ms).
+function localTime() {
+  const tl = result.timeline;
+  if (!tl?.animated) return 0;
+  const t = playerTime();
+  return tl.loop ? t % tl.duration : Math.min(t, tl.duration);
 }
 
 function setPlaying(playing) {
@@ -156,8 +172,7 @@ function seek(t) {
 function tickPlayer() {
   const tl = result.timeline;
   if (tl?.animated) {
-    const t = playerTime();
-    const local = tl.loop ? t % tl.duration : Math.min(t, tl.duration);
+    const local = localTime();
     el.animTime.max = String(tl.duration);
     if (document.activeElement !== el.animTime) el.animTime.value = String(local);
     el.animLabel.textContent = `${(local / 1000).toFixed(1)}s / ${(tl.duration / 1000).toFixed(1)}s`;
@@ -201,13 +216,40 @@ function holeNear(pt, radius = 0.5) {
   return Math.hypot(pt.x - x, pt.y - y) <= radius ? result.board.holeAt(x, y) : null;
 }
 
+// A wire end under the pointer: a hole, or a pin of an off-board part ("SV1.SIG").
+function endNear(pt) {
+  const hole = holeNear(pt);
+  if (hole) return { ref: hole, pos: result.board.pos(hole) };
+  for (const part of result.parts) {
+    if (!part.offboard) continue;
+    for (const p of part.pins) {
+      if (Math.hypot(pt.x - p.x, pt.y - p.y) <= 0.45) return { ref: `${part.id}.${p.name}`, pos: { x: p.x, y: p.y } };
+    }
+  }
+  return null;
+}
+
+function onBoard(x, y) {
+  const b = result.board.bounds;
+  return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+}
+
+const half = (v) => Math.round(v * 2) / 2;
+
 el.stage.addEventListener("pointerdown", (ev) => {
   if (ev.button !== 0 || !el.stage.querySelector("svg")) return;
   const pt = svgPoint(ev);
   const handleEl = ev.target.closest("[data-handle]");
+  const pinEl = ev.target.closest("[data-pin]");
   const partEl = ev.target.closest(".part");
   const wireEl = ev.target.closest(".wire");
-  if (handleEl) {
+  if (pinEl && !handleEl) {
+    // start a wire from a pin of an off-board part
+    const end = endNear(pt);
+    if (selection) select(null);
+    if (!end) return;
+    drag = { kind: "wire", from: end.ref, fromPos: end.pos };
+  } else if (handleEl) {
     const { owner, handle } = handleEl.dataset;
     if (handle.startsWith("via:") && isDoubleClick(`${owner}/${handle}`)) {
       removeVia(owner, Number(handle.slice(4)));
@@ -229,6 +271,7 @@ el.stage.addEventListener("pointerdown", (ev) => {
     drag = { kind: "wire", from: hole, fromPos: result.board.pos(hole) };
   }
   drag.preview = null;
+  drag.viewBox = el.stage.querySelector("svg").getAttribute("viewBox");
   el.stage.setPointerCapture(ev.pointerId);
   ev.preventDefault();
 });
@@ -238,21 +281,28 @@ el.stage.addEventListener("pointermove", (ev) => {
   const pt = svgPoint(ev);
   if (!drag) return hover(pt);
   if (drag.kind === "wire") {
-    const hole = holeNear(pt);
-    const b = hole ? result.board.pos(hole) : { x: pt.x, y: pt.y };
-    drag.to = hole;
-    draw(result, { tempWire: { a: drag.fromPos, b, color: el.wireColor.value } });
-    el.status.textContent = `${drag.from} → ${hole ?? "…"}`;
+    const end = endNear(pt);
+    drag.to = end?.ref ?? null;
+    draw(result, { tempWire: { a: drag.fromPos, b: end?.pos ?? { x: pt.x, y: pt.y }, color: el.wireColor.value } });
+    el.status.textContent = `${drag.from} → ${drag.to ?? "…"}`;
     return;
   }
   let ops;
   if (drag.kind === "move") {
-    const dx = Math.round(pt.x - drag.startPt.x);
-    const dy = Math.round(pt.y - drag.startPt.y);
-    const to = result.board.holeAt(drag.origin.x + dx, drag.origin.y + dy);
-    if (!to || to === drag.lastTo) return;
-    drag.lastTo = to;
-    ops = [{ op: "move", id: drag.id, to }];
+    // over the board the first pin snaps to holes; outside it the part is placed freely
+    const x = drag.origin.x + (pt.x - drag.startPt.x);
+    const y = drag.origin.y + (pt.y - drag.startPt.y);
+    if (onBoard(x, y)) {
+      const to = result.board.holeAt(Math.round(x), Math.round(y));
+      if (!to || to === drag.lastTo) return;
+      drag.lastTo = to;
+      ops = [{ op: "move", id: drag.id, to }];
+    } else {
+      const pos = [half(x), half(y)];
+      if (JSON.stringify(pos) === drag.lastTo) return;
+      drag.lastTo = JSON.stringify(pos);
+      ops = [{ op: "move", id: drag.id, pos }];
+    }
   } else if (/^(via|insert):/.test(drag.handle)) {
     const point = snapPoint(pt);
     const key = JSON.stringify(point);
@@ -267,7 +317,7 @@ el.stage.addEventListener("pointermove", (ev) => {
     const set = kind === "insert" && wire.shape === undefined ? { via, shape: "curve" } : { via };
     ops = [{ op: "update", id: drag.id, set }];
   } else {
-    const to = holeNear(pt);
+    const to = drag.handle.startsWith("pin:") ? holeNear(pt) : endNear(pt)?.ref;
     if (!to || to === drag.lastTo) return;
     drag.lastTo = to;
     ops = drag.handle.startsWith("pin:")
@@ -329,8 +379,14 @@ el.stage.addEventListener("pointercancel", () => {
 });
 
 function hover(pt) {
-  const hole = holeNear(pt, 0.45);
+  const end = endNear(pt);
   for (const h of el.stage.querySelectorAll(".hl")) h.classList.remove("hl");
+  if (end && !result.board.has(end.ref)) {
+    const net = result.netOf(end.ref);
+    el.status.textContent = `${end.ref}${net ? `  ·  ネット ${net}` : "  ·  未接続"}`;
+    return;
+  }
+  const hole = holeNear(pt, 0.45);
   if (!hole) return;
   const strip = stripOf(hole);
   for (const h of el.stage.querySelectorAll("[data-hole]")) {
@@ -400,7 +456,7 @@ function renderInspector() {
   const wire = circuit.wires.find((w) => w.id === selection);
   if (!part && !wire) {
     box.append(
-      node("p", "部品をクリックで選択・ドラッグで移動。空いた穴からドラッグでジャンパ線。線を選んで「＋」をドラッグすると曲げられます (経由点はダブルクリックで削除)。R で回転、Delete で削除、矢印キーで1マス移動。", "hint"),
+      node("p", "部品をクリックで選択・ドラッグで移動 (ボードの外にも置けます)。空いた穴や、ボード外の部品のピンからドラッグでジャンパ線。線を選んで「＋」をドラッグすると曲げられます (経由点はダブルクリックで削除)。R で回転、Delete で削除、矢印キーで1マス移動。", "hint"),
     );
     return;
   }
@@ -543,9 +599,11 @@ el.stage.addEventListener("drop", (ev) => {
   if (!type) return;
   ev.preventDefault();
   ev.stopPropagation();
-  const hole = holeNear(svgPoint(ev), 0.7);
-  if (!hole) return flash("穴の上にドロップしてください");
-  selectAfter(tryApply([{ op: "addPart", type, at: hole }]));
+  const pt = svgPoint(ev);
+  const hole = holeNear(pt, 0.7);
+  if (hole) return selectAfter(tryApply([{ op: "addPart", type, at: hole }]));
+  if (!onBoard(pt.x, pt.y)) return selectAfter(tryApply([{ op: "addPart", type, pos: [half(pt.x), half(pt.y)] }]));
+  flash("穴の上か、ボードの外にドロップしてください");
 });
 
 // ---- toolbar ----
@@ -559,6 +617,11 @@ for (const c of Object.keys(WIRE_COLORS)) {
 }
 el.wireColor.value = "red";
 el.play.addEventListener("click", () => setPlaying(!player.playing));
+el.animDuration.addEventListener("change", () => {
+  const sec = Number(el.animDuration.value);
+  if (sec > 0) tryApply([{ op: "setAnimation", duration: Math.round(sec * 1000) }]);
+});
+el.animLoop.addEventListener("change", () => tryApply([{ op: "setAnimation", loop: el.animLoop.checked }]));
 el.animTime.addEventListener("input", () => {
   setPlaying(false);
   seek(Number(el.animTime.value));
@@ -581,19 +644,50 @@ function currentFitZoom() {
 
 // ---- import / export ----
 
-function download(name, text, type) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+function download(name, data, type) {
+  const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
   const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  // some browsers ignore the file name unless the link is in the document
+  document.body.append(a);
   a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 const baseName = () => (circuit.title || "circuit").replace(/[\\/:*?"<>|\s]+/g, "_");
 
 $("btn-save").addEventListener("click", () => download(`${baseName()}.json`, stringifyCircuit(circuit), "application/json"));
-$("btn-svg").addEventListener("click", () =>
-  download(`${baseName()}.svg`, renderSvg(result, { embed: circuit }), "image/svg+xml"),
-);
+el.exportMenu.addEventListener("change", async () => {
+  const kind = el.exportMenu.value;
+  el.exportMenu.value = "";
+  if (kind === "svg-anim") return download(`${baseName()}.svg`, renderSvg(result, { embed: circuit }), "image/svg+xml");
+  // still frames show the animation at the moment currently on screen
+  const svg = renderSvg(result, { embed: circuit, time: localTime() });
+  if (kind === "svg-still") return download(`${baseName()}.svg`, svg, "image/svg+xml");
+  if (kind) download(`${baseName()}.png`, await svgToPng(svg, { background: kind === "png-white" ? "#fff" : null }), "image/png");
+});
+
+// Rasterizes an SVG string; background null keeps it transparent.
+async function svgToPng(svg, { scale = 2, background = null } = {}) {
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    const ctx = canvas.getContext("2d");
+    if (background) {
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 $("btn-share").addEventListener("click", async () => {
   const url = await shareUrl(circuit, location.href.split("#")[0]);
   try {
@@ -692,8 +786,10 @@ window.bb = {
     })),
   /** Share URL with the circuit in the fragment. */
   shareUrl: () => shareUrl(circuit, location.href.split("#")[0]),
-  /** SVG with the circuit embedded. */
-  svg: () => renderSvg(result, { embed: circuit }),
+  /** SVG with the circuit embedded; { time: ms } gives a still frame. */
+  svg: (opts = {}) => renderSvg(result, { embed: circuit, ...opts }),
+  /** PNG (Blob) of the frame at { time } (default: now); background null = transparent. */
+  png: (opts = {}) => svgToPng(renderSvg(result, { time: opts.time ?? localTime() }), opts),
   ops: OP_NAMES,
   help: () =>
     "bb.get() / bb.load(json) / bb.apply([{op:'addPart',type:'led',at:'a10'}, ...]) / bb.check() / bb.inspect('a10') / bb.parts() / bb.undo() — 詳細は docs/OPS.md",

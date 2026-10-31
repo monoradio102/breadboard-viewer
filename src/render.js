@@ -1,5 +1,5 @@
 // Renders a resolved circuit (see circuit.js) to an SVG string.
-import { EFFECT_CSS, captionTrack, compileCss, cssDecl, initialState, valuesOf } from "./animation.js";
+import { EFFECT_CSS, captionTrack, compileCss, cssDecl, initialState, stateAtTime, valuesOf } from "./animation.js";
 import { rotate } from "./circuit.js";
 import { circle, esc, g, line, n, rect, tag, text } from "./svg.js";
 
@@ -24,11 +24,17 @@ export const WIRE_COLORS = {
 //   selection = id         highlight a part or wire and draw its drag handles (editor only)
 //   tempWire  = {a, b, color}  a wire being drawn (editor only)
 //   animate   = true       include the animation (CSS keyframes); false draws the t=0 state only
+//   margin    = 0          extra space around the content (the editor's workspace for off-board parts)
+//   viewBox   = "x y w h"  fixed view (the editor keeps the view still while dragging)
+//   time      = ms         draw a still frame at this time of the animation (no CSS animation)
 export function renderSvg(result, options = {}) {
   const { board } = result;
   const labels = options.labels ?? true;
   const tl = result.timeline;
-  const animate = (options.animate ?? true) && tl?.animated;
+  const still = options.time !== undefined;
+  const time = still && tl ? (tl.loop ? Number(options.time) % tl.duration : Math.min(Number(options.time), tl.duration)) : 0;
+  const animate = (options.animate ?? true) && !still && tl?.animated;
+  const stateOf = (track) => (still ? stateAtTime(track, time) : initialState(track));
   const svgId = `bb-${hash(JSON.stringify([result.parts.map((p) => p.inst), result.wires.map((w) => [w.id, w.from, w.to]), tl?.duration]))}`;
   const animEls = [];
   // Per-target drawing context: initial state, and anim(name) -> attributes for an animated element.
@@ -36,7 +42,7 @@ export function renderSvg(result, options = {}) {
     const track = tl.tracks.get(id);
     const values = (name) => valuesOf(track, name);
     const maps = animateDef?.({ params, values }) ?? {};
-    const state = initialState(track);
+    const state = stateOf(track);
     return {
       state,
       values,
@@ -50,14 +56,15 @@ export function renderSvg(result, options = {}) {
   };
 
   const pad = 1;
-  const b = contentBounds(result);
+  const b = contentBounds(result, options.margin ?? 0);
   const captionH = tl?.captions.length ? 2.2 : 0;
-  const vb = [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2 + captionH];
+  const vb = options.viewBox ? String(options.viewBox).split(/[\s,]+/).map(Number) : [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2 + captionH];
   const body = [
     g(drawBoard(board), { class: "board" }),
     g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params))).join(""), { class: "parts" }),
     g(result.wires.map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
-    captionH ? drawCaptions(tl, b, animEls, svgId, animate) : "",
+    g(result.parts.filter((p) => p.offboard).map(drawTerminals).join(""), { class: "terminals" }),
+    captionH ? drawCaptions(tl, b, animEls, svgId, animate, stateOf) : "",
     labels ? g(result.parts.map(drawLabel).join(""), { class: "labels", "pointer-events": "none" }) : "",
     g(drawProblems(result), { class: "problems" }),
     options.selection ? g(drawSelection(result, options.selection), { class: "selection" }) : "",
@@ -66,7 +73,7 @@ export function renderSvg(result, options = {}) {
   const meta = options.embed
     ? `<metadata id="breadboard-circuit" data-format="breadboard-viewer/v1">${esc(JSON.stringify(options.embed))}</metadata>`
     : "";
-  const style = `<style>${EFFECT_CSS}${animate ? compileCss(animEls, tl, svgId) : ""}</style>`;
+  const style = still ? "" : `<style>${EFFECT_CSS}${animate ? compileCss(animEls, tl, svgId) : ""}</style>`;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" id="${svgId}" viewBox="${vb.map(n).join(" ")}" ` +
     `width="${n(vb[2] * SCALE)}" height="${n(vb[3] * SCALE)}">` +
@@ -77,23 +84,44 @@ export function renderSvg(result, options = {}) {
   );
 }
 
-// Board bounds, grown to include parts that declare an `extent` reaching off the board.
-function contentBounds(result) {
+// Board bounds, grown to include off-board parts, parts that declare an `extent` reaching
+// off the board, and wires; then `margin` on every side.
+function contentBounds(result, margin = 0) {
   const b = result.board.bounds;
   let [x0, y0, x1, y1] = [b.x, b.y, b.x + b.w, b.y + b.h];
+  const add = (x, y, pad = 0) => {
+    x0 = Math.min(x0, x - pad);
+    y0 = Math.min(y0, y - pad);
+    x1 = Math.max(x1, x + pad);
+    y1 = Math.max(y1, y + pad);
+  };
   for (const part of result.parts) {
+    if (part.offboard) for (const p of part.pins) add(p.x, p.y, 2);
     const e = part.def.extent;
     if (!e || !part.transform) continue;
     const { x, y, rot } = part.transform;
     for (const [cx, cy] of [[e[0], e[1]], [e[2], e[1]], [e[0], e[3]], [e[2], e[3]]]) {
       const [dx, dy] = rotate(cx, cy, rot);
-      x0 = Math.min(x0, x + dx);
-      y0 = Math.min(y0, y + dy);
-      x1 = Math.max(x1, x + dx);
-      y1 = Math.max(y1, y + dy);
+      add(x + dx, y + dy);
     }
   }
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  for (const w of result.wires) for (const p of [w.a, w.b, ...w.via]) add(p.x, p.y, 0.5);
+  return { x: x0 - margin, y: y0 - margin, w: x1 - x0 + 2 * margin, h: y1 - y0 + 2 * margin };
+}
+
+// Connector marks on the pins of off-board parts; wires can be dragged from / to them.
+function drawTerminals(part) {
+  return part.pins
+    .map((p) =>
+      circle(p.x, p.y, 0.26, {
+        fill: "#e0c060",
+        stroke: "#7a6420",
+        "stroke-width": 0.06,
+        "data-pin": `${part.id}.${p.name}`,
+        style: "cursor:crosshair",
+      }),
+    )
+    .join("");
 }
 
 const wireAnimate = () => ({ flow: (s) => ({ opacity: s.flow ? 1 : 0 }) });
@@ -106,9 +134,9 @@ function hash(s) {
 
 const cssString = (s) => String(s).replace(/["\\]/g, "\\$&");
 
-function drawCaptions(tl, b, animEls, svgId, animate) {
+function drawCaptions(tl, b, animEls, svgId, animate, stateOf) {
   const track = captionTrack(tl.captions);
-  const state = initialState(track);
+  const state = stateOf(track);
   const y = b.y + b.h + 1.6;
   return g(
     tl.captions
@@ -167,7 +195,7 @@ function drawPart(part, ctx) {
   }
   const t = part.transform;
   const local = part.def.pins(part.params);
-  return g(part.def.render({ ...ctx, pins: local, params: part.params, inst: part.inst }), {
+  return g(part.def.render({ ...ctx, rot: t.rot, pins: local, params: part.params, inst: part.inst }), {
     ...attrs,
     transform: `translate(${n(t.x)} ${n(t.y)}) rotate(${t.rot})`,
   });
@@ -239,6 +267,7 @@ function drawLabel(part) {
 function drawProblems(result) {
   const out = [];
   for (const part of result.parts) {
+    if (part.offboard) continue;
     for (const p of part.pins) {
       if (!p.hole) out.push(circle(p.x, p.y, 0.35, { fill: "none", stroke: "#d50000", "stroke-width": 0.1 }));
     }
@@ -273,7 +302,7 @@ function drawSelection(result, id) {
       rx: 0.2,
       "pointer-events": "none",
     });
-    const handles = part.def.mount === "leads" ? part.pins.map((p) => handle(p.x, p.y, part.id, `pin:${p.name}`)).join("") : "";
+    const handles = part.def.mount === "leads" && !part.offboard ? part.pins.map((p) => handle(p.x, p.y, part.id, `pin:${p.name}`)).join("") : "";
     return box + handles;
   }
   const wire = result.wires.find((w) => w.id === id);

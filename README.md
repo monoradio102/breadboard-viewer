@@ -11,13 +11,15 @@ Claude Code や Codex などのAIエージェントが、読み書きしやす�
 | [モーター + サーボ](examples/motor-servo.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=motor-servo)) | [HC-SR04 で距離アラーム](examples/distance-alarm.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=distance-alarm)) |
 | ![Pico でボタン入力とLED](docs/images/pico-button.svg) | ![カスタム部品の例: I2C OLED](docs/images/oled-custom-part.svg) |
 | [Pico でボタン入力とLED](examples/pico-button.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=pico-button)) | [独自部品 (OLED) の定義例](examples/oled-custom-part.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-custom-part)) |
+| ![スピーカーで音を鳴らす](docs/images/tone-speaker.svg) | |
+| [スピーカー (ボード外に配置)](examples/tone-speaker.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=tone-speaker)) | |
 
 上の画像は、それぞれ1つのSVGファイルです。アニメーションはSVGの中のCSSで動いていて、回路データも埋め込まれています。
 SVGを保存してエディタにドロップすると、そのまま回路を編集できます。
 画像は `npm run images` で `examples/` から作り直せます。
 
 - 静的ページのみで動きます (GitHub Pagesにそのまま置けます)
-- 秋月電子などで手に入る、定番部品を28種類内蔵しています (抵抗、LED、フルカラーLED、DIP IC、7セグ、LCD1602、DHT11、HC-SR04、リレー、モーター、サーボ、Arduino Nano、Raspberry Pi Pico、ESP32 など)
+- 秋月電子などで手に入る、定番部品を30種類内蔵しています (抵抗、LED、フルカラーLED、DIP IC、7セグ、LCD1602、DHT11、HC-SR04、リレー、モーター、サーボ、スピーカー、電池ボックス、Arduino Nano、Raspberry Pi Pico、ESP32 など)
 - 内蔵されていない部品は、回路ファイルの中にJSONで定義できます ([形式](docs/FORMAT.md))
 - 回路ファイル1つ (JSON) で、独自部品も含めて共有できます。書き出したSVGにも回路データが入っているので、SVGをドロップすれば元の回路に戻せます
 - 回路の検証と、ネットリスト (どのピン同士がつながっているか) の表示ができます
@@ -32,11 +34,13 @@ npm run serve   # http://localhost:8000 で開く
 - 左: 部品一覧。ボードにドラッグして置くか、部品をクリックして「回路に追加」を押します
 - 中央: ブレッドボード
   - 部品をクリックで選択、ドラッグで移動します。LEDや抵抗などは、選択すると出る丸いハンドルで、足を1本ずつ動かせます
-  - 空いている穴からドラッグすると、ジャンパ線を引けます (色はツールバーで選びます)
+  - ボードの外にドラッグすると、部品を自由な位置に置けます (サーボ、スピーカー、電池ボックスなど)。ボードの上に戻すと穴に挿さります
+  - 空いている穴や、ボード外の部品のピン (金色の丸) からドラッグすると、ジャンパ線を引けます (色はツールバーで選びます)
   - 線を選ぶと出る「＋」をドラッグすると、経由点が増えて線がなめらかに曲がります。経由点はドラッグで移動、ダブルクリックで削除できます
   - `R` で回転 (`Shift+R` で逆回転)、`Delete` で削除、矢印キーで1マス移動、`Ctrl+Z` / `Ctrl+Shift+Z` で元に戻す / やり直し
   - 穴にカーソルを合わせると、その穴と導通している穴が光り、穴の名前とネットが表示されます
-- ツールバー: 元に戻す / やり直し、ボードの種類、配線の色、アニメーションの再生・一時停止・シーク (`Space` でも再生 / 一時停止)、拡大・縮小
+- ツールバー: 元に戻す / やり直し、ボードの種類、配線の色、アニメーションの再生・一時停止・シーク (`Space` でも再生 / 一時停止)・長さ・ループ、拡大・縮小
+- 「画像を書き出す」: 透過PNG / 白背景PNG / 静止画SVG (いま表示している瞬間)、アニメーションSVG
 - 右: 選択中の部品のプロパティと、回路のJSON。JSONを編集すると、すぐに図に反映されます
 - JSON / SVG ファイルは、ページにドロップしても読み込めます
 - 「共有URL」ボタンで、回路を埋め込んだURLをコピーできます。回路データはURLの `#` 以降に圧縮して入るので、サーバーには送られません (サンプル回路で500〜1400文字程度)
@@ -53,6 +57,7 @@ node tools/bb.mjs check examples/blink-nano.json             # 検証とネッ�
 node tools/bb.mjs url examples/blink-nano.json               # 共有URLを作る (--base で公開先を変更)
 node tools/bb.mjs render examples/blink-nano.json -o out.svg # SVGに描画
 node tools/bb.mjs render examples/blink-nano.json -o out.png # PNGに描画 (Playwrightが必要)
+node tools/bb.mjs render examples/motor-servo.json -o f.png --time 1500 --transparent  # 1.5秒時点の透過PNG
 npm test
 ```
 

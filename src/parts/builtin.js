@@ -21,6 +21,7 @@ import {
   parseOhms,
   place,
   pinLabels,
+  uprightText,
 } from "./common.js";
 
 const LED_COLORS = {
@@ -457,7 +458,7 @@ const servo = {
   animate: () => ({ horn: (s) => ({ transform: `rotate(${-Math.round(Number(s.angle) * 10) / 10}deg)` }) }),
   pins: () => inline(["GND", "VCC", "SIG"]),
   extent: [-4.7, -9.2, 7.1, 0.6],
-  render({ anim }) {
+  render({ anim, rot }) {
     const cable = ["#6d4c41", "#e53935", "#fb8c00"]
       .map((c, i) => tag("path", { d: `M ${i} 0 C ${i} -1.6 ${0.7 + i * 0.3} -2 ${0.7 + i * 0.3} -3.2`, fill: "none", stroke: c, "stroke-width": 0.18 }))
       .join("");
@@ -468,7 +469,7 @@ const servo = {
       rect(-3.4, -8.1, 9.2, 4.8, { rx: 0.3, fill: "#2c6fbb", stroke: "#1d4f87", "stroke-width": 0.08 }) +
       rect(-4.6, -6.4, 11.6, 1.2, { rx: 0.2, fill: "#2c6fbb", stroke: "#1d4f87", "stroke-width": 0.06 }) +
       circle(-1.3, -5.7, 1.6, { fill: "#3a80cc", stroke: "#1d4f87", "stroke-width": 0.06 }) +
-      text(3.2, -5.7, "SG90", { "font-size": 0.7, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" }) +
+      uprightText(3.2, -5.7, "SG90", rot, { "font-size": 0.7, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" }) +
       g(
         g(tag("path", { d: arm, fill: "#f5f5f5", stroke: "#9e9e9e", "stroke-width": 0.06 }) + circle(0, 0, 0.25, { fill: "#bbb" }), anim("horn")),
         { transform: "translate(-1.3 -5.7)" },
@@ -773,6 +774,78 @@ const lcd1602 = {
   },
 };
 
+// two lead wires (red +, black -) from the pins up to a body drawn above them
+function leadWires(topY) {
+  return ["#e53935", "#263238"]
+    .map((c, i) => tag("path", { d: `M ${i} 0 C ${i} ${n(topY / 2)} ${0.5 + (i - 0.5) * 0.6} ${n(topY / 2)} ${0.5 + (i - 0.5) * 0.6} ${n(topY)}`, fill: "none", stroke: c, "stroke-width": 0.2 }))
+    .join("");
+}
+
+const speaker = {
+  type: "speaker",
+  name: "スピーカー (8Ω)",
+  category: "出力",
+  description: "リード線付きの小型スピーカー。ピン: +, -。ブレッドボードの外 (pos) に置いて配線するのが基本。on で音の波紋をアニメーション。",
+  mount: "rigid",
+  params: { label: { default: "8Ω", description: "表示する仕様" } },
+  states: { on: { type: "bool", default: false, description: "鳴っている" } },
+  animate: () => ({ waves: (s) => ({ opacity: s.on ? 1 : 0 }) }),
+  pins: () => inline(["+", "-"]),
+  extent: [-3.6, -11.2, 4.6, 0.5],
+  render({ params, anim, rot }) {
+    const ring = (cls) => circle(0, 0, 3.9, { fill: "none", stroke: "#ffb300", "stroke-width": 0.16, class: cls });
+    return (
+      leadWires(-2.6) +
+      g(
+        circle(0, 0, 2.9, { fill: "#30343a", stroke: "#111", "stroke-width": 0.08 }) +
+          circle(0, 0, 2.3, { fill: "#4b5159" }) +
+          circle(0, 0, 1.6, { fill: "#5d646d", stroke: "#3b4047", "stroke-width": 0.06 }) +
+          circle(0, 0, 0.7, { fill: "#2b2f34" }) +
+          uprightText(0, 2.35, params.label, rot, { "font-size": 0.45, fill: "#ddd", "text-anchor": "middle", "dominant-baseline": "central" }) +
+          g(ring("bb-wave") + ring("bb-wave bb-wave2"), { ...anim("waves"), "pointer-events": "none" }),
+        { transform: "translate(0.5 -5.5)" },
+      )
+    );
+  },
+};
+
+const BATTERIES = { AAx2: [2, "3V"], AAx3: [3, "4.5V"], AAx4: [4, "6V"], "9V": [0, "9V"] };
+
+const battery = {
+  type: "battery",
+  name: "電池ボックス",
+  category: "電源",
+  description: "リード線付き (赤が+, 黒が-)。ピン: +, -。ブレッドボードの外 (pos) に置いて、電源レールに配線するのが基本。",
+  mount: "rigid",
+  params: { kind: { default: "AAx2", options: Object.keys(BATTERIES), description: "電池の種類と本数" } },
+  pins: () => inline(["+", "-"]),
+  extent: [-4.2, -14.5, 5.2, 0.5],
+  render({ params, rot }) {
+    const [cells, volts] = BATTERIES[params.kind] ?? BATTERIES.AAx2;
+    if (!cells) {
+      // 9V snap battery
+      return (
+        leadWires(-2.4) +
+        rect(-2.6, -12.4, 6.2, 10, { rx: 0.4, fill: "#1e3a5f", stroke: "#0f2238", "stroke-width": 0.08 }) +
+        rect(-2.6, -12.4, 6.2, 3, { rx: 0.4, fill: "#f2b705" }) +
+        uprightText(0.5, -6.5, volts, rot, { "font-size": 1.4, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central", "font-weight": "bold" })
+      );
+    }
+    const h = cells * 2.4 + 0.8;
+    const top = -2.4 - h;
+    let body = rect(-3.6, top, 8.2, h, { rx: 0.3, fill: "#1b1b1b", stroke: "#000", "stroke-width": 0.08 });
+    for (let i = 0; i < cells; i++) {
+      const y = top + 0.5 + i * 2.4;
+      const flip = i % 2 === 1;
+      body +=
+        rect(-3.0, y, 6.6, 1.9, { rx: 0.9, fill: "#c62828" }) +
+        rect(flip ? -3.0 : 1.6, y, 2.0, 1.9, { rx: 0.9, fill: "#9e9e9e" }) +
+        uprightText(0.3, y + 0.95, flip ? "−  +" : "+  −", rot, { "font-size": 0.7, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" });
+    }
+    return leadWires(-2.4) + body + uprightText(0.5, top - 0.6, `${params.kind} ${volts}`, rot, { "font-size": 0.6, fill: "#333", "text-anchor": "middle", "dominant-baseline": "central" });
+  },
+};
+
 export const BUILTIN_PARTS = [
   resistor,
   led,
@@ -785,10 +858,12 @@ export const BUILTIN_PARTS = [
   hcsr04,
   transistor,
   regulator,
+  battery,
   button,
   trimmer,
   pot,
   buzzer,
+  speaker,
   motor,
   servo,
   seg7,

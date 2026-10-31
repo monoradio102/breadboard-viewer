@@ -437,3 +437,18 @@ button.danger {
   color: var(--muted);
   min-width: 4em;
 }
+
+.player label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--muted);
+}
+
+#anim-duration {
+  width: 4.5em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 4px;
+  background: var(--bg);
+}
