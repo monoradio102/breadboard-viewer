@@ -1,7 +1,7 @@
 // Browser UI. Every edit goes through ops.js (the same operations AI agents use via window.bb).
 import { BOARD_TYPES } from "./board.js";
 import { describe, resolveCircuit, stripOf } from "./circuit.js";
-import { emptyCircuit, parseCircuitText, stringifyCircuit } from "./io.js";
+import { decodeShare, emptyCircuit, parseCircuitText, shareCodeFromHash, shareUrl, stringifyCircuit } from "./io.js";
 import { OP_NAMES, OpError, applyOps, normalize } from "./ops.js";
 import { WIRE_COLORS, renderSvg } from "./render.js";
 
@@ -36,7 +36,7 @@ let result = resolveCircuit(circuit);
 let selection = null; // id of the selected part or wire
 let drag = null;
 let zoom = null; // null = fit to width
-const history = { past: [], future: [] };
+const undoStack = { past: [], future: [] };
 
 // ---- state ----
 
@@ -44,9 +44,9 @@ const history = { past: [], future: [] };
 function commit(next, { record = true, updateEditor = true } = {}) {
   next = normalize(next);
   if (record && JSON.stringify(next) !== JSON.stringify(circuit)) {
-    history.past.push(circuit);
-    if (history.past.length > 200) history.past.shift();
-    history.future = [];
+    undoStack.past.push(circuit);
+    if (undoStack.past.length > 200) undoStack.past.shift();
+    undoStack.future = [];
   }
   circuit = next;
   result = resolveCircuit(circuit);
@@ -59,8 +59,8 @@ function commit(next, { record = true, updateEditor = true } = {}) {
   el.board.value = circuit.board ?? "half";
   showMessages(result.errors, result.warnings);
   el.nets.textContent = describe({ ...result, errors: [], warnings: [] });
-  el.undo.disabled = !history.past.length;
-  el.redo.disabled = !history.future.length;
+  el.undo.disabled = !undoStack.past.length;
+  el.redo.disabled = !undoStack.future.length;
   renderPartList();
   renderInspector();
   try {
@@ -88,15 +88,15 @@ function tryApply(ops) {
 }
 
 function undo() {
-  if (!history.past.length) return;
-  history.future.push(circuit);
-  commit(history.past.pop(), { record: false });
+  if (!undoStack.past.length) return;
+  undoStack.future.push(circuit);
+  commit(undoStack.past.pop(), { record: false });
 }
 
 function redo() {
-  if (!history.future.length) return;
-  history.past.push(circuit);
-  commit(history.future.pop(), { record: false });
+  if (!undoStack.future.length) return;
+  undoStack.past.push(circuit);
+  commit(undoStack.future.pop(), { record: false });
 }
 
 function select(id) {
@@ -594,6 +594,15 @@ $("btn-save").addEventListener("click", () => download(`${baseName()}.json`, str
 $("btn-svg").addEventListener("click", () =>
   download(`${baseName()}.svg`, renderSvg(result, { embed: circuit }), "image/svg+xml"),
 );
+$("btn-share").addEventListener("click", async () => {
+  const url = await shareUrl(circuit, location.href.split("#")[0]);
+  try {
+    await navigator.clipboard.writeText(url);
+    el.status.textContent = `共有URLをコピーしました (${url.length}文字)`;
+  } catch {
+    window.prompt("共有URL (コピーしてください)", url);
+  }
+});
 $("btn-new").addEventListener("click", () => commit(emptyCircuit()));
 $("btn-open").addEventListener("click", () => el.file.click());
 el.file.addEventListener("change", async () => {
@@ -680,6 +689,8 @@ window.bb = {
       params: Object.fromEntries(Object.entries(d.params ?? {}).map(([k, s]) => [k, s.default])),
       pins: d.pins(Object.fromEntries(Object.entries(d.params ?? {}).map(([k, s]) => [k, s.default]))).map((p) => p.name),
     })),
+  /** Share URL with the circuit in the fragment. */
+  shareUrl: () => shareUrl(circuit, location.href.split("#")[0]),
   /** SVG with the circuit embedded. */
   svg: () => renderSvg(result, { embed: circuit }),
   ops: OP_NAMES,
@@ -687,9 +698,33 @@ window.bb = {
     "bb.get() / bb.load(json) / bb.apply([{op:'addPart',type:'led',at:'a10'}, ...]) / bb.check() / bb.inspect('a10') / bb.parts() / bb.undo() — 詳細は docs/OPS.md",
 };
 
+window.addEventListener("hashchange", async () => {
+  const code = shareCodeFromHash(location.hash);
+  if (!code) return;
+  try {
+    selection = null;
+    commit(await decodeShare(code));
+    history.replaceState(null, "", location.pathname + location.search);
+  } catch (e) {
+    showMessages([`共有URLを読み込めませんでした: ${e.message}`], []);
+  }
+});
+
 // ---- start ----
 
 (async () => {
+  // a shared URL (#c=...) wins over the last session; the hash is then cleared so a reload
+  // keeps later edits (they are in localStorage)
+  const code = shareCodeFromHash(location.hash);
+  if (code) {
+    try {
+      commit(await decodeShare(code), { record: false });
+      history.replaceState(null, "", location.pathname + location.search);
+      return;
+    } catch (e) {
+      showMessages([`共有URLを読み込めませんでした: ${e.message}`], []);
+    }
+  }
   let saved = null;
   try {
     saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");

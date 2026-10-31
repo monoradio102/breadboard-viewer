@@ -7,10 +7,11 @@
 //                                                                writes back to circuit.json unless -o
 //   node tools/bb.mjs parts  [circuit.json]                      list part types, pins and params
 //   node tools/bb.mjs new    <circuit.json> [board]               create an empty circuit
+//   node tools/bb.mjs url    <circuit.json> [--base URL]          print a share URL
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, resolveCircuit } from "../src/circuit.js";
-import { emptyCircuit, parseCircuitText, stringifyCircuit } from "../src/io.js";
+import { emptyCircuit, parseCircuitText, shareUrl, stringifyCircuit } from "../src/io.js";
 import { OpError, applyOps } from "../src/ops.js";
 import { createRegistry } from "../src/parts/registry.js";
 import { renderSvg } from "../src/render.js";
@@ -20,9 +21,14 @@ const USAGE = `usage:
   bb.mjs render <circuit.json> [-o out.svg|out.png]
   bb.mjs apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json]
   bb.mjs parts  [circuit.json]
-  bb.mjs new    <circuit.json> [full|half|mini]`;
+  bb.mjs new    <circuit.json> [full|half|mini]
+  bb.mjs url    <circuit.json> [--base URL]`;
+
+const DEFAULT_BASE = "https://monoradio102.github.io/breadboard-viewer/";
 
 const args = process.argv.slice(2);
+const baseIndex = args.indexOf("--base");
+const base = baseIndex >= 0 ? args.splice(baseIndex, 2)[1] : DEFAULT_BASE;
 const outIndex = args.indexOf("-o");
 const out = outIndex >= 0 ? args.splice(outIndex, 2)[1] : null;
 const [cmd, file, extra] = args;
@@ -77,6 +83,11 @@ switch (cmd) {
   case "new": {
     need(file);
     writeFileSync(file, stringifyCircuit({ ...emptyCircuit(), board: extra ?? "half" }));
+    break;
+  }
+  case "url": {
+    need(file);
+    console.log(await shareUrl(readCircuit(file), base));
     break;
   }
   default:

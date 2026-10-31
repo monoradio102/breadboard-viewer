@@ -26,6 +26,7 @@ npm run serve   # http://localhost:8000 で開く
 - ツールバー: 元に戻す / やり直し、ボードの種類、配線の色、アニメーションの再生・一時停止・シーク (`Space` でも再生 / 一時停止)、拡大・縮小
 - 右: 選択中の部品のプロパティと、回路のJSON。JSONを編集すると、すぐに図に反映されます
 - JSON / SVG ファイルは、ページにドロップしても読み込めます
+- 「共有URL」ボタンで、回路を埋め込んだURLをコピーできます。回路データはURLの `#` 以降に圧縮して入るので、サーバーには送られません (サンプル回路で500〜1400文字程度)
 
 ## コマンドライン (AIエージェント向け)
 
@@ -36,6 +37,7 @@ node tools/bb.mjs parts                                      # 使える部品�
 node tools/bb.mjs new my.json half                           # 空の回路を作る
 node tools/bb.mjs apply my.json '[{"op":"addPart","type":"led","at":"a10"}]'  # 編集操作を適用する
 node tools/bb.mjs check examples/blink-nano.json             # 検証とネットリストの表示
+node tools/bb.mjs url examples/blink-nano.json               # 共有URLを作る (--base で公開先を変更)
 node tools/bb.mjs render examples/blink-nano.json -o out.svg # SVGに描画
 node tools/bb.mjs render examples/blink-nano.json -o out.png # PNGに描画 (Playwrightが必要)
 npm test
@@ -50,6 +52,7 @@ bb.apply(ops)   // 編集操作を適用する (docs/OPS.md)
 bb.check()      // 検証結果とネットリスト (テキスト)
 bb.inspect(hole)// 穴にあるものとネット
 bb.svg()        // 回路データ入りのSVG
+bb.shareUrl()   // 共有URL (Promise)
 bb.help()
 ```
 

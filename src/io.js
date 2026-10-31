@@ -49,3 +49,46 @@ function unescapeXml(s) {
 export function emptyCircuit() {
   return { version: 1, title: "", board: "half", parts: [], wires: [] };
 }
+
+// ---- share URLs ----
+// The circuit travels in the URL fragment (#c=...), so it never reaches a server:
+// minified JSON -> deflate-raw -> base64url. Works in browsers and Node 18+.
+
+export async function encodeShare(circuit) {
+  const bytes = new TextEncoder().encode(JSON.stringify(circuit));
+  const packed = await pipe(bytes, new CompressionStream("deflate-raw"));
+  return toBase64Url(packed);
+}
+
+export async function decodeShare(code) {
+  const bytes = await pipe(fromBase64Url(code), new DecompressionStream("deflate-raw"));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+export async function shareUrl(circuit, base) {
+  const url = new URL(base);
+  url.hash = `c=${await encodeShare(circuit)}`;
+  return url.toString();
+}
+
+// Returns the encoded circuit from a location hash like "#c=...", or null.
+export function shareCodeFromHash(hash) {
+  const m = /(?:^#|&)c=([A-Za-z0-9_-]+)/.exec(hash ?? "");
+  return m ? m[1] : null;
+}
+
+async function pipe(bytes, transform) {
+  const stream = new Blob([bytes]).stream().pipeThrough(transform);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function toBase64Url(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function fromBase64Url(s) {
+  const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}

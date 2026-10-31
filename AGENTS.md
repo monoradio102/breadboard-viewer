@@ -8,7 +8,8 @@
 2. 編集は、JSONを直接書き換えても、編集操作 (`node tools/bb.mjs apply`, [docs/OPS.md](docs/OPS.md)) を使っても構いません。編集操作を使うと、IDの自動採番、空き場所の検索、ピンが穴から外れていないかのチェックが受けられます。部品の `type` とピン名は `node tools/bb.mjs parts` で確認できます。
 3. 編集したら、必ず `node tools/bb.mjs check <file>` を実行します。エラーがなく、ネットリストが意図どおりになっていることを確認してください。
 4. 見た目を確認したいときは、`node tools/bb.mjs render <file> -o out.png` で画像にします。
-5. 動作を説明したいときは、アニメーション (`animation`) を付けます。書き方は `docs/FORMAT.md` の「アニメーション」、操作は `animate` / `setAnimation` です。
+5. 人に見せるときは、`node tools/bb.mjs url <file>` で共有URLを作れます (回路データはURLに埋め込まれます)。
+6. 動作を説明したいときは、アニメーション (`animation`) を付けます。書き方は `docs/FORMAT.md` の「アニメーション」、操作は `animate` / `setAnimation` です。
 
 ## 組み込みにない部品を使うとき
 
