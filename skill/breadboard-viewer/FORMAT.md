@@ -94,6 +94,7 @@
 | `nano` | TX1, RX0, ..., D13, A0..A7, 5V, VIN | rigid | |
 | `pico` | GP0.., GND.., 3V3, VSYS, VBUS | rigid | |
 | `esp32` | 3V3, EN, IO36.., GND.., 5V | rigid | `width` (列間隔, 既定値10) |
+| `xiao` | D0〜D10, 3V3, GND, 5V | rigid | `model` (ESP32C3 / ESP32S3 / ESP32C6), `width` (列間隔, 既定値6)。D番号とGPIOの対応は種類ごとに公式Wikiで確認 |
 
 同じ名前のピンが複数ある場合は、`GND`, `GND2`, `GND3`… のように番号を付けて区別します。
 各部品の詳しい説明は、アプリの部品一覧、または `src/parts/builtin.js` を見てください。

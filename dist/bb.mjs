@@ -1049,6 +1049,24 @@ var esp32 = {
     return rect(-2.7, -w - 0.55, 21.6, w + 1.1, { rx: 0.25, fill: "#1c1c1c", stroke: "#000", "stroke-width": 0.06 }) + rect(-2.5, mid - 3.55, 2.4, 7.1, { fill: "#20301f" }) + tag("path", { d: `M -2.2 ${n(mid - 2.8)} h 1.6 v 0.8 h -1.2 v 0.8 h 1.2 v 0.8 h -1.2 v 0.8 h 1.2`, fill: "none", stroke: "#c9a74a", "stroke-width": 0.12 }) + rect(-0.1, mid - 3.55, 7.6, 7.1, { rx: 0.1, fill: "#b9bec4", stroke: "#8b9399", "stroke-width": 0.06 }) + text(3.7, mid - 0.4, "ESP32-WROOM-32", { "font-size": 0.5, fill: "#333", "text-anchor": "middle", "dominant-baseline": "central" }) + rect(18, mid - 1.1, 1.6, 2.2, { fill: "#c8ccd0", stroke: "#8a8f94", "stroke-width": 0.05 }) + headerPins(pins) + pinLabels(pins, w) + text(12.5, mid, "ESP32-DevKitC", { "font-size": 0.6, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" });
   }
 };
+var XIAO_PINS = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10", "3V3", "GND", "5V"];
+var xiao = {
+  type: "xiao",
+  name: "XIAO ESP32 (C3 / S3 / C6)",
+  category: "\u30DE\u30A4\u30B3\u30F3\u30DC\u30FC\u30C9",
+  description: "Seeed Studio XIAO\u30022x7\u30D4\u30F3\u3001\u5217\u9593\u96946\u30D4\u30C3\u30C1\u3067\u4E2D\u592E\u306E\u6E9D\u3092\u307E\u305F\u3050 (\u4F8B: at h10)\u3002USB\u306F\u30D4\u30F31 (D0) \u5074\u3002USB\u3092\u4E0A\u306B\u3057\u3066\u5DE6\u5217\u304C D0\u301CD6\u3001\u53F3\u5217\u304C\u4E0A\u304B\u3089 5V, GND, 3V3, D10, D9, D8, D7\u3002D\u756A\u53F7\u3068GPIO\u756A\u53F7\u306E\u5BFE\u5FDC\u306F\u7A2E\u985E\u3054\u3068\u306B\u9055\u3046\u306E\u3067\u516C\u5F0FWiki\u3067\u78BA\u8A8D\u3002D4=SDA, D5=SCL, D6=TX, D7=RX, D8=SCK, D9=MISO, D10=MOSI\u3002",
+  mount: "rigid",
+  params: {
+    model: { default: "ESP32C3", options: ["ESP32C3", "ESP32S3", "ESP32C6"], description: "\u8868\u793A\u3059\u308B\u578B\u756A" },
+    width: { default: 6, description: "\u5217\u9593\u9694 (\u30D4\u30C3\u30C1\u5358\u4F4D)" }
+  },
+  pins: (p) => dualRow(14, Number(p.width) || 6, XIAO_PINS),
+  render({ pins, params }) {
+    const w = Number(params.width) || 6;
+    const mid = -w / 2;
+    return rect(-1.15, -w - 0.45, 8.3, w + 0.9, { rx: 0.35, fill: "#1f2a44", stroke: "#0f1626", "stroke-width": 0.06 }) + rect(-1.75, mid - 1.15, 1.6, 2.3, { rx: 0.3, fill: "#c8ccd0", stroke: "#8a8f94", "stroke-width": 0.05 }) + rect(1.1, mid - 1.9, 3.6, 3.8, { rx: 0.15, fill: "#b9bec4", stroke: "#8b9399", "stroke-width": 0.05 }) + text(2.9, mid - 0.45, "XIAO", { "font-size": 0.62, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central", "font-weight": "bold" }) + text(2.9, mid + 0.45, params.model, { "font-size": 0.42, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central" }) + headerPins(pins) + pinLabels(pins, w);
+  }
+};
 var LCD_COLS = 16;
 var lcd1602 = {
   type: "lcd1602",
@@ -1160,7 +1178,8 @@ var BUILTIN_PARTS = [
   hc595,
   nano,
   pico,
-  esp32
+  esp32,
+  xiao
 ];
 
 // src/parts/registry.js

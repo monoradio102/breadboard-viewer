@@ -725,6 +725,36 @@ const esp32 = {
   },
 };
 
+// Seeed Studio XIAO (ESP32C3 / ESP32S3 / ESP32C6 share the pinout and outline)
+const XIAO_PINS = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10", "3V3", "GND", "5V"];
+
+const xiao = {
+  type: "xiao",
+  name: "XIAO ESP32 (C3 / S3 / C6)",
+  category: "マイコンボード",
+  description:
+    "Seeed Studio XIAO。2x7ピン、列間隔6ピッチで中央の溝をまたぐ (例: at h10)。USBはピン1 (D0) 側。USBを上にして左列が D0〜D6、右列が上から 5V, GND, 3V3, D10, D9, D8, D7。D番号とGPIO番号の対応は種類ごとに違うので公式Wikiで確認。D4=SDA, D5=SCL, D6=TX, D7=RX, D8=SCK, D9=MISO, D10=MOSI。",
+  mount: "rigid",
+  params: {
+    model: { default: "ESP32C3", options: ["ESP32C3", "ESP32S3", "ESP32C6"], description: "表示する型番" },
+    width: { default: 6, description: "列間隔 (ピッチ単位)" },
+  },
+  pins: (p) => dualRow(14, Number(p.width) || 6, XIAO_PINS),
+  render({ pins, params }) {
+    const w = Number(params.width) || 6;
+    const mid = -w / 2;
+    return (
+      rect(-1.15, -w - 0.45, 8.3, w + 0.9, { rx: 0.35, fill: "#1f2a44", stroke: "#0f1626", "stroke-width": 0.06 }) +
+      rect(-1.75, mid - 1.15, 1.6, 2.3, { rx: 0.3, fill: "#c8ccd0", stroke: "#8a8f94", "stroke-width": 0.05 }) +
+      rect(1.1, mid - 1.9, 3.6, 3.8, { rx: 0.15, fill: "#b9bec4", stroke: "#8b9399", "stroke-width": 0.05 }) +
+      text(2.9, mid - 0.45, "XIAO", { "font-size": 0.62, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central", "font-weight": "bold" }) +
+      text(2.9, mid + 0.45, params.model, { "font-size": 0.42, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central" }) +
+      headerPins(pins) +
+      pinLabels(pins, w)
+    );
+  },
+};
+
 const LCD_COLS = 16;
 
 const lcd1602 = {
@@ -877,4 +907,5 @@ export const BUILTIN_PARTS = [
   nano,
   pico,
   esp32,
+  xiao,
 ];
