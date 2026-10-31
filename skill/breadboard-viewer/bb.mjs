@@ -1566,11 +1566,11 @@ function fromJson(def) {
   const display = def.display ?? null;
   const conditions = [...new Set([...shapes, ...sprites].map((s) => s.when).filter(Boolean))];
   const states = { ...def.states ?? {} };
+  if (display) states.text ??= { type: "string", default: display.text ?? "" };
   for (const cond of conditions) {
     const name = parseCondition(cond).name;
     states[name] ??= { type: "bool", default: false };
   }
-  if (display) states.text ??= { type: "string", default: display.text ?? "" };
   return {
     type: def.type,
     name: def.name ?? def.type,
@@ -2868,6 +2868,334 @@ function circuitLink(circuit, base = "https://monoradio102.github.io/breadboard-
   return `${base.replace(/#.*$/, "")}#data=${b64}`;
 }
 
+// src/autowire.js
+var RAILS2 = ["T+", "T-", "B+", "B-"];
+var COST = { length: 1, crossing: 25, alongside: 20, overHole: 40, overBody: 8, offBoard: 10, bend: 2, detour: 1.5 };
+var PALETTE = ["yellow", "blue", "green", "orange", "purple", "white", "brown", "gray"];
+var LANES = [3, 9.5, 16];
+var NEAR = 0.22;
+function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300 } = {}) {
+  const result = resolveCircuit(circuit);
+  if (result.errors.length) throw new Error(`\u56DE\u8DEF\u306B\u30A8\u30E9\u30FC\u304C\u3042\u308A\u307E\u3059: ${result.errors[0]}`);
+  const { board } = result;
+  const list = Array.isArray(nets) ? nets.map((m, i) => [`net${i + 1}`, m]) : Object.entries(nets ?? {});
+  if (!list.length) throw new Error('nets \u304C\u7A7A\u3067\u3059 ({ "SDA": ["U1.D4", "DISP1.SDA"], ... })');
+  const nodeOf = (m) => {
+    const s = String(m);
+    if (RAILS2.includes(s)) {
+      if (!board.rails) throw new Error(`\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306F\u96FB\u6E90\u30EC\u30FC\u30EB (${s}) \u304C\u3042\u308A\u307E\u305B\u3093`);
+      return `${s}${board.railCols[0]}`;
+    }
+    if (board.has(s)) return s;
+    const dot = s.indexOf(".");
+    const part = dot > 0 ? result.parts.find((p) => p.id === s.slice(0, dot)) : null;
+    if (!part) throw new Error(`"${s}" \u306F\u90E8\u54C1\u306E\u30D4\u30F3 (\u4F8B: "U1.D4")\u3001\u7A74\u3001\u30EC\u30FC\u30EB (T+ / T- / B+ / B-) \u306E\u3069\u308C\u3067\u3082\u3042\u308A\u307E\u305B\u3093`);
+    const pin = part.pins.find((p) => p.name === s.slice(dot + 1));
+    if (!pin) throw new Error(`${part.id} \u306B\u30D4\u30F3 "${s.slice(dot + 1)}" \u306F\u3042\u308A\u307E\u305B\u3093 (${part.pins.map((p) => p.name).join(", ")})`);
+    if (!pin.node) throw new Error(`${s} \u306F\u3069\u3053\u306B\u3082\u633F\u3055\u3063\u3066\u3044\u307E\u305B\u3093`);
+    return pin.node;
+  };
+  const todo = list.map(([name, members], i) => {
+    if (!Array.isArray(members) || members.length < 2) throw new Error(`net "${name}": 2\u3064\u4EE5\u4E0A\u306E\u30E1\u30F3\u30D0\u30FC\u304C\u5FC5\u8981\u3067\u3059`);
+    return { name, color: colorFor(name, members.map(String), i), nodes: members.map(nodeOf) };
+  });
+  const baseUsed = new Set(result.occupied.keys());
+  const covered = coveredBy(result);
+  const terminals = /* @__PURE__ */ new Map();
+  for (const part of result.parts) {
+    for (const pin of part.pins) if (!pin.hole && pin.node) terminals.set(pin.node, { ref: `${part.id}.${pin.name}`, x: pin.x, y: pin.y, node: pin.node });
+  }
+  const holeEnds = new Map([...board.holes].filter(([h]) => !covered.has(h)).map(([h, p]) => [h, { ref: h, x: p.x, y: p.y, hole: h, node: h }]));
+  const trace = (w) => withBox(wirePoints(w, 0.35));
+  const baseDrawn = result.wires.map(trace);
+  const bodies = result.parts.filter((p) => p.def.mount !== "leads" || p.offboard).map(bodyBox).map((b) => ({ x: b.x + 0.6, y: b.y + 0.6, w: b.w - 1.2, h: b.h - 1.2 }));
+  const bounds = board.bounds;
+  const kitStyle = circuit.wireStyle === "kit";
+  const unionFind = (autos2) => {
+    const parent = /* @__PURE__ */ new Map();
+    const find = (a) => {
+      if (!parent.has(a)) parent.set(a, a);
+      let r = a;
+      while (parent.get(r) !== r) r = parent.get(r);
+      parent.set(a, r);
+      return r;
+    };
+    const union2 = (a, b) => parent.set(find(a), find(b));
+    for (const strip of boardStrips(board)) strip.slice(1).forEach((h) => union2(strip[0], h));
+    for (const w of result.wires) union2(w.nodes[0], w.nodes[1]);
+    for (const part of result.parts) {
+      for (const group of part.internal) {
+        const nodes = group.map((name) => part.pins.find((p) => p.name === name)?.node).filter(Boolean);
+        nodes.slice(1).forEach((h) => union2(nodes[0], h));
+      }
+    }
+    for (const w of autos2) union2(w.a.node, w.b.node);
+    return find;
+  };
+  const context = (autos2) => ({
+    find: unionFind(autos2),
+    used: /* @__PURE__ */ new Set([...baseUsed, ...autos2.flatMap((w) => [w.a.hole, w.b.hole]).filter(Boolean)]),
+    drawn: [...baseDrawn, ...autos2.map((w) => w.points)]
+  });
+  const endsOf = (ctx, root) => [
+    ...[...holeEnds.values()].filter((e) => !ctx.used.has(e.hole) && ctx.find(e.hole) === root),
+    ...[...terminals.values()].filter((t) => ctx.find(t.node) === root)
+  ];
+  let spent = 0;
+  const outOfBudget = () => spent >= budget;
+  const route = (order) => {
+    const autos2 = [];
+    for (; ; ) {
+      const ctx = context(autos2);
+      let best = null;
+      const pending = todo.filter((net) => new Set(net.nodes.map(ctx.find)).size > 1);
+      const nets2 = order ? pending.slice().sort((p, q) => order.indexOf(p) - order.indexOf(q)).slice(0, 1) : pending;
+      for (const net of nets2) {
+        const roots = [...new Set(net.nodes.map(ctx.find))];
+        for (let i = 0; i < roots.length; i++) {
+          for (let j = i + 1; j < roots.length; j++) {
+            const c = cheapest(ctx, endsOf(ctx, roots[i]), endsOf(ctx, roots[j]));
+            if (c && (!best || c.cost < best.cost)) best = { ...c, net };
+          }
+        }
+      }
+      if (!best) return pending.length ? { failed: pending[0] } : { autos: autos2 };
+      autos2.push(best);
+    }
+  };
+  const improve = (autos2) => {
+    for (let pass = 0; pass < passes; pass++) {
+      let improved = false;
+      let current = total(autos2);
+      for (let i = 0; i < autos2.length && !outOfBudget(); i++) {
+        const others = autos2.filter((_, k) => k !== i);
+        const ctx = context(others);
+        const w = autos2[i];
+        const c = cheapest(ctx, endsOf(ctx, ctx.find(w.a.node)), endsOf(ctx, ctx.find(w.b.node)));
+        if (!c || c.a === w.a && c.b === w.b && JSON.stringify(c.shape) === JSON.stringify(w.shape)) continue;
+        const trial = [...others.slice(0, i), { ...c, net: w.net }, ...others.slice(i)];
+        const t = total(trial);
+        if (t < current - 1e-6) {
+          autos2.splice(i, 1, { ...c, net: w.net });
+          current = t;
+          improved = true;
+        }
+      }
+      if (!improved) break;
+    }
+    return autos2;
+  };
+  const improvePairs = (autos2) => {
+    for (let pass = 0; pass < passes; pass++) {
+      let improved = false;
+      const troubled = autos2.map((w, i) => inTrouble(w, autos2.filter((_, k) => k !== i)) ? i : -1).filter((i) => i >= 0);
+      for (const i of troubled) {
+        for (let j = 0; j < autos2.length && !improved && !outOfBudget(); j++) {
+          if (j === i || !overlaps(autos2[i].points.box, autos2[j].points.box)) continue;
+          const others = autos2.filter((_, k) => k !== i && k !== j);
+          let best = { autos: autos2, cost: total(autos2) };
+          for (const [first, second] of [[autos2[i], autos2[j]], [autos2[j], autos2[i]]]) {
+            const ctx1 = context(others);
+            const ends = (ctx, w) => [endsOf(ctx, ctx.find(w.a.node)), endsOf(ctx, ctx.find(w.b.node))];
+            const [fa, fb] = ends(ctx1, first);
+            for (const c1 of cheapest(ctx1, fa, fb, 8)) {
+              const a1 = { ...c1, net: first.net };
+              const ctx2 = context([...others, a1]);
+              const [sa, sb] = ends(ctx2, second);
+              if (ctx2.find(second.a.node) === ctx2.find(second.b.node)) continue;
+              const c2 = cheapest(ctx2, sa, sb);
+              if (!c2) continue;
+              const trial = [...others, a1, { ...c2, net: second.net }];
+              const cost = total(trial);
+              if (cost < best.cost - 1e-6) best = { autos: trial, cost };
+            }
+          }
+          if (best.autos !== autos2) {
+            autos2 = best.autos;
+            improved = true;
+          }
+        }
+        if (improved) break;
+      }
+      if (!improved) break;
+    }
+    return autos2;
+  };
+  const orders = [null, ...todo.slice(0, 6).map((first) => [first, ...todo.filter((t) => t !== first)])];
+  let autos = null;
+  let bestTotal = Infinity;
+  let failed = null;
+  for (const order of orders) {
+    if (autos && outOfBudget()) break;
+    const r = route(order);
+    if (r.failed) {
+      failed = r.failed;
+      continue;
+    }
+    const done = improvePairs(improve(r.autos));
+    const t = total(done);
+    if (t < bestTotal - 1e-6) [autos, bestTotal] = [done, t];
+    if (autos === done && !hasTrouble(done)) break;
+  }
+  if (!autos) throw new Error(`net "${failed.name}" \u3092\u3064\u306A\u3052\u307E\u305B\u3093\u3067\u3057\u305F (\u7A7A\u3044\u3066\u3044\u308B\u7A74\u304C\u8DB3\u308A\u307E\u305B\u3093)`);
+  const taken = /* @__PURE__ */ new Set([...result.wires.map((w) => w.id), ...result.parts.map((p) => p.id), ...(circuit.overlays ?? []).map((o) => o.id)]);
+  let n2 = 0;
+  const nextId2 = () => {
+    do
+      n2++;
+    while (taken.has(`${idPrefix}${n2}`));
+    taken.add(`${idPrefix}${n2}`);
+    return `${idPrefix}${n2}`;
+  };
+  const wires = [];
+  const notes = [];
+  autos.forEach((w, i) => {
+    const { detour, ...shape } = w.shape;
+    const trouble = inTrouble(w, autos.filter((_, k) => k !== i));
+    const wire = { id: nextId2(), from: w.a.ref, to: w.b.ref, color: w.net.color, ...shape, note: `\u81EA\u52D5\u914D\u7DDA: ${w.net.name}${trouble ? " (\u4EA4\u5DEE\u30FB\u91CD\u306A\u308A\u3042\u308A)" : ""}` };
+    wires.push(wire);
+    if (trouble) notes.push(`${wire.id} (${w.net.name}) \u306F\u3001\u307B\u304B\u306E\u914D\u7DDA\u3068\u4EA4\u5DEE\u3059\u308B\u304B\u3001\u4F7F\u3063\u3066\u3044\u308B\u7A74\u3084\u90E8\u54C1\u306E\u4E0A\u3092\u901A\u308A\u307E\u3059`);
+  });
+  return { wires, notes };
+  function inTrouble(w, others) {
+    return wireCost(w, others) - lengthOf(w.points) * COST.length - 3 >= COST.crossing - 1e-6;
+  }
+  function hasTrouble(autos2) {
+    return autos2.some((w, i) => inTrouble(w, autos2.filter((_, k) => k !== i)));
+  }
+  function total(autos2) {
+    return autos2.reduce((sum, w, i) => sum + wireCost(w, autos2.filter((_, k) => k !== i)), 0);
+  }
+  function wireCost(w, others) {
+    const used = /* @__PURE__ */ new Set([...baseUsed, ...others.flatMap((o) => [o.a.hole, o.b.hole]).filter(Boolean)]);
+    return costOf(w.points, w.a, w.b, w.shape, { used, drawn: [...baseDrawn, ...others.map((o) => o.points)] });
+  }
+  function cheapest(ctx, as, bs, k = 0) {
+    spent++;
+    const pairs = [];
+    for (const a of as) for (const b of bs) pairs.push({ a, b, d: Math.hypot(a.x - b.x, a.y - b.y) });
+    pairs.sort((p, q) => p.d - q.d);
+    const near = pairs.slice(0, 150);
+    const keep = Math.max(1, k);
+    const tryShape = (a, b, shape, kit) => {
+      const points = trace({ a, b, via: (shape.via ?? []).map(([x, y]) => ({ x, y })), bend: shape.bend, elbow: shape.elbow, kit });
+      return { a, b, shape, points, cost: costOf(points, a, b, shape, ctx) };
+    };
+    let bound = Infinity;
+    const tried = [];
+    for (const p of near) {
+      if (p.d * COST.length >= bound && tried.length >= keep) break;
+      p.straight = tryShape(p.a, p.b, {}, kitStyle && Boolean(p.a.hole && p.b.hole));
+      tried.push(p);
+      if (tried.length >= keep) bound = Math.min(bound, tried.map((t) => t.straight.cost).sort((x, y) => x - y)[keep - 1] + COST.bend * 0.25 + COST.detour + 12);
+    }
+    const promising = [.../* @__PURE__ */ new Set([...tried.slice().sort((p, q) => p.straight.cost - q.straight.cost).slice(0, 10), ...tried.slice(0, 6)])];
+    const top = [];
+    const offer = (c) => {
+      if (top.length === keep && c.cost >= top[keep - 1].cost) return;
+      top.push(c);
+      top.sort((p, q) => p.cost - q.cost);
+      if (top.length > keep) top.pop();
+    };
+    for (const p of tried) offer(p.straight);
+    for (const { a, b } of promising) {
+      const kit = kitStyle && Boolean(a.hole && b.hole);
+      for (const shape of shapes(a, b, kit).slice(1)) offer(tryShape(a, b, shape, kit));
+    }
+    return k ? top : top[0] ?? null;
+  }
+  function shapes(a, b, kit) {
+    if (kit) {
+      const straight = Math.abs(a.x - b.x) < 1e-6 || Math.abs(a.y - b.y) < 1e-6;
+      return straight ? [{}] : [{}, { elbow: "v" }];
+    }
+    const out = [{}, { bend: 0.12 }, { bend: -0.12 }, { bend: 0.25 }, { bend: -0.25 }];
+    if (a.hole && b.hole && Math.abs(a.x - b.x) > 1.5) {
+      for (const y of LANES) if (y > bounds.y && y < bounds.y + bounds.h) out.push({ via: [[a.x, y], [b.x, y]], detour: true });
+    }
+    return out;
+  }
+  function costOf(points, a, b, shape, { used, drawn }) {
+    const len = lengthOf(points);
+    let cost = len * COST.length + Math.abs(shape.bend ?? 0) * COST.bend + (shape.detour ? COST.detour : 0);
+    for (const other of drawn) cost += crossings(points, other) * COST.crossing + alongside(points, other) * COST.alongside;
+    for (const h of used) {
+      if (h === a.hole || h === b.hole) continue;
+      const p = board.pos(h);
+      if (!p || Math.abs(p.x - (a.x + b.x) / 2) > len || Math.abs(p.y - (a.y + b.y) / 2) > len) continue;
+      if (points.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < NEAR)) cost += COST.overHole;
+    }
+    for (const end of [a, b]) {
+      if (!end.hole) continue;
+      if (drawn.some((line2) => line2.some((q) => Math.hypot(q.x - end.x, q.y - end.y) < NEAR))) cost += COST.overHole;
+    }
+    const step = len / Math.max(1, points.length - 1);
+    for (const q of points) {
+      if (bodies.some((bx) => q.x > bx.x && q.x < bx.x + bx.w && q.y > bx.y && q.y < bx.y + bx.h)) cost += COST.overBody * step;
+      if (a.hole && b.hole && (q.x < bounds.x || q.x > bounds.x + bounds.w || q.y < bounds.y || q.y > bounds.y + bounds.h)) cost += COST.offBoard * step;
+    }
+    return cost;
+  }
+}
+function lengthOf(points) {
+  let len = 0;
+  for (let i = 1; i < points.length; i++) len += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  return len;
+}
+function colorFor(name, members, i) {
+  const s = String(name).toLowerCase();
+  if (/gnd|ground|vss|^-$|−|(^|\/)[tb]-/.test(s) || members.some((m) => m === "T-" || m === "B-")) return "black";
+  if (/vcc|vdd|vin|3v3|3\.3|5v|vbus|bat|power|pwr|(^|\/)[tb]\+/.test(s) || members.some((m) => m === "T+" || m === "B+")) return "red";
+  return PALETTE[i % PALETTE.length];
+}
+function crossings(p, q) {
+  if (p.box && q.box && (p.box.x1 < q.box.x0 || q.box.x1 < p.box.x0 || p.box.y1 < q.box.y0 || q.box.y1 < p.box.y0)) return 0;
+  const near = (u, v) => Math.hypot(u.x - v.x, u.y - v.y) < 0.05;
+  const shared = [p[0], p.at(-1)].filter((e) => near(e, q[0]) || near(e, q.at(-1)));
+  let count = 0;
+  const qb = q.box;
+  for (let i = 1; i < p.length; i++) {
+    const a = p[i - 1];
+    const b = p[i];
+    if (qb && (Math.max(a.x, b.x) < qb.x0 || Math.min(a.x, b.x) > qb.x1 || Math.max(a.y, b.y) < qb.y0 || Math.min(a.y, b.y) > qb.y1)) continue;
+    for (let j = 1; j < q.length; j++) {
+      if (!segmentsCross(a, b, q[j - 1], q[j])) continue;
+      if (shared.some((e) => near(e, p[i - 1]) || near(e, p[i]))) continue;
+      count++;
+    }
+  }
+  return count;
+}
+function segmentsCross(a, b, c, d) {
+  const orient = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const o1 = orient(a, b, c);
+  const o2 = orient(a, b, d);
+  const o3 = orient(c, d, a);
+  const o4 = orient(c, d, b);
+  return o1 * o2 < 0 && o3 * o4 < 0;
+}
+function withBox(points) {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  points.box = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  return points;
+}
+function overlaps(p, q, m = 1) {
+  return !(p.x1 + m < q.x0 || q.x1 + m < p.x0 || p.y1 + m < q.y0 || q.y1 + m < p.y0);
+}
+function alongside(p, q) {
+  if (p.box && q.box && !overlaps(p.box, q.box, 0.3)) return 0;
+  const ends = [q[0], q.at(-1), p[0], p.at(-1)];
+  const qb = q.box;
+  let n2 = 0;
+  for (const u of p) {
+    if (qb && (u.x < qb.x0 - 0.3 || u.x > qb.x1 + 0.3 || u.y < qb.y0 - 0.3 || u.y > qb.y1 + 0.3)) continue;
+    if (ends.some((e) => (e.x - u.x) ** 2 + (e.y - u.y) ** 2 < 0.36)) continue;
+    if (q.some((v) => (v.x - u.x) ** 2 + (v.y - u.y) ** 2 < 0.09)) n2++;
+  }
+  return n2 * 0.35;
+}
+
 // src/ops.js
 var OpError = class extends Error {
 };
@@ -3066,6 +3394,19 @@ var OPS = {
     const wid = id ?? nextId(c, "W");
     if (usedIds(c).has(wid)) fail(`ID "${wid}" \u306F\u65E2\u306B\u4F7F\u308F\u308C\u3066\u3044\u307E\u3059`);
     return { circuit: { ...c, wires: [...c.wires, { id: wid, from, to, ...rest }] }, id: wid };
+  },
+  // Adds the jumper wires that make `nets` ({ name: [members] }): members are part pins
+  // ("U1.D4"), holes or rails ("T+", "T-", "B+", "B-"). What is already connected gets nothing.
+  // The id is the list of new wire ids, comma-separated.
+  autoWire(c, { nets }) {
+    let out;
+    try {
+      out = autoWire(c, nets, { idPrefix: "W" });
+    } catch (e) {
+      fail(e.message);
+    }
+    const ids = out.wires.map((w) => w.id);
+    return { circuit: { ...c, wires: [...c.wires, ...out.wires] }, id: ids.join(",") || "(\u3064\u306A\u304C\u3063\u3066\u3044\u307E\u3057\u305F)" };
   },
   // Adds user SVG (an effect, arrow, note...) drawn above the circuit; x, y, w, h in pitch units.
   addOverlay(c, { op, id, svg, x, y, w, h, ...rest }) {

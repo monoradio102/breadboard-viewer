@@ -99,6 +99,7 @@ node tools/bb.mjs parts                                      # 使える部品�
 node tools/bb.mjs new my.json half                           # 空の回路を作る
 node tools/bb.mjs url examples/oled-hello.json               # エディタで開けるリンク (#data=…)
 node tools/bb.mjs apply my.json '[{"op":"addPart","type":"led","at":"a10"}]'  # 編集操作を適用する
+node tools/bb.mjs apply my.json '[{"op":"autoWire","nets":{"SIG":["U1.D2","R1.1"],"GND":["U1.GND","D1.K","T-"]}}]'  # ネットリストから自動で配線
 node tools/bb.mjs check examples/blink-nano.json             # 検証とネットリストの表示
 node tools/bb.mjs check examples/xiao-voice.json --layout --json  # 見た目の問題も含めて JSON で
 node tools/bb.mjs place xiao --at h3 --rot 180               # 置いたときのピンの穴・覆う範囲・ぶつかり

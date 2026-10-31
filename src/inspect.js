@@ -17,7 +17,7 @@ export function bodyBox(part) {
 }
 
 // Holes hidden under rigid / off-board part bodies: hole -> part id (its own pins excluded).
-function coveredBy(result) {
+export function coveredBy(result) {
   const map = new Map();
   for (const part of result.parts) {
     if (part.def.mount === "leads" && !part.offboard) continue;

@@ -26,7 +26,9 @@
 
 1. `parts` で部品の `type` とピン名を確かめる。`{{CLI}} parts --json --type xiao` でピンの相対位置と本体の範囲もわかる
    置く前に `{{CLI}} place xiao --at h3 --rot 180 --in circuit.json` で、各ピンの穴・本体が覆う範囲・ぶつかりを確かめる
-2. `apply` で部品を置き、配線する (操作の一覧は {{OPS}})。JSON を直接書いてもよい
+2. `apply` で部品を置き、配線する (操作の一覧は {{OPS}})。JSON を直接書いてもよい。
+   配線は、部品を置いたあとにネットリストを渡して `autoWire` に任せられる (交差を避けて引く。部品の位置とピンの選び方で、きれいさが決まる):
+   `{{CLI}} apply circuit.json '[{"op":"autoWire","nets":{"SDA":["U1.D4","DISP1.SDA"],"SCL":["U1.D5","DISP1.SCL"],"GND":["U1.GND","DISP1.GND","T-"],"3V3":["U1.3V3","DISP1.VCC","T+"]}}]'`
 3. 必ず `check` を実行し、エラーがなく、ネットリストが意図どおりか確かめる。`NOTE` (参考) は電気的なよくあるミス (電源どうしのショート、抵抗なしの LED、GND 未接続、電圧の過不足など) なので、意図したものでなければ直す
 4. `{{CLI}} check circuit.json --layout` で見た目の問題 (本体の重なり、本体の下に隠れた配線の端、ほかの穴の真上を通る配線、ラベルの重なり、大きすぎる bend、ボードの外にはみ出す配線) を文字で確かめ、最後に `render` で画像にして確かめる。
    結果を機械的に読むときは `check --json`。静止画を確かめるだけなら、SVG を `rsvg-convert -o out.png circuit.svg` で PNG にしてもよい (アニメーションは止まった状態)

@@ -14,6 +14,7 @@
 //   { "op": "addWire", "from": "a1", "to": "T-1", "color": "black" }
 //   { "op": "setBoard", "board": "full" }
 //   { "op": "setWireStyle", "style": "kit" }
+//   { "op": "autoWire", "nets": { "SDA": ["U1.D4", "DISP1.SDA"], "GND": ["U1.GND", "DISP1.GND", "T-"] } }
 //   { "op": "animate", "target": "D1", "keys": [{ "t": 0, "on": true }, { "t": 500, "on": false }] }
 //   { "op": "setAnimation", "duration": 1000, "captions": [{ "t": 0, "text": "..." }] }
 //   { "op": "addOverlay", "svg": "<svg ...>...</svg>", "x": 10, "y": -4, "w": 6, "h": 6 }
@@ -22,6 +23,7 @@
 //   { "op": "setAssembly", "tray": { "U1": [5, 24] }, "timing": { "step": 3000 } }
 // See docs/OPS.md for the full list.
 import { autoSteps } from "./assembly.js";
+import { autoWire } from "./autowire.js";
 import { createBoard } from "./board.js";
 import { findFreeSpot, resolveCircuit, rotate } from "./circuit.js";
 import { BUILTIN_PARTS } from "./parts/builtin.js";
@@ -216,6 +218,20 @@ const OPS = {
     const wid = id ?? nextId(c, "W");
     if (usedIds(c).has(wid)) fail(`ID "${wid}" は既に使われています`);
     return { circuit: { ...c, wires: [...c.wires, { id: wid, from, to, ...rest }] }, id: wid };
+  },
+
+  // Adds the jumper wires that make `nets` ({ name: [members] }): members are part pins
+  // ("U1.D4"), holes or rails ("T+", "T-", "B+", "B-"). What is already connected gets nothing.
+  // The id is the list of new wire ids, comma-separated.
+  autoWire(c, { nets }) {
+    let out;
+    try {
+      out = autoWire(c, nets, { idPrefix: "W" });
+    } catch (e) {
+      fail(e.message);
+    }
+    const ids = out.wires.map((w) => w.id);
+    return { circuit: { ...c, wires: [...c.wires, ...out.wires] }, id: ids.join(",") || "(つながっていました)" };
   },
 
   // Adds user SVG (an effect, arrow, note...) drawn above the circuit; x, y, w, h in pitch units.

@@ -59,11 +59,12 @@ export function fromJson(def) {
   const display = def.display ?? null;
   const conditions = [...new Set([...shapes, ...sprites].map((s) => s.when).filter(Boolean))];
   const states = { ...(def.states ?? {}) };
+  // a display's text is a string state even when a shape's `when` names it ("!text": placeholder)
+  if (display) states.text ??= { type: "string", default: display.text ?? "" };
   for (const cond of conditions) {
     const name = parseCondition(cond).name;
     states[name] ??= { type: "bool", default: false };
   }
-  if (display) states.text ??= { type: "string", default: display.text ?? "" };
   return {
     type: def.type,
     name: def.name ?? def.type,
