@@ -109,8 +109,8 @@ node bb.mjs frames circuit.json -o asm --assembly --fps 30              # 組み
    ブラウザのエディタ上で作業しているときは `bb.link()` で同じリンクが得られる
 
 SVG の出力と、parts / new / apply / check は Node.js 18 以上だけで動きます。
-PNG と連番 PNG は、Playwright (`npm i playwright && npx playwright install chromium`) があればブラウザで描きます。
-ない環境では、インストール済みの Chromium / Chrome / Edge (PATH、macOS の /Applications、Windows の Program Files から自動で探す。`--browser-path` で指定も可) をヘッドレスで使い、それもなければ rsvg-convert か Python の cairosvg (`pip install cairosvg`) で描きます (この2つでは影が省かれます)。`--raster browser|chrome|rsvg|cairosvg` で選べます。
+PNG と連番 PNG は、Playwright (`npm i playwright && npx playwright install chromium`) があればブラウザで描きます。Playwright は bb.mjs と同じフォルダ、コマンドを実行したフォルダ、`npm i -g` のパッケージから探します。何で描いたか (Playwright の Chromium を使わなかったときはその理由) は標準エラーに出ます。
+Playwright がないか、その Chromium が起動できない環境では、インストール済みの Chromium / Chrome / Edge (PATH、macOS の /Applications、Windows の Program Files から自動で探す。`--browser-path` で指定も可) をヘッドレスで使い、それもなければ rsvg-convert か Python の cairosvg (`pip install cairosvg`) で描きます (この2つでは影が省かれます)。`--raster browser|chrome|rsvg|cairosvg` で選べます。
 インストール済みの Google Chrome を使うなら `--chrome`、ほかのブラウザなら `--browser-path <実行ファイル>` (このときブラウザのダウンロードは不要で、`npm i playwright-core` だけで動きます)。
 `render` / `frames` は `--viewbox "x y w h"` か `--focus U1,MIC1 [--margin 2]` で表示範囲を絞れます。`frames --jobs 4` で並列に書き出します。
 知らないオプションはエラーになります。

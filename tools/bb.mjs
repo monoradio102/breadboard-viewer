@@ -11,7 +11,7 @@ import { circuitLink, emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, s
 import { OpError, applyOps } from "../src/ops.js";
 import { createRegistry, fromJson } from "../src/parts/registry.js";
 import { renderSvg } from "../src/render.js";
-import { hasBrowser, hasPlaywright, launchBrowser, openCapture } from "./capture.mjs";
+import { launchBrowser, openCapture, playwrightBrowserProblem, playwrightPlace } from "./capture.mjs";
 import { NO_RASTERIZER, findChrome, findRasterizer, rasterize } from "./raster.mjs";
 
 const VIEW = {
@@ -146,7 +146,7 @@ async function main() {
       const time = opts["--step"] !== undefined ? planAssembly(result).timeOfStep(num("--step")) : num("--time");
       const mode = { captions: !opts["--no-captions"], assembly, viewBox: viewBoxOf(result) };
       if (out?.endsWith(".png")) {
-        const engine = pngEngine();
+        const engine = await pngEngine();
         if (engine === "browser") {
           // a PNG is one frame: the animated SVG paused at --time (default 0)
           const cap = await openCapture(renderSvg(result, mode), captureOptions(2));
@@ -177,7 +177,7 @@ async function main() {
       mkdirSync(out, { recursive: true });
       const mode = { captions: !opts["--no-captions"], assembly, viewBox: viewBoxOf(result) };
       const frameFile = (i) => join(out, `frame_${String(i).padStart(5, "0")}.png`);
-      const engine = pngEngine();
+      const engine = await pngEngine();
       if (engine !== "browser") {
         const { scale, transparent } = captureOptions(1);
         const jobs = Array.from({ length: count }, (_, i) => ({ svg: renderSvg(result, { ...mode, time: start + (i * 1000) / fps }), out: frameFile(i) }));
@@ -374,27 +374,44 @@ function printFrames(count, fps, start, end, jobs, out) {
 //   rsvg / cairosvg   rsvg-convert / Python's cairosvg: no shadows
 // auto takes them in that order. Without Playwright the CSS / SMIL inside overlay SVGs shows
 // its first moment rather than the frame's.
-function pngEngine() {
+async function pngEngine() {
   const want = opts["--raster"] ?? "auto";
   if (!["auto", "browser", "chrome", "rsvg", "cairosvg"].includes(want)) fail("--raster は auto / browser / chrome / rsvg / cairosvg です");
-  const playwright = hasPlaywright();
-  // Playwright without its own Chromium: drive the installed Chrome / Edge (macOS / Windows apps) instead
-  if (want === "auto" && playwright && !opts["--chrome"] && !opts["--browser-path"] && !hasBrowser()) {
+  const place = want === "auto" || want === "browser" ? playwrightPlace() : null;
+  let why = null; // why Playwright's own Chromium is not used (shown with the engine taken instead)
+  if (place) {
+    if (opts["--chrome"] || opts["--browser-path"]) {
+      console.error(`PNG: Playwright (${place}) で ${opts["--browser-path"] ?? "Google Chrome"} を使って描画します`);
+      return "browser";
+    }
+    const problem = await playwrightBrowserProblem();
+    if (!problem) {
+      console.error(`PNG: Playwright (${place}) の Chromium で描画します`);
+      return "browser";
+    }
+    why = `Playwright (${place}) は見つかりましたが、Chromium を起動できません: ${problem}\n  Playwright の Chromium は npx playwright install chromium で入ります (Playwright と同じフォルダで実行)`;
+    if (want === "browser") fail(why, 1);
+    // drive the installed Chrome / Edge (macOS / Windows apps) with Playwright instead
     const app = findChrome();
     if (app && isAbsolute(app)) {
+      console.error(`${why}\nPNG: 代わりに ${app} を Playwright で使います`);
       opts["--browser-path"] = app;
       return "browser";
     }
+  } else if (want === "browser") {
+    fail("Playwright が見つかりません (bb.mjs と同じフォルダ、実行したフォルダ、npm -g のパッケージを探しました)。\n  npm i playwright && npx playwright install chromium", 1);
+  } else if (want === "auto") {
+    why = "Playwright が見つかりません (bb.mjs と同じフォルダ、実行したフォルダ、npm -g のパッケージを探しました)";
   }
-  if (want === "browser" || (want === "auto" && playwright && (opts["--chrome"] || opts["--browser-path"] || hasBrowser()))) return "browser";
   let browserPath = opts["--browser-path"] ?? null;
   if (!browserPath && opts["--chrome"]) {
     browserPath = findChrome({ chromeOnly: true });
     if (!browserPath) fail("Google Chrome が見つかりません。--browser-path でブラウザの実行ファイルを指定してください", 1);
   }
   const engine = findRasterizer(want, browserPath);
-  if (!engine) fail(want === "auto" ? NO_RASTERIZER : `${want} が見つかりません。\n${NO_RASTERIZER}`, 1);
+  if (!engine) fail(want === "auto" ? `${why ? `${why}\n` : ""}${NO_RASTERIZER}` : `${want} が見つかりません。\n${NO_RASTERIZER}`, 1);
   const name = engine.split(":")[0];
+  if (why) console.error(why);
   console.error(name === "chrome" ? `PNG: ${engine.slice(7)} (ヘッドレス) で描画します` : `PNG: ${name} で描画します (影は描かれません)`);
   return engine;
 }

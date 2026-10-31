@@ -4,8 +4,11 @@
 // User SVG (part sprites / overlays) runs on its own clock inside <image>, so each one is opened
 // in a separate page with JavaScript disabled (its scripts never run, the network is blocked),
 // paused at t, captured as a transparent PNG and swapped into the frame.
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const SPRITE_PREFIX = "data:image/svg+xml;charset=utf-8,";
 
@@ -19,13 +22,27 @@ export function hasPlaywright() {
   }
 }
 
-// True when Playwright and its Chromium are installed (otherwise PNGs go through tools/raster.mjs).
-export function hasBrowser() {
+// Where the Playwright package was found (a folder), or null.
+export function playwrightPlace() {
   try {
-    const path = loadPlaywright().chromium.executablePath();
-    return Boolean(path) && existsSync(path);
+    loadPlaywright();
+    return found.place;
   } catch {
-    return false;
+    return null;
+  }
+}
+
+// Whether Playwright can start its own Chromium: null when it can, else the reason (one line).
+// It is actually launched: the files Playwright uses vary by version (full Chromium, or the
+// headless shell only) and may belong to another version of the package.
+export async function playwrightBrowserProblem() {
+  try {
+    const browser = await loadPlaywright().chromium.launch();
+    await browser.close();
+    return null;
+  } catch (e) {
+    const line = String(e?.message ?? e).split("\n").find((l) => l.trim() && !/^browserType\.launch:?$/.test(l.trim())) ?? "起動できません";
+    return line.replace(/^browserType\.launch:\s*/, "").trim();
   }
 }
 
@@ -111,22 +128,42 @@ export async function openCapture(svg, { scale = 2, transparent = false, channel
   };
 }
 
+// Playwright is looked for next to this file (and NODE_PATH), then in the folder the command is
+// run from, then among the global npm packages: bb.mjs is often copied on its own (a skill
+// folder, /tmp) while Playwright sits in the project or was installed with npm -g.
+let found = null;
 function loadPlaywright() {
-  // require() also finds a globally installed Playwright (NODE_PATH), which import() does not.
-  const require = createRequire(import.meta.url);
-  for (const name of ["playwright", "playwright-core", "@playwright/test"]) {
-    try {
-      return require(name);
-    } catch {
-      // try the next package name
+  if (found) return found.module;
+  const names = ["playwright", "playwright-core", "@playwright/test"];
+  const places = [fileURLToPath(new URL(".", import.meta.url)), process.cwd(), globalModules()];
+  for (const place of places.filter(Boolean)) {
+    const require = createRequire(join(place, "noop.js"));
+    for (const name of names) {
+      try {
+        found = { module: require(name), place: dirname(require.resolve(name)) };
+        return found.module;
+      } catch {
+        // try the next package name / place
+      }
     }
   }
   const err = new Error(
-    "PNG の書き出しには Playwright が必要です。このファイルと同じフォルダで次を実行してください:\n" +
+    "PNG の書き出しには Playwright が必要です。このファイルと同じフォルダか、コマンドを実行するフォルダで次を実行してください:\n" +
       "  npm i playwright && npx playwright install chromium",
   );
   err.code = "NO_PLAYWRIGHT";
   throw err;
+}
+
+// npm's global node_modules folder (npm root -g), or null.
+function globalModules() {
+  try {
+    const r = spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["root", "-g"], { encoding: "utf8", timeout: 10000, shell: process.platform === "win32" });
+    const dir = r.status === 0 ? r.stdout.trim() : "";
+    return dir && existsSync(dir) ? dirname(dir) : null; // createRequire looks in <dir>/node_modules
+  } catch {
+    return null;
+  }
 }
 
 // Time on a sprite's own clock: the frame time, or the time since the overlay last became

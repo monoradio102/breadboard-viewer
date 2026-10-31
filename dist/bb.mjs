@@ -4,7 +4,7 @@
 // tools/bb.mjs
 import { existsSync as existsSync3, mkdirSync, readFileSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { cpus } from "node:os";
-import { isAbsolute, join as join2 } from "node:path";
+import { isAbsolute, join as join3 } from "node:path";
 
 // src/board.js
 var BOARD_TYPES = {
@@ -3763,23 +3763,28 @@ function clean(obj) {
 }
 
 // tools/capture.mjs
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 var SPRITE_PREFIX = "data:image/svg+xml;charset=utf-8,";
-function hasPlaywright() {
+function playwrightPlace() {
   try {
     loadPlaywright();
-    return true;
+    return found.place;
   } catch {
-    return false;
+    return null;
   }
 }
-function hasBrowser() {
+async function playwrightBrowserProblem() {
   try {
-    const path = loadPlaywright().chromium.executablePath();
-    return Boolean(path) && existsSync(path);
-  } catch {
-    return false;
+    const browser = await loadPlaywright().chromium.launch();
+    await browser.close();
+    return null;
+  } catch (e) {
+    const line2 = String(e?.message ?? e).split("\n").find((l) => l.trim() && !/^browserType\.launch:?$/.test(l.trim())) ?? "\u8D77\u52D5\u3067\u304D\u307E\u305B\u3093";
+    return line2.replace(/^browserType\.launch:\s*/, "").trim();
   }
 }
 async function launchBrowser({ channel, executablePath } = {}) {
@@ -3855,19 +3860,35 @@ async function openCapture(svg, { scale = 2, transparent = false, channel, execu
     close: () => shared ? Promise.all([mainCtx.close(), spriteCtx?.close()]) : browser.close()
   };
 }
+var found = null;
 function loadPlaywright() {
-  const require2 = createRequire(import.meta.url);
-  for (const name of ["playwright", "playwright-core", "@playwright/test"]) {
-    try {
-      return require2(name);
-    } catch {
+  if (found) return found.module;
+  const names = ["playwright", "playwright-core", "@playwright/test"];
+  const places = [fileURLToPath(new URL(".", import.meta.url)), process.cwd(), globalModules()];
+  for (const place2 of places.filter(Boolean)) {
+    const require2 = createRequire(join(place2, "noop.js"));
+    for (const name of names) {
+      try {
+        found = { module: require2(name), place: dirname(require2.resolve(name)) };
+        return found.module;
+      } catch {
+      }
     }
   }
   const err = new Error(
-    "PNG \u306E\u66F8\u304D\u51FA\u3057\u306B\u306F Playwright \u304C\u5FC5\u8981\u3067\u3059\u3002\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u3068\u540C\u3058\u30D5\u30A9\u30EB\u30C0\u3067\u6B21\u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044:\n  npm i playwright && npx playwright install chromium"
+    "PNG \u306E\u66F8\u304D\u51FA\u3057\u306B\u306F Playwright \u304C\u5FC5\u8981\u3067\u3059\u3002\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u3068\u540C\u3058\u30D5\u30A9\u30EB\u30C0\u304B\u3001\u30B3\u30DE\u30F3\u30C9\u3092\u5B9F\u884C\u3059\u308B\u30D5\u30A9\u30EB\u30C0\u3067\u6B21\u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044:\n  npm i playwright && npx playwright install chromium"
   );
   err.code = "NO_PLAYWRIGHT";
   throw err;
+}
+function globalModules() {
+  try {
+    const r = spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["root", "-g"], { encoding: "utf8", timeout: 1e4, shell: process.platform === "win32" });
+    const dir = r.status === 0 ? r.stdout.trim() : "";
+    return dir && existsSync(dir) ? dirname(dir) : null;
+  } catch {
+    return null;
+  }
 }
 function spriteTime(sp, t) {
   if (!sp.starts?.length) return t;
@@ -3877,14 +3898,14 @@ function spriteTime(sp, t) {
 }
 
 // tools/raster.mjs
-import { spawnSync } from "node:child_process";
+import { spawnSync as spawnSync2 } from "node:child_process";
 import { existsSync as existsSync2, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join as join2, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 var has = (cmd2, args) => {
   try {
-    return spawnSync(cmd2, args, { stdio: "ignore", timeout: 2e4 }).status === 0;
+    return spawnSync2(cmd2, args, { stdio: "ignore", timeout: 2e4 }).status === 0;
   } catch {
     return false;
   }
@@ -3894,11 +3915,11 @@ var CHROMES = ["chromium", "chromium-browser", "google-chrome", "google-chrome-s
 var APPS = {
   darwin: (home) => ["Google Chrome", "Chromium", "Microsoft Edge", "Brave Browser"].flatMap((app) => {
     const bin = `${app}.app/Contents/MacOS/${app}`;
-    return [`/Applications/${bin}`, join(home, "Applications", bin)];
+    return [`/Applications/${bin}`, join2(home, "Applications", bin)];
   }),
   win32: () => {
     const roots = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean);
-    return [String.raw`Google\Chrome\Application\chrome.exe`, String.raw`Chromium\Application\chrome.exe`, String.raw`Microsoft\Edge\Application\msedge.exe`].flatMap((bin) => roots.map((r) => join(r, bin)));
+    return [String.raw`Google\Chrome\Application\chrome.exe`, String.raw`Chromium\Application\chrome.exe`, String.raw`Microsoft\Edge\Application\msedge.exe`].flatMap((bin) => roots.map((r) => join2(r, bin)));
   }
 };
 function findChrome({ chromeOnly = false } = {}) {
@@ -3924,38 +3945,38 @@ function rasterize(engine, jobs, { scale = 2, transparent = false } = {}) {
   if (engine === "rsvg") {
     for (const { svg, out } of jobs) {
       const args = ["-z", String(scale), "-o", out, ...transparent ? [] : ["-b", "white"]];
-      const r = spawnSync("rsvg-convert", args, { input: svg, maxBuffer: 1 << 28 });
+      const r = spawnSync2("rsvg-convert", args, { input: svg, maxBuffer: 1 << 28 });
       if (r.status !== 0) throw new Error(`rsvg-convert: ${r.stderr}`);
     }
     return;
   }
   const py = engine.split(":")[1];
-  const dir = mkdtempSync(join(tmpdir(), "bb-raster-"));
+  const dir = mkdtempSync(join2(tmpdir(), "bb-raster-"));
   try {
     const list = jobs.map(({ svg, out }, i) => {
-      const file = join(dir, `${i}.svg`);
+      const file = join2(dir, `${i}.svg`);
       writeFileSync(file, svg);
       return [file, out];
     });
-    writeFileSync(join(dir, "jobs.json"), JSON.stringify(list));
+    writeFileSync(join2(dir, "jobs.json"), JSON.stringify(list));
     const code = [
       "import json, sys, cairosvg",
       "jobs, scale, bg = json.load(open(sys.argv[1])), float(sys.argv[2]), sys.argv[3] or None",
       "for src, out in jobs: cairosvg.svg2png(url=src, write_to=out, scale=scale, background_color=bg)"
     ].join("\n");
-    const r = spawnSync(py, ["-c", code, join(dir, "jobs.json"), String(scale), transparent ? "" : "white"], { encoding: "utf8" });
+    const r = spawnSync2(py, ["-c", code, join2(dir, "jobs.json"), String(scale), transparent ? "" : "white"], { encoding: "utf8" });
     if (r.status !== 0) throw new Error(`cairosvg: ${r.stderr}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 function chromeShots(chrome, jobs, { scale, transparent }) {
-  const dir = mkdtempSync(join(tmpdir(), "bb-chrome-"));
+  const dir = mkdtempSync(join2(tmpdir(), "bb-chrome-"));
   try {
     for (const [i, { svg, out }] of jobs.entries()) {
       const w = Math.ceil(Number(/<svg[^>]*\swidth="([\d.]+)"/.exec(svg)?.[1] ?? 800));
       const h = Math.ceil(Number(/<svg[^>]*\sheight="([\d.]+)"/.exec(svg)?.[1] ?? 600));
-      const page = join(dir, `${i}.html`);
+      const page = join2(dir, `${i}.html`);
       writeFileSync(page, `<!doctype html><meta charset="utf-8"><body style="margin:0;overflow:hidden;background:${transparent ? "transparent" : "#fff"}">${svg}</body>`);
       const args = [
         "--headless",
@@ -3968,7 +3989,7 @@ function chromeShots(chrome, jobs, { scale, transparent }) {
         `--screenshot=${resolve(out)}`,
         pathToFileURL(page).href
       ];
-      const r = spawnSync(chrome, args, { encoding: "utf8", timeout: 6e4 });
+      const r = spawnSync2(chrome, args, { encoding: "utf8", timeout: 6e4 });
       if (r.status !== 0 || !existsSync2(out)) throw new Error(`${chrome}: ${r.stderr || r.error?.message || "\u30B9\u30AF\u30EA\u30FC\u30F3\u30B7\u30E7\u30C3\u30C8\u306B\u5931\u6557\u3057\u307E\u3057\u305F"}`);
     }
   } finally {
@@ -4099,7 +4120,7 @@ async function main() {
       const time = opts["--step"] !== void 0 ? planAssembly(result).timeOfStep(num("--step")) : num("--time");
       const mode = { captions: !opts["--no-captions"], assembly, viewBox: viewBoxOf(result) };
       if (out?.endsWith(".png")) {
-        const engine = pngEngine();
+        const engine = await pngEngine();
         if (engine === "browser") {
           const cap = await openCapture(renderSvg(result, mode), captureOptions(2));
           await cap.frame(time ?? 0, out);
@@ -4128,8 +4149,8 @@ async function main() {
       const jobs = Math.max(1, Math.min(count, num("--jobs", Math.min(4, cpus().length))));
       mkdirSync(out, { recursive: true });
       const mode = { captions: !opts["--no-captions"], assembly, viewBox: viewBoxOf(result) };
-      const frameFile = (i) => join2(out, `frame_${String(i).padStart(5, "0")}.png`);
-      const engine = pngEngine();
+      const frameFile = (i) => join3(out, `frame_${String(i).padStart(5, "0")}.png`);
+      const engine = await pngEngine();
       if (engine !== "browser") {
         const { scale, transparent } = captureOptions(1);
         const jobs2 = Array.from({ length: count }, (_, i) => ({ svg: renderSvg(result, { ...mode, time: start + i * 1e3 / fps }), out: frameFile(i) }));
@@ -4318,27 +4339,47 @@ function printFrames(count, fps, start, end, jobs, out) {
   console.log(`mp4: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -pix_fmt yuv420p -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" out.mp4`);
   console.log(`gif: ffmpeg -framerate ${fps} -i ${out}/frame_%05d.png -vf "split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse" out.gif`);
 }
-function pngEngine() {
+async function pngEngine() {
   const want = opts["--raster"] ?? "auto";
   if (!["auto", "browser", "chrome", "rsvg", "cairosvg"].includes(want)) fail2("--raster \u306F auto / browser / chrome / rsvg / cairosvg \u3067\u3059");
-  const playwright = hasPlaywright();
-  if (want === "auto" && playwright && !opts["--chrome"] && !opts["--browser-path"] && !hasBrowser()) {
+  const place2 = want === "auto" || want === "browser" ? playwrightPlace() : null;
+  let why = null;
+  if (place2) {
+    if (opts["--chrome"] || opts["--browser-path"]) {
+      console.error(`PNG: Playwright (${place2}) \u3067 ${opts["--browser-path"] ?? "Google Chrome"} \u3092\u4F7F\u3063\u3066\u63CF\u753B\u3057\u307E\u3059`);
+      return "browser";
+    }
+    const problem = await playwrightBrowserProblem();
+    if (!problem) {
+      console.error(`PNG: Playwright (${place2}) \u306E Chromium \u3067\u63CF\u753B\u3057\u307E\u3059`);
+      return "browser";
+    }
+    why = `Playwright (${place2}) \u306F\u898B\u3064\u304B\u308A\u307E\u3057\u305F\u304C\u3001Chromium \u3092\u8D77\u52D5\u3067\u304D\u307E\u305B\u3093: ${problem}
+  Playwright \u306E Chromium \u306F npx playwright install chromium \u3067\u5165\u308A\u307E\u3059 (Playwright \u3068\u540C\u3058\u30D5\u30A9\u30EB\u30C0\u3067\u5B9F\u884C)`;
+    if (want === "browser") fail2(why, 1);
     const app = findChrome();
     if (app && isAbsolute(app)) {
+      console.error(`${why}
+PNG: \u4EE3\u308F\u308A\u306B ${app} \u3092 Playwright \u3067\u4F7F\u3044\u307E\u3059`);
       opts["--browser-path"] = app;
       return "browser";
     }
+  } else if (want === "browser") {
+    fail2("Playwright \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093 (bb.mjs \u3068\u540C\u3058\u30D5\u30A9\u30EB\u30C0\u3001\u5B9F\u884C\u3057\u305F\u30D5\u30A9\u30EB\u30C0\u3001npm -g \u306E\u30D1\u30C3\u30B1\u30FC\u30B8\u3092\u63A2\u3057\u307E\u3057\u305F)\u3002\n  npm i playwright && npx playwright install chromium", 1);
+  } else if (want === "auto") {
+    why = "Playwright \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093 (bb.mjs \u3068\u540C\u3058\u30D5\u30A9\u30EB\u30C0\u3001\u5B9F\u884C\u3057\u305F\u30D5\u30A9\u30EB\u30C0\u3001npm -g \u306E\u30D1\u30C3\u30B1\u30FC\u30B8\u3092\u63A2\u3057\u307E\u3057\u305F)";
   }
-  if (want === "browser" || want === "auto" && playwright && (opts["--chrome"] || opts["--browser-path"] || hasBrowser())) return "browser";
   let browserPath = opts["--browser-path"] ?? null;
   if (!browserPath && opts["--chrome"]) {
     browserPath = findChrome({ chromeOnly: true });
     if (!browserPath) fail2("Google Chrome \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002--browser-path \u3067\u30D6\u30E9\u30A6\u30B6\u306E\u5B9F\u884C\u30D5\u30A1\u30A4\u30EB\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044", 1);
   }
   const engine = findRasterizer(want, browserPath);
-  if (!engine) fail2(want === "auto" ? NO_RASTERIZER : `${want} \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002
+  if (!engine) fail2(want === "auto" ? `${why ? `${why}
+` : ""}${NO_RASTERIZER}` : `${want} \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002
 ${NO_RASTERIZER}`, 1);
   const name = engine.split(":")[0];
+  if (why) console.error(why);
   console.error(name === "chrome" ? `PNG: ${engine.slice(7)} (\u30D8\u30C3\u30C9\u30EC\u30B9) \u3067\u63CF\u753B\u3057\u307E\u3059` : `PNG: ${name} \u3067\u63CF\u753B\u3057\u307E\u3059 (\u5F71\u306F\u63CF\u304B\u308C\u307E\u305B\u3093)`);
   return engine;
 }

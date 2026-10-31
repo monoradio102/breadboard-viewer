@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -197,5 +197,49 @@ test("Chrome / Edge are found where macOS and Windows install them", () => {
     assert.deepEqual(JSON.parse(r.stdout), [bin, bin, `chrome:${bin}`]);
   } finally {
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+const playwrightDir = (() => {
+  try {
+    return createRequire(import.meta.url).resolve("playwright");
+  } catch {
+    return null;
+  }
+})();
+
+test("PNG says why Playwright's own Chromium was not used", { skip: playwrightDir ? false : "Playwright がないので省略" }, () => {
+  const out = join(tmpdir(), `bb-why-${process.pid}.png`);
+  try {
+    const r = spawnSync(process.execPath, ["tools/bb.mjs", "render", "examples/blink-nano.json", "-o", out, "--scale", "1"], {
+      encoding: "utf8",
+      cwd: new URL("..", import.meta.url),
+      env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: join(tmpdir(), "no-browsers-here") },
+    });
+    assert.match(r.stderr, /Playwright \(.+\) は見つかりましたが、Chromium を起動できません/);
+    assert.match(r.stderr, /npx playwright install chromium/);
+  } finally {
+    rmSync(out, { force: true });
+  }
+});
+
+test("a copy of the CLI elsewhere finds Playwright in the folder it is run from", { skip: playwrightDir ? false : "Playwright がないので省略" }, () => {
+  // tools/ and src/ copied away from any node_modules (like a skill folder), run from the project
+  const copy = mkdtempSync(join(tmpdir(), "bb-copy-"));
+  const out = join(copy, "out.png");
+  try {
+    for (const dir of ["tools", "src"]) cpSync(fileURLToPath(new URL(`../${dir}`, import.meta.url)), join(copy, dir), { recursive: true });
+    const project = playwrightDir.slice(0, playwrightDir.lastIndexOf(`node_modules`));
+    const env = { ...process.env };
+    delete env.NODE_PATH;
+    const r = spawnSync(process.execPath, [join(copy, "tools", "bb.mjs"), "render", fileURLToPath(new URL("../examples/blink-nano.json", import.meta.url)), "-o", out, "--scale", "1"], {
+      encoding: "utf8",
+      cwd: project,
+      env,
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /PNG: Playwright \(.+\) /);
+  } finally {
+    rmSync(copy, { recursive: true, force: true });
   }
 });
