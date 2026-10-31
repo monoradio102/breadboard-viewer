@@ -15,10 +15,12 @@
 //   { "op": "setBoard", "board": "full" }
 //   { "op": "animate", "target": "D1", "keys": [{ "t": 0, "on": true }, { "t": 500, "on": false }] }
 //   { "op": "setAnimation", "duration": 1000, "captions": [{ "t": 0, "text": "..." }] }
+//   { "op": "addOverlay", "svg": "<svg ...>...</svg>", "x": 10, "y": -4, "w": 6, "h": 6 }
 // See docs/OPS.md for the full list.
 import { createBoard } from "./board.js";
 import { findFreeSpot, resolveCircuit, rotate } from "./circuit.js";
 import { createRegistry } from "./parts/registry.js";
+import { spriteError } from "./svg.js";
 
 export class OpError extends Error {}
 
@@ -38,6 +40,7 @@ export function normalize(circuit) {
   const c = structuredClone(circuit);
   c.parts ??= [];
   c.wires ??= [];
+  if (c.overlays && !c.overlays.length) delete c.overlays;
   const used = new Set(c.wires.map((w) => w.id).filter(Boolean));
   let i = 1;
   c.wires = c.wires.map((w) => {
@@ -73,7 +76,7 @@ const OPS = {
   addPart(c, { op, id, ...rest }) {
     const def = registryFor(c).get(rest.type) ?? fail(`未知の部品タイプ "${rest.type}"`);
     const inst = { id: id ?? nextId(c, ID_PREFIX[def.type] ?? def.json?.prefix ?? defaultPrefix(def)), ...rest };
-    if (findPart(c, inst.id, false)) fail(`ID "${inst.id}" は既に使われています`);
+    if (usedIds(c).has(inst.id)) fail(`ID "${inst.id}" は既に使われています`);
     if (inst.pos !== undefined) {
       checkPos(inst.pos);
     } else if (inst.at === undefined && inst.pins === undefined) {
@@ -89,8 +92,13 @@ const OPS = {
     return { circuit: { ...c, parts: [...c.parts, inst] }, id: inst.id };
   },
 
-  // to: a hole (on the board), or pos: [x, y] (free placement off the board)
+  // to: a hole (on the board), or pos: [x, y] (free placement off the board / overlay position)
   move(c, { id, to, pos }) {
+    const oi = overlayIndex(c, id);
+    if (oi >= 0) {
+      checkPos(pos);
+      return { circuit: { ...c, overlays: c.overlays.map((o, i) => (i === oi ? { ...o, x: pos[0], y: pos[1] } : o)) } };
+    }
     const { inst, index, def } = partInfo(c, id);
     if (pos !== undefined) {
       checkPos(pos);
@@ -156,6 +164,12 @@ const OPS = {
   },
 
   update(c, { id, set = {} }) {
+    const oi = overlayIndex(c, id);
+    if (oi >= 0) {
+      const o = clean({ ...c.overlays[oi], ...set });
+      if (o.id !== id && usedIds(c).has(o.id)) fail(`ID "${o.id}" は既に使われています`);
+      return { circuit: retarget({ ...c, overlays: c.overlays.map((x, i) => (i === oi ? o : x)) }, id, o.id), id: o.id };
+    }
     const wireIndex = c.wires.findIndex((w) => w.id === id);
     if (wireIndex >= 0) {
       const wire = clean({ ...c.wires[wireIndex], ...set });
@@ -177,6 +191,11 @@ const OPS = {
 
   // Removing a part also removes the wires attached to its pins ("R1.2").
   remove(c, { id }) {
+    if (overlayIndex(c, id) >= 0) {
+      const { overlays, ...rest } = c;
+      const left = overlays.filter((o) => o.id !== id);
+      return { circuit: retarget(left.length ? { ...rest, overlays: left } : rest, id, null) };
+    }
     if (c.wires.some((w) => w.id === id)) return { circuit: retarget({ ...c, wires: c.wires.filter((w) => w.id !== id) }, id, null) };
     partInfo(c, id);
     let next = { ...c, parts: c.parts.filter((p) => p.id !== id) };
@@ -189,13 +208,23 @@ const OPS = {
     for (const h of [from, to]) checkEnd(c, h);
     if (from === to) fail("from と to が同じです");
     const wid = id ?? nextId(c, "W");
-    if (c.wires.some((w) => w.id === wid) || findPart(c, wid, false)) fail(`ID "${wid}" は既に使われています`);
+    if (usedIds(c).has(wid)) fail(`ID "${wid}" は既に使われています`);
     return { circuit: { ...c, wires: [...c.wires, { id: wid, from, to, ...rest }] }, id: wid };
+  },
+
+  // Adds user SVG (an effect, arrow, note...) drawn above the circuit; x, y, w, h in pitch units.
+  addOverlay(c, { op, id, svg, x, y, w, h, ...rest }) {
+    const err = spriteError(svg);
+    if (err) fail(err);
+    if (![x, y, w, h].every(Number.isFinite)) fail("x, y, w, h (ピッチ単位) が必要です");
+    const oid = id ?? nextId(c, "FX");
+    if (usedIds(c).has(oid)) fail(`ID "${oid}" は既に使われています`);
+    return { circuit: { ...c, overlays: [...(c.overlays ?? []), { id: oid, x, y, w, h, svg, ...rest }] }, id: oid };
   },
 
   // Sets the keys of one target's track (replace: false appends to the existing keys).
   animate(c, { target, keys = [], replace = true }) {
-    const exists = c.parts.some((p) => p.id === target) || c.wires.some((w) => w.id === target);
+    const exists = usedIds(c).has(target);
     if (!exists) fail(`target "${target}" の部品・配線が見つかりません`);
     if (!Array.isArray(keys) || keys.some((k) => !Number.isFinite(Number(k?.t)))) fail("keys は {t, ...状態} の配列です");
     const anim = { duration: 2000, loop: true, ...(c.animation ?? {}) };
@@ -286,8 +315,16 @@ function layoutHoles(c, def, inst, at, rot) {
   });
 }
 
+function overlayIndex(c, id) {
+  return (c.overlays ?? []).findIndex((o) => o.id === id);
+}
+
+function usedIds(c) {
+  return new Set([...c.parts.map((p) => p.id), ...c.wires.map((w) => w.id), ...(c.overlays ?? []).map((o) => o.id)]);
+}
+
 function nextId(c, prefix) {
-  const used = new Set([...c.parts.map((p) => p.id), ...c.wires.map((w) => w.id)]);
+  const used = usedIds(c);
   let i = 1;
   while (used.has(`${prefix}${i}`)) i++;
   return `${prefix}${i}`;

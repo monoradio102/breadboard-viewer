@@ -1,6 +1,7 @@
 // Resolves a circuit JSON into placed parts, validates it and computes the netlist.
 import { boardStrips, createBoard, parseHole } from "./board.js";
 import { buildTimeline } from "./animation.js";
+import { spriteError } from "./svg.js";
 import { createRegistry } from "./parts/registry.js";
 
 export const FORMAT_VERSION = 1;
@@ -13,7 +14,7 @@ export function resolveCircuit(circuit) {
   const errors = [];
   const warnings = [];
   if (!circuit || typeof circuit !== "object") {
-    return { errors: ["回路データがオブジェクトではありません"], warnings, parts: [], wires: [], nets: [], netOf: () => null, netOfHole: () => null };
+    return { errors: ["回路データがオブジェクトではありません"], warnings, parts: [], wires: [], overlays: [], nets: [], netOf: () => null, netOfHole: () => null };
   }
   let board;
   try {
@@ -91,8 +92,19 @@ export function resolveCircuit(circuit) {
       if (netIds.size === 1) warnings.push(`${part.id}: 全てのピンが同じネット(${placed[0].net})につながっています (ショート)`);
     }
   }
-  const timeline = buildTimeline(parts, wires, circuit.animation, warnings);
-  return { board, registry, parts, wires, nets, netOf, netOfHole: netOf, occupied, timeline, errors, warnings };
+  // overlays: free-standing user SVG (effects, arrows, notes) drawn above the circuit
+  const overlays = [];
+  (circuit.overlays ?? []).forEach((o, index) => {
+    const id = o?.id ?? `FX${index + 1}`;
+    if (ids.has(id) || wires.some((w) => w.id === id)) errors.push(`ID "${id}" が重複しています`);
+    ids.add(id);
+    const err = spriteError(o?.svg) ?? (["x", "y", "w", "h"].every((k) => Number.isFinite(o[k])) ? null : "x, y, w, h (ピッチ単位) が必要です");
+    if (err) errors.push(`overlays ${id}: ${err}`);
+    else overlays.push({ ...o, id });
+  });
+
+  const timeline = buildTimeline(parts, wires, circuit.animation, warnings, overlays);
+  return { board, registry, parts, wires, overlays, nets, netOf, netOfHole: netOf, occupied, timeline, errors, warnings };
 }
 
 function placePart(board, def, inst, id, errors, warnings) {

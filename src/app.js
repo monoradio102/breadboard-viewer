@@ -54,7 +54,8 @@ function commit(next, { record = true, updateEditor = true } = {}) {
   }
   circuit = next;
   result = resolveCircuit(circuit);
-  if (selection && !result.parts.some((p) => p.id === selection) && !result.wires.some((w) => w.id === selection)) {
+  const exists = (id) => result.parts.some((p) => p.id === id) || result.wires.some((w) => w.id === id) || result.overlays?.some((o) => o.id === id);
+  if (selection && !exists(selection)) {
     selection = null;
   }
   draw();
@@ -241,6 +242,7 @@ el.stage.addEventListener("pointerdown", (ev) => {
   const pt = svgPoint(ev);
   const handleEl = ev.target.closest("[data-handle]");
   const pinEl = ev.target.closest("[data-pin]");
+  const overlayEl = ev.target.closest(".overlay");
   const partEl = ev.target.closest(".part");
   const wireEl = ev.target.closest(".wire");
   if (pinEl && !handleEl) {
@@ -257,6 +259,10 @@ el.stage.addEventListener("pointerdown", (ev) => {
       return;
     }
     drag = { kind: "handle", id: owner, handle };
+  } else if (overlayEl) {
+    select(overlayEl.dataset.id);
+    const o = circuit.overlays.find((x) => x.id === overlayEl.dataset.id);
+    drag = { kind: "overlay", id: o.id, startPt: pt, origin: { x: o.x, y: o.y } };
   } else if (partEl) {
     select(partEl.dataset.id);
     const part = result.parts.find((p) => p.id === partEl.dataset.id);
@@ -288,7 +294,12 @@ el.stage.addEventListener("pointermove", (ev) => {
     return;
   }
   let ops;
-  if (drag.kind === "move") {
+  if (drag.kind === "overlay") {
+    const pos = [half(drag.origin.x + pt.x - drag.startPt.x), half(drag.origin.y + pt.y - drag.startPt.y)];
+    if (JSON.stringify(pos) === drag.lastTo) return;
+    drag.lastTo = JSON.stringify(pos);
+    ops = [{ op: "move", id: drag.id, pos }];
+  } else if (drag.kind === "move") {
     // over the board the first pin snaps to holes; outside it the part is placed freely
     const x = drag.origin.x + (pt.x - drag.startPt.x);
     const y = drag.origin.y + (pt.y - drag.startPt.y);
@@ -454,6 +465,20 @@ function renderInspector() {
   box.replaceChildren();
   const part = result.parts.find((p) => p.id === selection);
   const wire = circuit.wires.find((w) => w.id === selection);
+  const overlay = circuit.overlays?.find((o) => o.id === selection);
+  if (overlay) {
+    const id = overlay.id;
+    box.append(node("h3", `${id} · 演出 (SVG)`));
+    box.append(field("ID", id, (v) => v && v !== id && selectAfter(tryApply([{ op: "update", id, set: { id: v } }]))));
+    for (const key of ["x", "y", "w", "h"]) {
+      box.append(field(key, overlay[key], (v) => Number.isFinite(Number(v)) && tryApply([{ op: "update", id, set: { [key]: Number(v) } }])));
+    }
+    box.append(node("p", "SVGの中身は右の回路データ (overlays) で編集できます。アニメーションでは show / opacity を切り替えられます。", "hint"));
+    const row = node("div", undefined, "row");
+    row.append(button("削除", () => tryApply([{ op: "remove", id }]), "danger"));
+    box.append(row);
+    return;
+  }
   if (!part && !wire) {
     box.append(
       node("p", "部品をクリックで選択・ドラッグで移動 (ボードの外にも置けます)。空いた穴や、ボード外の部品のピンからドラッグでジャンパ線。線を選んで「＋」をドラッグすると曲げられます (経由点はダブルクリックで削除)。R で回転、Delete で削除、矢印キーで1マス移動。", "hint"),
@@ -733,8 +758,29 @@ window.addEventListener("drop", async (ev) => {
   if (!isFileDrag(ev)) return;
   ev.preventDefault();
   const f = ev.dataTransfer.files[0];
-  if (f) loadText(await f.text());
+  if (!f) return;
+  const text = await f.text();
+  // a plain SVG (not exported by this app) dropped on the board becomes an overlay
+  if (text.trimStart().startsWith("<") && !text.includes('id="breadboard-circuit"') && el.stage.contains(ev.target)) {
+    return addOverlayFromSvg(text, svgPoint(ev));
+  }
+  loadText(text);
 });
+
+function addOverlayFromSvg(svg, at) {
+  const ratio = svgAspect(svg);
+  const w = 6;
+  const h = Math.round((w / ratio) * 2) / 2 || 6;
+  selectAfter(tryApply([{ op: "addOverlay", svg, x: half(at.x - w / 2), y: half(at.y - h / 2), w, h }]));
+}
+
+// width / height of an SVG from its viewBox (or width / height attributes)
+function svgAspect(svg) {
+  const vb = /viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(svg);
+  const w = Number(vb?.[1] ?? /\swidth\s*=\s*["']([\d.]+)/.exec(svg)?.[1]);
+  const h = Number(vb?.[2] ?? /\sheight\s*=\s*["']([\d.]+)/.exec(svg)?.[1]);
+  return w > 0 && h > 0 ? w / h : 1;
+}
 
 // ---- scripting API for AI agents (devtools / Playwright) ----
 
@@ -743,6 +789,8 @@ window.bb = {
   get: () => structuredClone(circuit),
   /** Replace the circuit (object, JSON text, or exported SVG text). */
   load: (c) => commit(typeof c === "string" ? parseCircuitText(c) : c),
+  /** Add user SVG drawn above the circuit (x, y, w, h in pitch units). */
+  addOverlay: (svg, box) => apply([{ op: "addOverlay", svg, ...box }])[0],
   /** Apply edit ops (see docs/OPS.md) as one undo step. Throws on error. Returns affected ids. */
   apply: (ops) => apply(ops),
   addPart: (type, opts = {}) => apply([{ op: "addPart", type, ...opts }])[0],

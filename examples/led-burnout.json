@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "title": "抵抗なしで LED をつなぐと…",
+  "board": "half",
+  "parts": [
+    { "id": "U1", "type": "nano", "at": "h3" },
+    { "id": "D1", "type": "led", "color": "red", "pins": { "A": "c6", "K": "T-6" } }
+  ],
+  "wires": [
+    { "id": "W1", "from": "a4", "to": "T-4", "color": "black", "note": "GND" }
+  ],
+  "overlays": [
+    {
+      "id": "SMOKE",
+      "x": 4.5,
+      "y": -3.2,
+      "w": 5,
+      "h": 8,
+      "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 50 80\"><style>\n.p{fill:#8a8a8a;opacity:0;animation:rise 1.6s ease-out infinite}\n.p2{animation-delay:.55s}.p3{animation-delay:1.1s}\n@keyframes rise{0%{transform:translate(25px,70px) scale(.3);opacity:.85}100%{transform:translate(18px,8px) scale(1.7);opacity:0}}\n.s{animation:spark .3s steps(2) infinite}\n@keyframes spark{50%{opacity:0}}\n</style>\n<circle class=\"p\" r=\"8\"/><circle class=\"p p2\" r=\"7\"/><circle class=\"p p3\" r=\"9\"/>\n<path class=\"s\" d=\"M25 60 L28 69 L37 72 L28 75 L25 84 L22 75 L13 72 L22 69Z\" fill=\"#ffeb3b\" stroke=\"#ff9800\" stroke-width=\"1.5\"/>\n</svg>"
+    }
+  ],
+  "animation": {
+    "duration": 4000,
+    "loop": true,
+    "tracks": [
+      {
+        "target": "D1",
+        "keys": [
+          {
+            "t": 0,
+            "on": true,
+            "brightness": 1
+          },
+          {
+            "t": 1500,
+            "on": false
+          }
+        ]
+      },
+      {
+        "target": "SMOKE",
+        "keys": [
+          {
+            "t": 0,
+            "show": false
+          },
+          {
+            "t": 900,
+            "show": true,
+            "opacity": 0.4
+          },
+          {
+            "t": 1500,
+            "opacity": 1
+          }
+        ]
+      }
+    ],
+    "captions": [
+      {
+        "t": 0,
+        "text": "5V に LED を直結 (電流制限の抵抗なし)"
+      },
+      {
+        "t": 900,
+        "text": "大電流が流れて LED が発熱…"
+      },
+      {
+        "t": 1600,
+        "text": "焼損。LED には必ず抵抗を入れましょう"
+      }
+    ]
+  }
+}

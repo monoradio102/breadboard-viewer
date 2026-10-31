@@ -96,7 +96,8 @@ test("animate / setAnimation ops, and tracks follow renames and removals", () =>
 test("still frames: time draws the state at that moment without CSS animation", () => {
   const r = resolveCircuit(load("motor-servo"));
   const svg = renderSvg(r, { time: 1000 });
-  assert.doesNotMatch(svg, /<style>/);
+  assert.doesNotMatch(svg, /@keyframes bb-[a-z0-9]+-k/);
+  assert.match(svg, /animation-delay:-1000ms/); // wire flow / waves frozen at the same moment
   // servo: 0° -> 180° over 2000 ms, so 90° at 1000 ms
   assert.match(svg, /data-anim="S1:horn" style="transform:rotate\(-90deg\)"/);
   // motor: ramps 0 -> 150 rpm over 600 ms, then holds; the angle is integrated

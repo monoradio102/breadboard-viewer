@@ -1,7 +1,7 @@
 // Renders a resolved circuit (see circuit.js) to an SVG string.
-import { EFFECT_CSS, captionTrack, compileCss, cssDecl, initialState, stateAtTime, valuesOf } from "./animation.js";
+import { EFFECT_CSS, captionTrack, compileCss, cssDecl, initialState, stateAtTime, stillEffectCss, valuesOf } from "./animation.js";
 import { rotate } from "./circuit.js";
-import { circle, esc, g, line, n, rect, tag, text } from "./svg.js";
+import { circle, esc, g, line, n, rect, spriteImage, tag, text } from "./svg.js";
 
 export const SCALE = 24; // px per pitch unit for the default SVG size
 
@@ -64,6 +64,7 @@ export function renderSvg(result, options = {}) {
     g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params))).join(""), { class: "parts" }),
     g(result.wires.map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
     g(result.parts.filter((p) => p.offboard).map(drawTerminals).join(""), { class: "terminals" }),
+    g(result.overlays.map((o) => drawOverlay(o, ctxFor(o.id, overlayAnimate))).join(""), { class: "overlays" }),
     captionH ? drawCaptions(tl, b, animEls, svgId, animate, stateOf) : "",
     labels ? g(result.parts.map(drawLabel).join(""), { class: "labels", "pointer-events": "none" }) : "",
     g(drawProblems(result), { class: "problems" }),
@@ -73,7 +74,7 @@ export function renderSvg(result, options = {}) {
   const meta = options.embed
     ? `<metadata id="breadboard-circuit" data-format="breadboard-viewer/v1">${esc(JSON.stringify(options.embed))}</metadata>`
     : "";
-  const style = still ? "" : `<style>${EFFECT_CSS}${animate ? compileCss(animEls, tl, svgId) : ""}</style>`;
+  const style = still ? `<style>${stillEffectCss(Number(options.time) || 0)}</style>` : `<style>${EFFECT_CSS}${animate ? compileCss(animEls, tl, svgId) : ""}</style>`;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" id="${svgId}" viewBox="${vb.map(n).join(" ")}" ` +
     `width="${n(vb[2] * SCALE)}" height="${n(vb[3] * SCALE)}">` +
@@ -106,6 +107,10 @@ function contentBounds(result, margin = 0) {
     }
   }
   for (const w of result.wires) for (const p of [w.a, w.b, ...w.via]) add(p.x, p.y, 0.5);
+  for (const o of result.overlays ?? []) {
+    add(o.x, o.y);
+    add(o.x + o.w, o.y + o.h);
+  }
   return { x: x0 - margin, y: y0 - margin, w: x1 - x0 + 2 * margin, h: y1 - y0 + 2 * margin };
 }
 
@@ -125,6 +130,11 @@ function drawTerminals(part) {
 }
 
 const wireAnimate = () => ({ flow: (s) => ({ opacity: s.flow ? 1 : 0 }) });
+const overlayAnimate = () => ({ fx: (s) => ({ opacity: s.show ? Math.max(0, Math.min(1, Number(s.opacity))) : 0 }) });
+
+function drawOverlay(o, ctx) {
+  return g(spriteImage(o), { class: "overlay", "data-id": o.id, ...ctx.anim("fx") });
+}
 
 function hash(s) {
   let h = 5381;
@@ -304,6 +314,16 @@ function drawSelection(result, id) {
     });
     const handles = part.def.mount === "leads" && !part.offboard ? part.pins.map((p) => handle(p.x, p.y, part.id, `pin:${p.name}`)).join("") : "";
     return box + handles;
+  }
+  const overlay = result.overlays?.find((o) => o.id === id);
+  if (overlay) {
+    return rect(overlay.x, overlay.y, overlay.w, overlay.h, {
+      fill: "none",
+      stroke: ACCENT,
+      "stroke-width": 0.08,
+      "stroke-dasharray": "0.3 0.2",
+      "pointer-events": "none",
+    });
   }
   const wire = result.wires.find((w) => w.id === id);
   if (wire) {

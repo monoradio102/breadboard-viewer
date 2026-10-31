@@ -17,13 +17,19 @@ export const WIRE_STATES = {
   flow: { type: "bool", default: false, description: "線に沿って信号が流れる表示 (from → to)" },
 };
 
+export const OVERLAY_STATES = {
+  show: { type: "bool", default: true, description: "表示する" },
+  opacity: { type: "number", default: 1, description: "不透明度 0〜1" },
+};
+
 const SAMPLES = 60;
 
 // Builds per-target timelines. Problems go to `warnings`.
-export function buildTimeline(parts, wires, animation, warnings = []) {
+export function buildTimeline(parts, wires, animation, warnings = [], overlays = []) {
   const targets = new Map();
   for (const p of parts) targets.set(p.id, { kind: "part", specs: p.def.states ?? {}, base: p.inst.state ?? {} });
   for (const w of wires) targets.set(w.id, { kind: "wire", specs: WIRE_STATES, base: w.state ?? {} });
+  for (const o of overlays) targets.set(o.id, { kind: "overlay", specs: OVERLAY_STATES, base: o.state ?? {} });
 
   const anim = animation && typeof animation === "object" ? animation : null;
   const duration = Math.max(1, Number(anim?.duration) || 1000);
@@ -158,10 +164,23 @@ export function compileCss(elements, timeline, prefix) {
 const pct = (f) => `${Math.round(f * 100000) / 1000}%`;
 
 // Always-running effects used by some parts (wire flow, buzzer waves).
-export const EFFECT_CSS =
-  ".bb-flow{animation:bb-dash .6s linear infinite}@keyframes bb-dash{to{stroke-dashoffset:-.8}}" +
-  ".bb-wave{animation:bb-wave 1s ease-out infinite}.bb-wave2{animation-delay:-.5s}" +
+const EFFECT_KEYFRAMES =
+  "@keyframes bb-dash{to{stroke-dashoffset:-.8}}" +
   "@keyframes bb-wave{from{transform:scale(.55);opacity:1}to{transform:scale(1.25);opacity:0}}";
+
+export const EFFECT_CSS =
+  ".bb-flow{animation:bb-dash .6s linear infinite}.bb-wave{animation:bb-wave 1s ease-out infinite}.bb-wave2{animation-delay:-.5s}" +
+  EFFECT_KEYFRAMES;
+
+// The same effects frozen at time t (ms): paused animations with a negative delay.
+export function stillEffectCss(t) {
+  const ms = Math.round(t);
+  return (
+    `.bb-flow{animation:bb-dash .6s linear infinite paused;animation-delay:-${ms}ms}` +
+    `.bb-wave{animation:bb-wave 1s ease-out infinite paused;animation-delay:-${ms}ms}.bb-wave2{animation-delay:-${ms + 500}ms}` +
+    EFFECT_KEYFRAMES
+  );
+}
 
 // Distinct values a state takes in a track (for parts that draw one element per value).
 export function valuesOf(track, name) {

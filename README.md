@@ -11,8 +11,8 @@ Claude Code や Codex などのAIエージェントが、読み書きしやす�
 | [モーター + サーボ](examples/motor-servo.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=motor-servo)) | [HC-SR04 で距離アラーム](examples/distance-alarm.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=distance-alarm)) |
 | ![Pico でボタン入力とLED](docs/images/pico-button.svg) | ![カスタム部品の例: I2C OLED](docs/images/oled-custom-part.svg) |
 | [Pico でボタン入力とLED](examples/pico-button.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=pico-button)) | [独自部品 (OLED) の定義例](examples/oled-custom-part.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-custom-part)) |
-| ![スピーカーで音を鳴らす](docs/images/tone-speaker.svg) | |
-| [スピーカー (ボード外に配置)](examples/tone-speaker.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=tone-speaker)) | |
+| ![スピーカーで音を鳴らす](docs/images/tone-speaker.svg) | ![抵抗なしで LED をつなぐと…](docs/images/led-burnout.svg) |
+| [スピーカー (ボード外に配置)](examples/tone-speaker.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=tone-speaker)) | [演出レイヤー (煙のSVG) の例](examples/led-burnout.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=led-burnout)) |
 
 上の画像は、それぞれ1つのSVGファイルです。アニメーションはSVGの中のCSSで動いていて、回路データも埋め込まれています。
 SVGを保存してエディタにドロップすると、そのまま回路を編集できます。
@@ -24,6 +24,8 @@ SVGを保存してエディタにドロップすると、そのまま回路を�
 - 回路ファイル1つ (JSON) で、独自部品も含めて共有できます。書き出したSVGにも回路データが入っているので、SVGをドロップすれば元の回路に戻せます
 - 回路の検証と、ネットリスト (どのピン同士がつながっているか) の表示ができます
 - 動作のアニメーション (LEDの点滅、モーターの回転、サーボ、ボタン操作、信号の流れ、キャプション) を台本として書けます。書き出したSVGは、ファイル単体でもアニメーションします
+- 煙や矢印などの演出は、任意のSVGアニメーションとして流し込めます (安全のため画像として描画し、スクリプトは実行しません)
+- アニメーションは、フレームを指定して透過PNGの連番で書き出せるので、ffmpeg で GIF / MP4 にできます
 
 ## 使い方
 
@@ -56,6 +58,7 @@ node tools/bb.mjs check examples/blink-nano.json             # 検証とネッ�
 node tools/bb.mjs render examples/blink-nano.json -o out.svg # SVGに描画
 node tools/bb.mjs render examples/blink-nano.json -o out.png # PNGに描画 (Playwrightが必要)
 node tools/bb.mjs render examples/motor-servo.json -o f.png --time 1500 --transparent  # 1.5秒時点の透過PNG
+node tools/bb.mjs frames examples/motor-servo.json -o frames --fps 30 --transparent    # 1周分の連番PNG (GIF / MP4 用)
 npm test
 ```
 

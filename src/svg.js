@@ -82,3 +82,34 @@ function shapeToSvg(s, extra) {
       return "";
   }
 }
+
+// ---- user-supplied SVG ("sprites" / overlays) ----
+// Arbitrary SVG from a circuit file (possibly from a share URL) is never inlined: it is drawn
+// through <image href="data:..."> so the browser treats it as an image — scripts do not run
+// and nothing external is loaded — while its own CSS / SMIL animations still play.
+
+export const MAX_SPRITE_SVG = 200_000;
+
+export function spriteError(svg) {
+  if (typeof svg !== "string" || !/^\s*(<\?xml[^>]*>\s*)?<svg[\s>]/.test(svg)) return "svg は <svg ...> で始まる文字列です";
+  if (svg.length > MAX_SPRITE_SVG) return `svg が大きすぎます (${MAX_SPRITE_SVG} 文字まで)`;
+  return null;
+}
+
+export function svgDataUri(svg) {
+  const withNs = /<svg[^>]*\sxmlns=/.test(svg) ? svg : svg.replace(/<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(withNs)}`;
+}
+
+// <image> showing user SVG in the box x, y, w, h (in the current user units).
+export function spriteImage({ svg, x, y, w, h, fit }, extra = {}) {
+  return tag("image", {
+    href: svgDataUri(svg),
+    x,
+    y,
+    width: w,
+    height: h,
+    preserveAspectRatio: fit === "stretch" ? "none" : "xMidYMid meet",
+    ...extra,
+  });
+}

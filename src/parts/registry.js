@@ -1,6 +1,6 @@
 // Part registry: built-in parts plus declarative JSON part definitions
 // (the ones embedded in a circuit's "partDefs" — see docs/FORMAT.md).
-import { esc, g, n, rect, shapesToSvg, tag, text } from "../svg.js";
+import { esc, g, n, rect, shapesToSvg, spriteError, spriteImage, tag, text } from "../svg.js";
 import { BUILTIN_PARTS } from "./builtin.js";
 import { centroid, leg } from "./common.js";
 
@@ -38,9 +38,14 @@ export function fromJson(def) {
   const pins = def.pins.map((p) => ({ name: String(p.name), x: (p.x - o.x) * scale, y: (p.y - o.y) * scale }));
   const mount = def.mount === "leads" ? "leads" : "rigid";
   const shapes = def.shapes ?? [];
+  const sprites = def.sprites ?? [];
+  for (const [i, sp] of sprites.entries()) {
+    const err = spriteError(sp?.svg) ?? (["x", "y", "w", "h"].every((k) => Number.isFinite(sp[k])) ? null : "x, y, w, h が必要です");
+    if (err) throw new Error(`${def.type}: sprites[${i}]: ${err}`);
+  }
   const label = def.label ?? def.name ?? def.type;
   const display = def.display ?? null;
-  const conditions = [...new Set(shapes.map((s) => s.when).filter(Boolean))];
+  const conditions = [...new Set([...shapes, ...sprites].map((s) => s.when).filter(Boolean))];
   const states = { ...(def.states ?? {}) };
   for (const cond of conditions) {
     const name = parseCondition(cond).name;
@@ -69,10 +74,13 @@ export function fromJson(def) {
     render:
       mount === "rigid"
         ? ({ anim, values }) =>
-            shapes.length || display
-              ? g(shapesToSvg(shapes, (s) => (s.when ? anim(`when:${s.when}`) : null)) + (display ? displayText(display, values("text"), anim) : ""), {
-                  transform: `scale(${n(scale)}) translate(${n(-o.x)} ${n(-o.y)})`,
-                })
+            shapes.length || display || sprites.length
+              ? g(
+                  shapesToSvg(shapes, (s) => (s.when ? anim(`when:${s.when}`) : null)) +
+                    sprites.map((sp) => spriteImage(sp, sp.when ? anim(`when:${sp.when}`) : {})).join("") +
+                    (display ? displayText(display, values("text"), anim) : ""),
+                  { transform: `scale(${n(scale)}) translate(${n(-o.x)} ${n(-o.y)})` },
+                )
               : fallbackBox(pins, label)
         : ({ pins: placed }) => genericLeads(placed, label),
     builtin: false,

@@ -9,6 +9,8 @@
 3. 編集したら、必ず `node tools/bb.mjs check <file>` を実行します。エラーがなく、ネットリストが意図どおりになっていることを確認してください。
 4. 見た目を確認したいときは、`node tools/bb.mjs render <file> -o out.png` で画像にします。
 5. 動作を説明したいときは、アニメーション (`animation`) を付けます。書き方は `docs/FORMAT.md` の「アニメーション」、操作は `animate` / `setAnimation` です。
+   部品の状態だけで表せない演出 (煙、火花、矢印、吹き出しなど) は、SVGを書いて `addOverlay` で流し込みます。SVGの中では CSS アニメーションや SMIL が使えます。
+6. 動画が必要なときは、`node tools/bb.mjs frames <file> -o <dir> --fps 30 [--transparent]` で連番PNGを書き出し、表示される ffmpeg のコマンドで GIF / MP4 にします。
 
 ## 組み込みにない部品を使うとき
 
