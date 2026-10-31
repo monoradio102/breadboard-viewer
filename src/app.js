@@ -33,6 +33,7 @@ const el = {
   libFile: $("lib-file"),
   wireColor: $("wire-color"),
   wireStyle: $("wire-style"),
+  keepWires: $("keep-wires"),
   undo: $("btn-undo"),
   redo: $("btn-redo"),
   player: $("player"),
@@ -122,6 +123,9 @@ function apply(ops) {
   commit(out.circuit);
   return out.ids;
 }
+
+// Moves, rotations and leg moves from the UI keep the connections when "配線を保つ" is on.
+const keeping = (ops) => (el.keepWires.checked ? ops.map((o) => (["move", "rotate", "setPin"].includes(o.op) ? { ...o, keepConnections: true } : o)) : ops);
 
 function tryApply(ops) {
   try {
@@ -595,6 +599,7 @@ el.stage.addEventListener("pointermove", (ev) => {
   }
   try {
     drag.preview = applyOps(circuit, ops).circuit;
+    drag.ops = ops;
     const r = resolveCircuit(drag.preview);
     draw(r);
     el.status.textContent = `${drag.id} → ${drag.lastTo}${r.errors.length ? `  ·  ⚠ ${r.errors[0]}` : ""}`;
@@ -614,6 +619,9 @@ function endDrag() {
       const [id] = tryApply([{ op: "addWire", from: d.from, to: d.to, color: el.wireColor.value }]) ?? [];
       if (id) select(id);
     } else draw();
+  } else if (d.preview && el.keepWires.checked && d.ops?.some((o) => o.op === "move" || o.op === "setPin")) {
+    // the wires are laid again once, on drop (not on every step of the drag)
+    if (!tryApply(keeping(d.ops))) draw();
   } else if (d.preview) {
     commit(d.preview);
   } else draw();
@@ -692,7 +700,7 @@ window.addEventListener("keydown", (ev) => {
     ev.preventDefault();
     tryApply([{ op: "remove", id: selection }]);
   } else if (ev.key.toLowerCase() === "r" && !mod) {
-    tryApply([{ op: "rotate", id: selection, by: ev.shiftKey ? 270 : 90 }]);
+    tryApply(keeping([{ op: "rotate", id: selection, by: ev.shiftKey ? 270 : 90 }]));
   } else if (ev.key === "Escape") {
     select(null);
   } else if (ev.key.startsWith("Arrow")) {
@@ -710,7 +718,7 @@ function nudge(key) {
     const to = result.board.holeAt(part.pins[0].x + dx * k, part.pins[0].y + dy * k);
     if (!to) continue;
     try {
-      apply([{ op: "move", id: part.id, to }]);
+      apply(keeping([{ op: "move", id: part.id, to }]));
       return;
     } catch (e) {
       if (!(e instanceof OpError)) throw e;
@@ -779,8 +787,8 @@ function renderInspector() {
   }
   const row = node("div", undefined, "row");
   if (part) {
-    row.append(button("⟲ 左回転", () => tryApply([{ op: "rotate", id, by: 270 }])));
-    row.append(button("⟳ 右回転", () => tryApply([{ op: "rotate", id, by: 90 }])));
+    row.append(button("⟲ 左回転", () => tryApply(keeping([{ op: "rotate", id, by: 270 }]))));
+    row.append(button("⟳ 右回転", () => tryApply(keeping([{ op: "rotate", id, by: 90 }]))));
   }
   row.append(button("削除", () => tryApply([{ op: "remove", id }]), "danger"));
   box.append(row);
@@ -1188,8 +1196,8 @@ window.bb = {
   /** Apply edit ops (see docs/OPS.md) as one undo step. Throws on error. Returns affected ids. */
   apply: (ops) => apply(ops),
   addPart: (type, opts = {}) => apply([{ op: "addPart", type, ...opts }])[0],
-  move: (id, to) => apply([{ op: "move", id, to }]),
-  rotate: (id, by = 90) => apply([{ op: "rotate", id, by }]),
+  move: (id, to, opts = {}) => apply([{ op: "move", id, to, ...opts }]),
+  rotate: (id, by = 90, opts = {}) => apply([{ op: "rotate", id, by, ...opts }]),
   setPin: (id, pin, to) => apply([{ op: "setPin", id, pin, to }]),
   update: (id, set) => apply([{ op: "update", id, set }]),
   remove: (id) => apply([{ op: "remove", id }]),

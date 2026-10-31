@@ -118,3 +118,35 @@ test("off-board parts move back onto the board and take their wires along on ren
   assert.deepEqual(removed.wires, []);
   assert.deepEqual(removed.animation.tracks, []);
 });
+
+const pinGroups = (c) =>
+  resolveCircuit(c)
+    .nets.map((n) => [...n.pins.map((p) => p.ref)].sort().join(" "))
+    .filter((g) => g.includes(" "))
+    .sort();
+
+test("move with keepConnections keeps the netlist; without it the wires stay put", () => {
+  const c = load("blink-nano");
+  const plain = applyOps(c, [{ op: "move", id: "D1", to: "b25" }]).circuit;
+  assert.notDeepEqual(pinGroups(plain), pinGroups(c)); // the LED lost R1 and ground
+  const kept = applyOps(c, [{ op: "move", id: "D1", to: "b25", keepConnections: true }]).circuit;
+  assert.deepEqual(pinGroups(kept), pinGroups(c));
+  // the ground wire keeps its id and colour, moved to the LED's new column
+  const w1 = kept.wires.find((w) => w.id === "W1");
+  assert.equal(w1.color, "black");
+  assert.ok([w1.from, w1.to].some((e) => /26$/.test(e)));
+  assert.equal(resolveCircuit(kept).errors.length, 0);
+});
+
+test("keepConnections refuses a place that joins other nets, and works for rotate", () => {
+  const c = load("blink-nano");
+  assert.throws(() => applyOps(c, [{ op: "move", id: "D1", to: "b16", keepConnections: true }]), /がつながってしまいます/);
+  const flasher = load("flasher-kit");
+  const turned = applyOps(flasher, [{ op: "move", id: "C2", to: "h18", keepConnections: true }]).circuit;
+  assert.deepEqual(pinGroups(turned), pinGroups(flasher));
+  // animation targets of re-laid wires survive
+  const xiao = load("xiao-voice");
+  const moved = applyOps(xiao, [{ op: "move", id: "DISP1", to: "j44", keepConnections: true }]).circuit;
+  assert.deepEqual(pinGroups(moved), pinGroups(xiao));
+  assert.deepEqual(resolveCircuit(moved).warnings, []);
+});

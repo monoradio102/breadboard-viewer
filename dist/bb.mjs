@@ -3049,14 +3049,16 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300 } = 
   };
   const wires = [];
   const notes = [];
+  const netNames = [];
   autos.forEach((w, i) => {
+    netNames.push(w.net.name);
     const { detour, ...shape } = w.shape;
     const trouble = inTrouble(w, autos.filter((_, k) => k !== i));
     const wire = { id: nextId2(), from: w.a.ref, to: w.b.ref, color: w.net.color, ...shape, note: `\u81EA\u52D5\u914D\u7DDA: ${w.net.name}${trouble ? " (\u4EA4\u5DEE\u30FB\u91CD\u306A\u308A\u3042\u308A)" : ""}` };
     wires.push(wire);
     if (trouble) notes.push(`${wire.id} (${w.net.name}) \u306F\u3001\u307B\u304B\u306E\u914D\u7DDA\u3068\u4EA4\u5DEE\u3059\u308B\u304B\u3001\u4F7F\u3063\u3066\u3044\u308B\u7A74\u3084\u90E8\u54C1\u306E\u4E0A\u3092\u901A\u308A\u307E\u3059`);
   });
-  return { wires, notes };
+  return { wires, notes, netNames };
   function inTrouble(w, others) {
     return wireCost(w, others) - lengthOf(w.points) * COST.length - 3 >= COST.crossing - 1e-6;
   }
@@ -3283,72 +3285,14 @@ var OPS = {
     return { circuit: { ...c, parts: [...c.parts, inst] }, id: inst.id };
   },
   // to: a hole (on the board), or pos: [x, y] (free placement off the board / overlay position)
-  move(c, { id, to, pos: pos2 }) {
-    const oi = overlayIndex(c, id);
-    if (oi >= 0) {
-      checkPos(pos2);
-      return { circuit: { ...c, overlays: c.overlays.map((o, i) => i === oi ? { ...o, x: pos2[0], y: pos2[1] } : o) } };
-    }
-    const { inst, index, def } = partInfo(c, id);
-    if (pos2 !== void 0) {
-      checkPos(pos2);
-      const { at, pins, ...rest } = inst;
-      return { circuit: replacePart(c, index, { ...rest, pos: pos2 }) };
-    }
-    const board = boardOf(c);
-    if (!board.has(to)) fail(`"${to}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306A\u3044\u7A74\u3067\u3059`);
-    let next;
-    if (inst.pos !== void 0) {
-      const { pos: _, ...rest } = inst;
-      next = def.mount === "leads" ? { ...withoutRot(rest), pins: layoutHoles(c, def, inst, to, inst.rot ?? 0) } : { ...rest, at: to };
-    } else if (inst.pins !== void 0) {
-      const holes = pinHoles(inst, def);
-      const from = board.pos(holes[0]) ?? fail(`${id} \u306E\u30D4\u30F3\u306E\u4F4D\u7F6E\u304C\u4E0D\u6B63\u3067\u3059`);
-      const target = board.pos(to);
-      const moved = holes.map((h) => {
-        const p = board.pos(h) ?? fail(`${id} \u306E\u30D4\u30F3 "${h}" \u304C\u4E0D\u6B63\u3067\u3059`);
-        return board.holeAt(p.x + target.x - from.x, p.y + target.y - from.y) ?? fail(`${id} \u3092 ${to} \u306B\u52D5\u304B\u3059\u3068\u30D4\u30F3\u304C\u7A74\u304B\u3089\u5916\u308C\u307E\u3059`);
-      });
-      next = withPinHoles(inst, def, moved);
-    } else {
-      next = { ...inst, at: to };
-    }
-    return { circuit: replacePart(c, index, next) };
+  move(c, op) {
+    return keeping(c, op, moveOp);
   },
-  rotate(c, { id, by = 90 }) {
-    const { inst, index, def } = partInfo(c, id);
-    const step = (Number(by) % 360 + 360) % 360;
-    if (step % 90 !== 0) fail("by \u306F 90 \u306E\u500D\u6570\u3067\u3059");
-    if (inst.pins === void 0) {
-      const rot = ((Number(inst.rot ?? 0) + step) % 360 + 360) % 360;
-      const next = { ...inst, rot };
-      if (rot === 0) delete next.rot;
-      return { circuit: replacePart(c, index, next) };
-    }
-    const board = boardOf(c);
-    const holes = pinHoles(inst, def);
-    const o = board.pos(holes[0]);
-    const rotated = holes.map((h) => {
-      const p = board.pos(h);
-      const [dx, dy] = rotate(p.x - o.x, p.y - o.y, step);
-      return board.holeAt(o.x + dx, o.y + dy) ?? fail(`${id} \u3092\u56DE\u8EE2\u3059\u308B\u3068\u30D4\u30F3\u304C\u7A74\u304B\u3089\u5916\u308C\u307E\u3059`);
-    });
-    return { circuit: replacePart(c, index, withPinHoles(inst, def, rotated)) };
+  rotate(c, op) {
+    return keeping(c, op, rotateOp);
   },
-  setPin(c, { id, pin, to }) {
-    const { inst, index, def } = partInfo(c, id);
-    if (def.mount !== "leads") fail(`${id} \u306F\u8DB3\u3092\u66F2\u3052\u3089\u308C\u306A\u3044\u90E8\u54C1\u3067\u3059 (move \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044)`);
-    if (inst.pos !== void 0) fail(`${id} \u306F\u30DC\u30FC\u30C9\u5916\u306B\u7F6E\u3044\u305F\u90E8\u54C1\u3067\u3059 (move \u306E to \u3067\u7A74\u306B\u633F\u3057\u3066\u304B\u3089\u52D5\u304B\u3057\u3066\u304F\u3060\u3055\u3044)`);
-    if (!boardOf(c).has(to)) fail(`"${to}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306A\u3044\u7A74\u3067\u3059`);
-    const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
-    const i = names.indexOf(String(pin));
-    if (i < 0) fail(`${id} \u306B\u30D4\u30F3 "${pin}" \u306F\u3042\u308A\u307E\u305B\u3093 (${names.join(", ")})`);
-    const holes = inst.pins !== void 0 ? pinHoles(inst, def) : layoutHoles(c, def, inst, inst.at, inst.rot ?? 0);
-    holes[i] = to;
-    const next = withPinHoles({ ...inst }, def, holes);
-    delete next.at;
-    delete next.rot;
-    return { circuit: replacePart(c, index, next) };
+  setPin(c, op) {
+    return keeping(c, op, setPinOp);
   },
   update(c, { id, set = {} }) {
     const oi = overlayIndex(c, id);
@@ -3584,6 +3528,139 @@ function checkEnd(c, ref) {
   const def = registryFor(c).get(inst.type) ?? fail(`\u672A\u77E5\u306E\u90E8\u54C1\u30BF\u30A4\u30D7 "${inst.type}"`);
   const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
   if (!names.includes(String(ref).slice(dot + 1))) fail(`${inst.id} \u306B\u30D4\u30F3 "${String(ref).slice(dot + 1)}" \u306F\u3042\u308A\u307E\u305B\u3093 (${names.join(", ")})`);
+}
+function moveOp(c, { id, to, pos: pos2 }) {
+  const oi = overlayIndex(c, id);
+  if (oi >= 0) {
+    checkPos(pos2);
+    return { circuit: { ...c, overlays: c.overlays.map((o, i) => i === oi ? { ...o, x: pos2[0], y: pos2[1] } : o) } };
+  }
+  const { inst, index, def } = partInfo(c, id);
+  if (pos2 !== void 0) {
+    checkPos(pos2);
+    const { at, pins, ...rest } = inst;
+    return { circuit: replacePart(c, index, { ...rest, pos: pos2 }) };
+  }
+  const board = boardOf(c);
+  if (!board.has(to)) fail(`"${to}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306A\u3044\u7A74\u3067\u3059`);
+  let next;
+  if (inst.pos !== void 0) {
+    const { pos: _, ...rest } = inst;
+    next = def.mount === "leads" ? { ...withoutRot(rest), pins: layoutHoles(c, def, inst, to, inst.rot ?? 0) } : { ...rest, at: to };
+  } else if (inst.pins !== void 0) {
+    const holes = pinHoles(inst, def);
+    const from = board.pos(holes[0]) ?? fail(`${id} \u306E\u30D4\u30F3\u306E\u4F4D\u7F6E\u304C\u4E0D\u6B63\u3067\u3059`);
+    const target = board.pos(to);
+    const moved = holes.map((h) => {
+      const p = board.pos(h) ?? fail(`${id} \u306E\u30D4\u30F3 "${h}" \u304C\u4E0D\u6B63\u3067\u3059`);
+      return board.holeAt(p.x + target.x - from.x, p.y + target.y - from.y) ?? fail(`${id} \u3092 ${to} \u306B\u52D5\u304B\u3059\u3068\u30D4\u30F3\u304C\u7A74\u304B\u3089\u5916\u308C\u307E\u3059`);
+    });
+    next = withPinHoles(inst, def, moved);
+  } else {
+    next = { ...inst, at: to };
+  }
+  return { circuit: replacePart(c, index, next) };
+}
+function rotateOp(c, { id, by = 90 }) {
+  const { inst, index, def } = partInfo(c, id);
+  const step = (Number(by) % 360 + 360) % 360;
+  if (step % 90 !== 0) fail("by \u306F 90 \u306E\u500D\u6570\u3067\u3059");
+  if (inst.pins === void 0) {
+    const rot = ((Number(inst.rot ?? 0) + step) % 360 + 360) % 360;
+    const next = { ...inst, rot };
+    if (rot === 0) delete next.rot;
+    return { circuit: replacePart(c, index, next) };
+  }
+  const board = boardOf(c);
+  const holes = pinHoles(inst, def);
+  const o = board.pos(holes[0]);
+  const rotated = holes.map((h) => {
+    const p = board.pos(h);
+    const [dx, dy] = rotate(p.x - o.x, p.y - o.y, step);
+    return board.holeAt(o.x + dx, o.y + dy) ?? fail(`${id} \u3092\u56DE\u8EE2\u3059\u308B\u3068\u30D4\u30F3\u304C\u7A74\u304B\u3089\u5916\u308C\u307E\u3059`);
+  });
+  return { circuit: replacePart(c, index, withPinHoles(inst, def, rotated)) };
+}
+function setPinOp(c, { id, pin, to }) {
+  const { inst, index, def } = partInfo(c, id);
+  if (def.mount !== "leads") fail(`${id} \u306F\u8DB3\u3092\u66F2\u3052\u3089\u308C\u306A\u3044\u90E8\u54C1\u3067\u3059 (move \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044)`);
+  if (inst.pos !== void 0) fail(`${id} \u306F\u30DC\u30FC\u30C9\u5916\u306B\u7F6E\u3044\u305F\u90E8\u54C1\u3067\u3059 (move \u306E to \u3067\u7A74\u306B\u633F\u3057\u3066\u304B\u3089\u52D5\u304B\u3057\u3066\u304F\u3060\u3055\u3044)`);
+  if (!boardOf(c).has(to)) fail(`"${to}" \u306F\u3053\u306E\u30DC\u30FC\u30C9\u306B\u306A\u3044\u7A74\u3067\u3059`);
+  const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
+  const i = names.indexOf(String(pin));
+  if (i < 0) fail(`${id} \u306B\u30D4\u30F3 "${pin}" \u306F\u3042\u308A\u307E\u305B\u3093 (${names.join(", ")})`);
+  const holes = inst.pins !== void 0 ? pinHoles(inst, def) : layoutHoles(c, def, inst, inst.at, inst.rot ?? 0);
+  holes[i] = to;
+  const next = withPinHoles({ ...inst }, def, holes);
+  delete next.at;
+  delete next.rot;
+  return { circuit: replacePart(c, index, next) };
+}
+function keeping(c, op, fn) {
+  const out = fn(c, op);
+  if (!op.keepConnections || overlayIndex(c, op.id) >= 0) return out;
+  return { ...out, circuit: keepConnections(c, out.circuit, [op.id]) };
+}
+function keepConnections(before, after, ids) {
+  const groups = pinGroups(before);
+  if (sameGroups(groups, pinGroups(after))) return after;
+  const rb = resolveCircuit(before);
+  const ra = resolveCircuit(after);
+  const strips = /* @__PURE__ */ new Set();
+  for (const r of [rb, ra]) {
+    for (const part of r.parts.filter((p) => ids.includes(p.id))) {
+      for (const pin of part.pins) {
+        const s = pin.hole && stripOf(pin.hole);
+        if (s && !/^[TB][+-]$/.test(s)) strips.add(s);
+      }
+    }
+  }
+  const touches = (end) => strips.has(stripOf(end));
+  const removed = after.wires.filter((w) => touches(w.from) || touches(w.to));
+  const base = { ...after, wires: after.wires.filter((w) => !removed.includes(w)) };
+  let laid;
+  try {
+    laid = autoWire(base, Object.fromEntries(groups.map((g2) => [g2.name, g2.members])));
+  } catch (e) {
+    fail(`\u63A5\u7D9A\u3092\u4FDD\u3066\u307E\u305B\u3093\u3067\u3057\u305F: ${e.message}`);
+  }
+  const netOfWire = new Map(rb.wires.map((w) => [w.id, rb.netOf(w.nodes[0])]));
+  const spare = /* @__PURE__ */ new Map();
+  for (const w of removed) spare.set(netOfWire.get(w.id), [...spare.get(netOfWire.get(w.id)) ?? [], w]);
+  const wires = laid.wires.map((w, i) => {
+    const old = spare.get(laid.netNames[i])?.shift();
+    if (!old) return w;
+    const { from, to, via, bend, elbow, shape, ...keep } = old;
+    const { id, color, note, from: f, to: t, ...route } = w;
+    return { ...keep, from: f, to: t, ...route };
+  });
+  let next = { ...base, wires: [...base.wires, ...wires] };
+  for (const left of spare.values()) for (const w of left) next = retarget(next, w.id, null);
+  const lost = differences(groups, pinGroups(next));
+  if (lost) fail(`\u63A5\u7D9A\u3092\u4FDD\u3066\u307E\u305B\u3093\u3067\u3057\u305F: ${lost}`);
+  return next;
+}
+function pinGroups(c) {
+  return resolveCircuit(c).nets.map((n2) => ({ name: n2.name, members: [...n2.pins.map((p) => p.ref), ...n2.name.split("/").filter((s) => /^[TB][+-]$/.test(s))] })).filter((g2) => g2.members.length >= 2);
+}
+var groupKey = (g2) => [...g2.members].sort().join(" ");
+function sameGroups(a, b) {
+  return a.map(groupKey).sort().join("|") === b.map(groupKey).sort().join("|");
+}
+function differences(before, after) {
+  const where = (groups) => new Map(groups.flatMap((g2, i) => g2.members.map((m) => [m, i])));
+  const [wb, wa] = [where(before), where(after)];
+  const all = [.../* @__PURE__ */ new Set([...wb.keys(), ...wa.keys()])];
+  for (const x of all) {
+    for (const y of all) {
+      if (x >= y) continue;
+      const was = wb.has(x) && wb.get(x) === wb.get(y);
+      const now = wa.has(x) && wa.get(x) === wa.get(y);
+      if (was && !now) return `${x} \u3068 ${y} \u304C\u3064\u306A\u304C\u3089\u306A\u304F\u306A\u308A\u307E\u3059`;
+      if (!was && now) return `${x} \u3068 ${y} \u304C\u3064\u306A\u304C\u3063\u3066\u3057\u307E\u3044\u307E\u3059 (\u79FB\u52D5\u5148\u306E\u5217\u3084\u7A74\u3092\u78BA\u304B\u3081\u3066\u304F\u3060\u3055\u3044)`;
+    }
+  }
+  return null;
 }
 function retarget(c, from, to) {
   if (from === to) return c;

@@ -19,7 +19,8 @@ const PALETTE = ["yellow", "blue", "green", "orange", "purple", "white", "brown"
 const LANES = [3, 9.5, 16];
 const NEAR = 0.22; // a wire this close to a hole's centre covers it
 
-// nets: { name: [members] } or [[members]]. Returns { wires: [new wire objects], notes: [] }.
+// nets: { name: [members] } or [[members]]. Returns { wires: [new wire objects], notes: [],
+// netNames: [the net of each wire] }.
 // Throws Error with a readable message when a member does not exist or a net cannot be wired.
 // budget: how many searches for one wire (cheapest()) the whole run may make. The run is the
 // same for the same input on any machine; a bigger budget tries more orders and swaps.
@@ -220,14 +221,16 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
   };
   const wires = [];
   const notes = [];
+  const netNames = [];
   autos.forEach((w, i) => {
+    netNames.push(w.net.name);
     const { detour, ...shape } = w.shape;
     const trouble = inTrouble(w, autos.filter((_, k) => k !== i));
     const wire = { id: nextId(), from: w.a.ref, to: w.b.ref, color: w.net.color, ...shape, note: `自動配線: ${w.net.name}${trouble ? " (交差・重なりあり)" : ""}` };
     wires.push(wire);
     if (trouble) notes.push(`${wire.id} (${w.net.name}) は、ほかの配線と交差するか、使っている穴や部品の上を通ります`);
   });
-  return { wires, notes };
+  return { wires, notes, netNames };
 
   // ---- costs ----
 

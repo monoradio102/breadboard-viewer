@@ -25,7 +25,7 @@
 import { autoSteps } from "./assembly.js";
 import { autoWire } from "./autowire.js";
 import { createBoard } from "./board.js";
-import { findFreeSpot, resolveCircuit, rotate } from "./circuit.js";
+import { findFreeSpot, resolveCircuit, rotate, stripOf } from "./circuit.js";
 import { BUILTIN_PARTS } from "./parts/builtin.js";
 import { createRegistry, fromJson } from "./parts/registry.js";
 import { spriteError } from "./svg.js";
@@ -101,74 +101,16 @@ const OPS = {
   },
 
   // to: a hole (on the board), or pos: [x, y] (free placement off the board / overlay position)
-  move(c, { id, to, pos }) {
-    const oi = overlayIndex(c, id);
-    if (oi >= 0) {
-      checkPos(pos);
-      return { circuit: { ...c, overlays: c.overlays.map((o, i) => (i === oi ? { ...o, x: pos[0], y: pos[1] } : o)) } };
-    }
-    const { inst, index, def } = partInfo(c, id);
-    if (pos !== undefined) {
-      checkPos(pos);
-      const { at, pins, ...rest } = inst;
-      return { circuit: replacePart(c, index, { ...rest, pos }) };
-    }
-    const board = boardOf(c);
-    if (!board.has(to)) fail(`"${to}" はこのボードにない穴です`);
-    let next;
-    if (inst.pos !== undefined) {
-      const { pos: _, ...rest } = inst;
-      next = def.mount === "leads" ? { ...withoutRot(rest), pins: layoutHoles(c, def, inst, to, inst.rot ?? 0) } : { ...rest, at: to };
-    } else if (inst.pins !== undefined) {
-      const holes = pinHoles(inst, def);
-      const from = board.pos(holes[0]) ?? fail(`${id} のピンの位置が不正です`);
-      const target = board.pos(to);
-      const moved = holes.map((h) => {
-        const p = board.pos(h) ?? fail(`${id} のピン "${h}" が不正です`);
-        return board.holeAt(p.x + target.x - from.x, p.y + target.y - from.y) ?? fail(`${id} を ${to} に動かすとピンが穴から外れます`);
-      });
-      next = withPinHoles(inst, def, moved);
-    } else {
-      next = { ...inst, at: to };
-    }
-    return { circuit: replacePart(c, index, next) };
+  move(c, op) {
+    return keeping(c, op, moveOp);
   },
 
-  rotate(c, { id, by = 90 }) {
-    const { inst, index, def } = partInfo(c, id);
-    const step = ((Number(by) % 360) + 360) % 360;
-    if (step % 90 !== 0) fail("by は 90 の倍数です");
-    if (inst.pins === undefined) {
-      const rot = (((Number(inst.rot ?? 0) + step) % 360) + 360) % 360;
-      const next = { ...inst, rot };
-      if (rot === 0) delete next.rot;
-      return { circuit: replacePart(c, index, next) };
-    }
-    const board = boardOf(c);
-    const holes = pinHoles(inst, def);
-    const o = board.pos(holes[0]);
-    const rotated = holes.map((h) => {
-      const p = board.pos(h);
-      const [dx, dy] = rotate(p.x - o.x, p.y - o.y, step);
-      return board.holeAt(o.x + dx, o.y + dy) ?? fail(`${id} を回転するとピンが穴から外れます`);
-    });
-    return { circuit: replacePart(c, index, withPinHoles(inst, def, rotated)) };
+  rotate(c, op) {
+    return keeping(c, op, rotateOp);
   },
 
-  setPin(c, { id, pin, to }) {
-    const { inst, index, def } = partInfo(c, id);
-    if (def.mount !== "leads") fail(`${id} は足を曲げられない部品です (move を使ってください)`);
-    if (inst.pos !== undefined) fail(`${id} はボード外に置いた部品です (move の to で穴に挿してから動かしてください)`);
-    if (!boardOf(c).has(to)) fail(`"${to}" はこのボードにない穴です`);
-    const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
-    const i = names.indexOf(String(pin));
-    if (i < 0) fail(`${id} にピン "${pin}" はありません (${names.join(", ")})`);
-    const holes = inst.pins !== undefined ? pinHoles(inst, def) : layoutHoles(c, def, inst, inst.at, inst.rot ?? 0);
-    holes[i] = to;
-    const next = withPinHoles({ ...inst }, def, holes);
-    delete next.at;
-    delete next.rot;
-    return { circuit: replacePart(c, index, next) };
+  setPin(c, op) {
+    return keeping(c, op, setPinOp);
   },
 
   update(c, { id, set = {} }) {
@@ -442,6 +384,158 @@ function checkEnd(c, ref) {
   const def = registryFor(c).get(inst.type) ?? fail(`未知の部品タイプ "${inst.type}"`);
   const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
   if (!names.includes(String(ref).slice(dot + 1))) fail(`${inst.id} にピン "${String(ref).slice(dot + 1)}" はありません (${names.join(", ")})`);
+}
+
+// ---- moving parts ----
+
+function moveOp(c, { id, to, pos }) {
+  const oi = overlayIndex(c, id);
+  if (oi >= 0) {
+    checkPos(pos);
+    return { circuit: { ...c, overlays: c.overlays.map((o, i) => (i === oi ? { ...o, x: pos[0], y: pos[1] } : o)) } };
+  }
+  const { inst, index, def } = partInfo(c, id);
+  if (pos !== undefined) {
+    checkPos(pos);
+    const { at, pins, ...rest } = inst;
+    return { circuit: replacePart(c, index, { ...rest, pos }) };
+  }
+  const board = boardOf(c);
+  if (!board.has(to)) fail(`"${to}" はこのボードにない穴です`);
+  let next;
+  if (inst.pos !== undefined) {
+    const { pos: _, ...rest } = inst;
+    next = def.mount === "leads" ? { ...withoutRot(rest), pins: layoutHoles(c, def, inst, to, inst.rot ?? 0) } : { ...rest, at: to };
+  } else if (inst.pins !== undefined) {
+    const holes = pinHoles(inst, def);
+    const from = board.pos(holes[0]) ?? fail(`${id} のピンの位置が不正です`);
+    const target = board.pos(to);
+    const moved = holes.map((h) => {
+      const p = board.pos(h) ?? fail(`${id} のピン "${h}" が不正です`);
+      return board.holeAt(p.x + target.x - from.x, p.y + target.y - from.y) ?? fail(`${id} を ${to} に動かすとピンが穴から外れます`);
+    });
+    next = withPinHoles(inst, def, moved);
+  } else {
+    next = { ...inst, at: to };
+  }
+  return { circuit: replacePart(c, index, next) };
+}
+
+function rotateOp(c, { id, by = 90 }) {
+  const { inst, index, def } = partInfo(c, id);
+  const step = ((Number(by) % 360) + 360) % 360;
+  if (step % 90 !== 0) fail("by は 90 の倍数です");
+  if (inst.pins === undefined) {
+    const rot = (((Number(inst.rot ?? 0) + step) % 360) + 360) % 360;
+    const next = { ...inst, rot };
+    if (rot === 0) delete next.rot;
+    return { circuit: replacePart(c, index, next) };
+  }
+  const board = boardOf(c);
+  const holes = pinHoles(inst, def);
+  const o = board.pos(holes[0]);
+  const rotated = holes.map((h) => {
+    const p = board.pos(h);
+    const [dx, dy] = rotate(p.x - o.x, p.y - o.y, step);
+    return board.holeAt(o.x + dx, o.y + dy) ?? fail(`${id} を回転するとピンが穴から外れます`);
+  });
+  return { circuit: replacePart(c, index, withPinHoles(inst, def, rotated)) };
+}
+
+function setPinOp(c, { id, pin, to }) {
+  const { inst, index, def } = partInfo(c, id);
+  if (def.mount !== "leads") fail(`${id} は足を曲げられない部品です (move を使ってください)`);
+  if (inst.pos !== undefined) fail(`${id} はボード外に置いた部品です (move の to で穴に挿してから動かしてください)`);
+  if (!boardOf(c).has(to)) fail(`"${to}" はこのボードにない穴です`);
+  const names = def.pins(paramsOf(def, inst)).map((p) => p.name);
+  const i = names.indexOf(String(pin));
+  if (i < 0) fail(`${id} にピン "${pin}" はありません (${names.join(", ")})`);
+  const holes = inst.pins !== undefined ? pinHoles(inst, def) : layoutHoles(c, def, inst, inst.at, inst.rot ?? 0);
+  holes[i] = to;
+  const next = withPinHoles({ ...inst }, def, holes);
+  delete next.at;
+  delete next.rot;
+  return { circuit: replacePart(c, index, next) };
+}
+
+// keepConnections: true keeps which pins are connected (rails included) through a move, rotate
+// or setPin: the wires that ended in the part's old or new columns are laid again by autoWire.
+// They keep their ids, colours and notes (and so their animation). Fails, changing nothing,
+// when the part's new place itself connects pins that were apart.
+function keeping(c, op, fn) {
+  const out = fn(c, op);
+  if (!op.keepConnections || overlayIndex(c, op.id) >= 0) return out;
+  return { ...out, circuit: keepConnections(c, out.circuit, [op.id]) };
+}
+
+function keepConnections(before, after, ids) {
+  const groups = pinGroups(before);
+  if (sameGroups(groups, pinGroups(after))) return after;
+  const rb = resolveCircuit(before);
+  const ra = resolveCircuit(after);
+  const strips = new Set();
+  for (const r of [rb, ra]) {
+    for (const part of r.parts.filter((p) => ids.includes(p.id))) {
+      for (const pin of part.pins) {
+        const s = pin.hole && stripOf(pin.hole);
+        if (s && !/^[TB][+-]$/.test(s)) strips.add(s); // a rail is one long strip: its wires stay
+      }
+    }
+  }
+  const touches = (end) => strips.has(stripOf(end));
+  const removed = after.wires.filter((w) => touches(w.from) || touches(w.to));
+  const base = { ...after, wires: after.wires.filter((w) => !removed.includes(w)) };
+  let laid;
+  try {
+    laid = autoWire(base, Object.fromEntries(groups.map((g) => [g.name, g.members])));
+  } catch (e) {
+    fail(`接続を保てませんでした: ${e.message}`);
+  }
+  // the old wires' ids, colours and notes go to new wires of the same net
+  const netOfWire = new Map(rb.wires.map((w) => [w.id, rb.netOf(w.nodes[0])]));
+  const spare = new Map();
+  for (const w of removed) spare.set(netOfWire.get(w.id), [...(spare.get(netOfWire.get(w.id)) ?? []), w]);
+  const wires = laid.wires.map((w, i) => {
+    const old = spare.get(laid.netNames[i])?.shift();
+    if (!old) return w;
+    const { from, to, via, bend, elbow, shape, ...keep } = old;
+    const { id, color, note, from: f, to: t, ...route } = w;
+    return { ...keep, from: f, to: t, ...route };
+  });
+  let next = { ...base, wires: [...base.wires, ...wires] };
+  for (const left of spare.values()) for (const w of left) next = retarget(next, w.id, null);
+  const lost = differences(groups, pinGroups(next));
+  if (lost) fail(`接続を保てませんでした: ${lost}`);
+  return next;
+}
+
+// which pins (and rails) are connected: [{ name, members }], two or more members each
+function pinGroups(c) {
+  return resolveCircuit(c)
+    .nets.map((n) => ({ name: n.name, members: [...n.pins.map((p) => p.ref), ...n.name.split("/").filter((s) => /^[TB][+-]$/.test(s))] }))
+    .filter((g) => g.members.length >= 2);
+}
+
+const groupKey = (g) => [...g.members].sort().join(" ");
+function sameGroups(a, b) {
+  return a.map(groupKey).sort().join("|") === b.map(groupKey).sort().join("|");
+}
+
+// a readable difference between two groupings, or null
+function differences(before, after) {
+  const where = (groups) => new Map(groups.flatMap((g, i) => g.members.map((m) => [m, i])));
+  const [wb, wa] = [where(before), where(after)];
+  const all = [...new Set([...wb.keys(), ...wa.keys()])];
+  for (const x of all) {
+    for (const y of all) {
+      if (x >= y) continue;
+      const was = wb.has(x) && wb.get(x) === wb.get(y);
+      const now = wa.has(x) && wa.get(x) === wa.get(y);
+      if (was && !now) return `${x} と ${y} がつながらなくなります`;
+      if (!was && now) return `${x} と ${y} がつながってしまいます (移動先の列や穴を確かめてください)`;
+    }
+  }
+  return null;
 }
 
 // Keeps animation tracks pointing at renamed targets; to = null drops the target's track.

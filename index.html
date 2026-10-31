@@ -71,6 +71,7 @@
           <label>ボード <select id="board-type"></select></label>
           <label>配線 <select id="wire-style" title="曲がる: 弧を描いて浮くジャンパ線 / キット: 板に沿って直角に折る、長さで色が決まるジャンパ線"><option value="flex">曲がる</option><option value="kit">キット</option></select></label>
           <label>配線の色 <select id="wire-color"></select></label>
+          <label title="部品を動かしたとき、つながり (ネットリスト) が変わらないように配線を付け替える"><input id="keep-wires" type="checkbox" />配線を保つ</label>
           <button id="btn-assembly" type="button" aria-pressed="false" title="組み立て手順モード: 部品を並べたところから順に配置していく様子を表示">組み立て</button>
           <span id="player" class="player" hidden>
             <button id="btn-step-prev" type="button" title="前の手順" hidden>◀ 前</button>
