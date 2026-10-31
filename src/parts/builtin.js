@@ -203,6 +203,7 @@ const regulator = {
   category: "電源",
   description: "78xx系。ピンは前から見て IN, GND, OUT。",
   mount: "rigid",
+  extent: [-0.9, -0.95, 2.9, 0.25], // the tab above the pins
   params: { model: { default: "7805", description: "型番" } },
   pins: () => inline(["IN", "GND", "OUT"]),
   render({ params }) {
@@ -258,6 +259,7 @@ const trimmer = {
   category: "受動部品",
   description: "3386型など。ピン2がワイパー(中点)。",
   mount: "rigid",
+  extent: [-0.45, -2.75, 2.45, 0.45], // the body stands above the pins
   params: { value: { default: "10k", description: "抵抗値" } },
   pins: () => inline(["1", "2", "3"]),
   render({ params }) {
@@ -276,6 +278,7 @@ const buzzer = {
   category: "出力",
   description: "ピン間7.6mm (3ピッチ)。+側に印。",
   mount: "rigid",
+  extent: [-0.85, -2.35, 3.85, 2.35], // a 12mm disc around the pins
   params: {},
   pins: () => [
     { name: "+", x: 0, y: 0 },
@@ -372,6 +375,7 @@ const nano = {
   category: "マイコンボード",
   description: "2x15ピン, 列間隔6ピッチ。atはピン1(TX1)の穴、USBはピン15側。同名ピンは RST2, GND2 と表記 (基板内で導通)。",
   mount: "rigid",
+  extent: [-1.2, -6.55, 16.9, 0.55], // the USB connector overhangs
   params: {},
   pins: () => dualRow(30, 6, NANO_PINS),
   internal: () => [
@@ -404,6 +408,7 @@ const pico = {
   category: "マイコンボード",
   description: "2x20ピン, 列間隔7ピッチ。atはピン1(GP0)の穴、USBはピン1側。GNDは GND, GND2.. と番号付き (基板内で導通)。",
   mount: "rigid",
+  extent: [-1.0, -7.64, 19.55, 0.64], // the USB connector overhangs
   params: {},
   pins: () => dualRow(40, 7, PICO_PINS),
   internal: () => [["GND", "GND2", "GND3", "GND4", "GND5", "GND6", "GND7"]],
@@ -511,6 +516,7 @@ const seg7 = {
   category: "表示",
   description: "0.56インチ1桁 (5161AS型, カソードコモン)。中央の溝をまたいで置く (列間隔6)。text の1文字を表示するアニメーション。",
   mount: "rigid",
+  extent: [-0.75, -6.75, 4.75, 0.75],
   params: { color: { default: "red", options: Object.keys(LED_COLORS), description: "発光色" } },
   states: {
     text: { type: "string", default: "", description: "表示する1文字 (0-9, A-F, H, L, P, U, -)" },
@@ -722,6 +728,7 @@ const esp32 = {
   description:
     "2x19ピン。atはピン1(3V3)の穴、USBはピン19(5V)側。IO1=TX, IO3=RX。列間隔は既定で10ピッチ (フルサイズのブレッドボードで片側1列だけ空く)。製品により異なるので width で調整。",
   mount: "rigid",
+  extent: [-2.7, -0.55, 19.6, 0.55], // USB and antenna overhang (the rows set the height)
   params: { width: { default: 10, description: "列間隔 (ピッチ単位)" } },
   pins: (p) => dualRow(38, Number(p.width) || 10, ESP32_PINS),
   internal: () => [["GND", "GND2", "GND3"]],
@@ -752,6 +759,7 @@ const xiao = {
   description:
     "Seeed Studio XIAO。2x7ピン、列間隔6ピッチで中央の溝をまたぐ (例: at h10)。USBはピン1 (D0) 側。USBを上にして左列が D0〜D6、右列が上から 5V, GND, 3V3, D10, D9, D8, D7。D番号とGPIO番号の対応は種類ごとに違うので公式Wikiで確認。D4=SDA, D5=SCL, D6=TX, D7=RX, D8=SCK, D9=MISO, D10=MOSI。",
   mount: "rigid",
+  extent: [-1.75, -0.45, 7.15, 0.45], // the USB connector overhangs (the rows set the height)
   params: {
     model: { default: "ESP32C3", options: ["ESP32C3", "ESP32S3", "ESP32C6"], description: "表示する型番" },
     width: { default: 6, description: "列間隔 (ピッチ単位)" },

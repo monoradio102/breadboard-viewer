@@ -81,7 +81,8 @@ export function fromJson(def) {
     pins: () => pins,
     // electrical roles for the advisory checks ("role" on JSON pins)
     roles: () => Object.fromEntries(def.pins.map((p) => [String(p.name), jsonRole(p)]).filter(([, r]) => r)),
-    // drawing bounds relative to the first pin, in pitch units (only needed when it leaves the board)
+    // drawing bounds relative to the first pin, in pitch units (needed when the body is larger
+    // than the pins' surroundings: layout checks, autoWire and the view use it)
     extent: def.extent ? [def.extent[0] - o.x, def.extent[1] - o.y, def.extent[2] - o.x, def.extent[3] - o.y].map((v) => v * scale) : undefined,
     internal: () => def.internal ?? [],
     source: def.source,

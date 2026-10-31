@@ -713,6 +713,8 @@ var regulator = {
   category: "\u96FB\u6E90",
   description: "78xx\u7CFB\u3002\u30D4\u30F3\u306F\u524D\u304B\u3089\u898B\u3066 IN, GND, OUT\u3002",
   mount: "rigid",
+  extent: [-0.9, -0.95, 2.9, 0.25],
+  // the tab above the pins
   params: { model: { default: "7805", description: "\u578B\u756A" } },
   pins: () => inline(["IN", "GND", "OUT"]),
   render({ params }) {
@@ -757,6 +759,8 @@ var trimmer = {
   category: "\u53D7\u52D5\u90E8\u54C1",
   description: "3386\u578B\u306A\u3069\u3002\u30D4\u30F32\u304C\u30EF\u30A4\u30D1\u30FC(\u4E2D\u70B9)\u3002",
   mount: "rigid",
+  extent: [-0.45, -2.75, 2.45, 0.45],
+  // the body stands above the pins
   params: { value: { default: "10k", description: "\u62B5\u6297\u5024" } },
   pins: () => inline(["1", "2", "3"]),
   render({ params }) {
@@ -769,6 +773,8 @@ var buzzer = {
   category: "\u51FA\u529B",
   description: "\u30D4\u30F3\u95937.6mm (3\u30D4\u30C3\u30C1)\u3002+\u5074\u306B\u5370\u3002",
   mount: "rigid",
+  extent: [-0.85, -2.35, 3.85, 2.35],
+  // a 12mm disc around the pins
   params: {},
   pins: () => [
     { name: "+", x: 0, y: 0 },
@@ -887,6 +893,8 @@ var nano = {
   category: "\u30DE\u30A4\u30B3\u30F3\u30DC\u30FC\u30C9",
   description: "2x15\u30D4\u30F3, \u5217\u9593\u96946\u30D4\u30C3\u30C1\u3002at\u306F\u30D4\u30F31(TX1)\u306E\u7A74\u3001USB\u306F\u30D4\u30F315\u5074\u3002\u540C\u540D\u30D4\u30F3\u306F RST2, GND2 \u3068\u8868\u8A18 (\u57FA\u677F\u5185\u3067\u5C0E\u901A)\u3002",
   mount: "rigid",
+  extent: [-1.2, -6.55, 16.9, 0.55],
+  // the USB connector overhangs
   params: {},
   pins: () => dualRow(30, 6, NANO_PINS),
   internal: () => [
@@ -945,6 +953,8 @@ var pico = {
   category: "\u30DE\u30A4\u30B3\u30F3\u30DC\u30FC\u30C9",
   description: "2x20\u30D4\u30F3, \u5217\u9593\u96947\u30D4\u30C3\u30C1\u3002at\u306F\u30D4\u30F31(GP0)\u306E\u7A74\u3001USB\u306F\u30D4\u30F31\u5074\u3002GND\u306F GND, GND2.. \u3068\u756A\u53F7\u4ED8\u304D (\u57FA\u677F\u5185\u3067\u5C0E\u901A)\u3002",
   mount: "rigid",
+  extent: [-1, -7.64, 19.55, 0.64],
+  // the USB connector overhangs
   params: {},
   pins: () => dualRow(40, 7, PICO_PINS),
   internal: () => [["GND", "GND2", "GND3", "GND4", "GND5", "GND6", "GND7"]],
@@ -1039,6 +1049,7 @@ var seg7 = {
   category: "\u8868\u793A",
   description: "0.56\u30A4\u30F3\u30C11\u6841 (5161AS\u578B, \u30AB\u30BD\u30FC\u30C9\u30B3\u30E2\u30F3)\u3002\u4E2D\u592E\u306E\u6E9D\u3092\u307E\u305F\u3044\u3067\u7F6E\u304F (\u5217\u9593\u96946)\u3002text \u306E1\u6587\u5B57\u3092\u8868\u793A\u3059\u308B\u30A2\u30CB\u30E1\u30FC\u30B7\u30E7\u30F3\u3002",
   mount: "rigid",
+  extent: [-0.75, -6.75, 4.75, 0.75],
   params: { color: { default: "red", options: Object.keys(LED_COLORS), description: "\u767A\u5149\u8272" } },
   states: {
     text: { type: "string", default: "", description: "\u8868\u793A\u3059\u308B1\u6587\u5B57 (0-9, A-F, H, L, P, U, -)" },
@@ -1220,6 +1231,8 @@ var esp32 = {
   category: "\u30DE\u30A4\u30B3\u30F3\u30DC\u30FC\u30C9",
   description: "2x19\u30D4\u30F3\u3002at\u306F\u30D4\u30F31(3V3)\u306E\u7A74\u3001USB\u306F\u30D4\u30F319(5V)\u5074\u3002IO1=TX, IO3=RX\u3002\u5217\u9593\u9694\u306F\u65E2\u5B9A\u306710\u30D4\u30C3\u30C1 (\u30D5\u30EB\u30B5\u30A4\u30BA\u306E\u30D6\u30EC\u30C3\u30C9\u30DC\u30FC\u30C9\u3067\u7247\u50741\u5217\u3060\u3051\u7A7A\u304F)\u3002\u88FD\u54C1\u306B\u3088\u308A\u7570\u306A\u308B\u306E\u3067 width \u3067\u8ABF\u6574\u3002",
   mount: "rigid",
+  extent: [-2.7, -0.55, 19.6, 0.55],
+  // USB and antenna overhang (the rows set the height)
   params: { width: { default: 10, description: "\u5217\u9593\u9694 (\u30D4\u30C3\u30C1\u5358\u4F4D)" } },
   pins: (p) => dualRow(38, Number(p.width) || 10, ESP32_PINS),
   internal: () => [["GND", "GND2", "GND3"]],
@@ -1236,6 +1249,8 @@ var xiao = {
   category: "\u30DE\u30A4\u30B3\u30F3\u30DC\u30FC\u30C9",
   description: "Seeed Studio XIAO\u30022x7\u30D4\u30F3\u3001\u5217\u9593\u96946\u30D4\u30C3\u30C1\u3067\u4E2D\u592E\u306E\u6E9D\u3092\u307E\u305F\u3050 (\u4F8B: at h10)\u3002USB\u306F\u30D4\u30F31 (D0) \u5074\u3002USB\u3092\u4E0A\u306B\u3057\u3066\u5DE6\u5217\u304C D0\u301CD6\u3001\u53F3\u5217\u304C\u4E0A\u304B\u3089 5V, GND, 3V3, D10, D9, D8, D7\u3002D\u756A\u53F7\u3068GPIO\u756A\u53F7\u306E\u5BFE\u5FDC\u306F\u7A2E\u985E\u3054\u3068\u306B\u9055\u3046\u306E\u3067\u516C\u5F0FWiki\u3067\u78BA\u8A8D\u3002D4=SDA, D5=SCL, D6=TX, D7=RX, D8=SCK, D9=MISO, D10=MOSI\u3002",
   mount: "rigid",
+  extent: [-1.75, -0.45, 7.15, 0.45],
+  // the USB connector overhangs (the rows set the height)
   params: {
     model: { default: "ESP32C3", options: ["ESP32C3", "ESP32S3", "ESP32C6"], description: "\u8868\u793A\u3059\u308B\u578B\u756A" },
     width: { default: 6, description: "\u5217\u9593\u9694 (\u30D4\u30C3\u30C1\u5358\u4F4D)" }
@@ -1614,7 +1629,8 @@ function fromJson(def) {
     pins: () => pins,
     // electrical roles for the advisory checks ("role" on JSON pins)
     roles: () => Object.fromEntries(def.pins.map((p) => [String(p.name), jsonRole(p)]).filter(([, r]) => r)),
-    // drawing bounds relative to the first pin, in pitch units (only needed when it leaves the board)
+    // drawing bounds relative to the first pin, in pitch units (needed when the body is larger
+    // than the pins' surroundings: layout checks, autoWire and the view use it)
     extent: def.extent ? [def.extent[0] - o.x, def.extent[1] - o.y, def.extent[2] - o.x, def.extent[3] - o.y].map((v) => v * scale) : void 0,
     internal: () => def.internal ?? [],
     source: def.source,

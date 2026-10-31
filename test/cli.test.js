@@ -269,3 +269,22 @@ test("layout: round bodies are checked as circles (a CdS cell on a resistor, a w
   assert.ok(issues.includes("W7 が D1 の本体の上を通っています (via で避けられます)"), issues.join("\n"));
   assert.ok(!issues.some((l) => /CDS2|R3|W8/.test(l)), issues.join("\n"));
 });
+
+test("layout: wire ends under a trimmer or a buzzer are hidden too", () => {
+  const r = resolveCircuit({
+    board: "half",
+    parts: [
+      { id: "VR1", type: "trimmer", at: "h4" },
+      { id: "BZ1", type: "buzzer", at: "i15" },
+    ],
+    wires: [
+      { id: "W1", from: "g5", to: "T-5" }, // under the trimmer's body (it stands above its pins)
+      { id: "W2", from: "j16", to: "B-16" }, // under the buzzer's disc
+      { id: "W3", from: "a5", to: "T-4" }, // clear
+    ],
+  });
+  const issues = layoutIssues(r);
+  assert.ok(issues.includes("W1 の端 g5 が VR1 の本体の下に隠れています"), issues.join("\n"));
+  assert.ok(issues.includes("W2 の端 j16 が BZ1 の本体の下に隠れています"), issues.join("\n"));
+  assert.ok(!issues.some((l) => l.startsWith("W3")), issues.join("\n"));
+});
