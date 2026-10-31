@@ -59,7 +59,7 @@ test("JSON parts can declare roles", () => {
 });
 
 test("examples only warn where intended", () => {
-  for (const name of ["blink-nano", "pico-button", "motor-servo", "distance-alarm", "tone-speaker", "oled-custom-part", "xiao-voice", "flasher-kit"]) {
+  for (const name of ["blink-nano", "pico-button", "motor-servo", "distance-alarm", "tone-speaker", "oled-custom-part", "xiao-voice", "flasher-kit", "oled-hello"]) {
     assert.deepEqual(resolveCircuit(JSON.parse(readExample(name))).advice, [], name);
   }
 });

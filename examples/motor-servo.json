@@ -1,25 +1,25 @@
 {
   "version": 1,
   "title": "トランジスタでモーター駆動 + サーボ",
-  "board": "full",
+  "board": "half",
   "parts": [
     { "id": "U1", "type": "nano", "at": "h3" },
-    { "id": "Q1", "type": "transistor", "pins": ["c40", "c41", "c42"] },
-    { "id": "R1", "type": "resistor", "value": "1k", "pins": ["d42", "g42"] },
-    { "id": "M1", "type": "motor", "pins": { "+": "b48", "-": "b41" } },
-    { "id": "D1", "type": "diode", "model": "1N4007", "pins": { "A": "d41", "K": "d48" } },
-    { "id": "S1", "type": "servo", "pos": [50, -5] }
+    { "id": "Q1", "type": "transistor", "pinout": "BCE", "pins": { "B": "c21", "C": "c22", "E": "c23" }, "idLabel": { "dx": -1.2 } },
+    { "id": "R1", "type": "resistor", "value": "1k", "pins": ["d21", "g21"] },
+    { "id": "M1", "type": "motor", "pins": { "+": "b29", "-": "b22" } },
+    { "id": "D1", "type": "diode", "model": "1N4007", "pins": { "A": "d22", "K": "d29" } },
+    { "id": "S1", "type": "servo", "pos": [28, -6] }
   ],
   "wires": [
     { "id": "W1", "from": "a4", "to": "T-4", "color": "black", "note": "GND" },
     { "id": "W2", "from": "a6", "to": "T+6", "color": "red", "note": "5V" },
-    { "id": "W3", "from": "j10", "to": "j42", "color": "green", "note": "D5 → R1" },
-    { "id": "W4", "from": "a40", "to": "T-40", "color": "black" },
-    { "id": "W5", "from": "a48", "to": "T+48", "color": "red" },
-    { "id": "W6", "from": "S1.GND", "to": "T-51", "color": "black", "shape": "curve", "bend": 0.15 },
-    { "id": "W7", "from": "S1.VCC", "to": "T+53", "color": "red", "bend": -0.15 },
-    { "id": "W8", "from": "i14", "to": "i54", "color": "orange", "note": "D9" },
-    { "id": "W9", "from": "S1.SIG", "to": "h54", "color": "orange", "bend": -0.08 }
+    { "id": "W3", "from": "j10", "to": "j21", "color": "green", "note": "D5 → R1" },
+    { "id": "W4", "from": "a23", "to": "T-23", "color": "black" },
+    { "id": "W5", "from": "a29", "to": "T+29", "color": "red" },
+    { "id": "W6", "from": "S1.GND", "to": "T-27", "color": "black" },
+    { "id": "W7", "from": "S1.VCC", "to": "T+28", "color": "red" },
+    { "id": "W8", "from": "i14", "to": "i30", "color": "orange", "note": "D9" },
+    { "id": "W9", "from": "S1.SIG", "to": "h30", "color": "orange" }
   ],
   "animation": {
     "duration": 4000,

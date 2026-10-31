@@ -108,6 +108,7 @@ PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx pl
 ## サンプル回路 (JSON)
 
 - [Arduino Nano で Lチカ](https://monoradio102.github.io/breadboard-viewer/examples/blink-nano.json)
+- [XIAO ESP32S3 で I2C OLED に文字を表示](https://monoradio102.github.io/breadboard-viewer/examples/oled-hello.json)
 - [Pico でボタン入力と LED (ジャンパ線キットの描き方)](https://monoradio102.github.io/breadboard-viewer/examples/pico-button.json)
 - [トランジスタでモーター駆動 + サーボ (ボード外配置)](https://monoradio102.github.io/breadboard-viewer/examples/motor-servo.json)
 - [HC-SR04 で距離アラーム](https://monoradio102.github.io/breadboard-viewer/examples/distance-alarm.json)

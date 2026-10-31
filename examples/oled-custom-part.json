@@ -1,7 +1,7 @@
 {
   "version": 1,
   "title": "カスタム部品の例: I2C OLED (SSD1306)",
-  "board": "full",
+  "board": "half",
   "partDefs": [
     {
       "type": "oled-ssd1306-i2c",

@@ -747,15 +747,18 @@ const xiao = {
     width: { default: 6, description: "列間隔 (ピッチ単位)" },
   },
   pins: (p) => dualRow(14, Number(p.width) || 6, XIAO_PINS),
-  render({ pins, params }) {
+  render({ pins, params, rot }) {
     const w = Number(params.width) || 6;
     const mid = -w / 2;
+    // the shield's marking reads upright however the board is turned
+    const [dx, dy] = rot === 90 || rot === 270 ? [0.75, 0] : [0, 0.45];
+    const flip = rot === 180 || rot === 270 ? -1 : 1;
     return (
       rect(-1.15, -w - 0.45, 8.3, w + 0.9, { rx: 0.35, fill: "#1f2a44", stroke: "#0f1626", "stroke-width": 0.06 }) +
       rect(-1.75, mid - 1.15, 1.6, 2.3, { rx: 0.3, fill: "#c8ccd0", stroke: "#8a8f94", "stroke-width": 0.05 }) +
       rect(1.1, mid - 1.9, 3.6, 3.8, { rx: 0.15, fill: "#b9bec4", stroke: "#8b9399", "stroke-width": 0.05 }) +
-      text(2.9, mid - 0.45, "XIAO", { "font-size": 0.62, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central", "font-weight": "bold" }) +
-      text(2.9, mid + 0.45, params.model, { "font-size": 0.42, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central" }) +
+      uprightText(2.9 - dx * flip, mid - dy * flip, "XIAO", rot, { "font-size": 0.62, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central", "font-weight": "bold" }) +
+      uprightText(2.9 + dx * flip, mid + dy * flip, params.model, rot, { "font-size": 0.42, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central" }) +
       headerPins(pins) +
       pinLabels(pins, w)
     );

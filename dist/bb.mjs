@@ -1214,10 +1214,12 @@ var xiao = {
     width: { default: 6, description: "\u5217\u9593\u9694 (\u30D4\u30C3\u30C1\u5358\u4F4D)" }
   },
   pins: (p) => dualRow(14, Number(p.width) || 6, XIAO_PINS),
-  render({ pins, params }) {
+  render({ pins, params, rot }) {
     const w = Number(params.width) || 6;
     const mid = -w / 2;
-    return rect(-1.15, -w - 0.45, 8.3, w + 0.9, { rx: 0.35, fill: "#1f2a44", stroke: "#0f1626", "stroke-width": 0.06 }) + rect(-1.75, mid - 1.15, 1.6, 2.3, { rx: 0.3, fill: "#c8ccd0", stroke: "#8a8f94", "stroke-width": 0.05 }) + rect(1.1, mid - 1.9, 3.6, 3.8, { rx: 0.15, fill: "#b9bec4", stroke: "#8b9399", "stroke-width": 0.05 }) + text(2.9, mid - 0.45, "XIAO", { "font-size": 0.62, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central", "font-weight": "bold" }) + text(2.9, mid + 0.45, params.model, { "font-size": 0.42, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central" }) + headerPins(pins) + pinLabels(pins, w);
+    const [dx, dy] = rot === 90 || rot === 270 ? [0.75, 0] : [0, 0.45];
+    const flip = rot === 180 || rot === 270 ? -1 : 1;
+    return rect(-1.15, -w - 0.45, 8.3, w + 0.9, { rx: 0.35, fill: "#1f2a44", stroke: "#0f1626", "stroke-width": 0.06 }) + rect(-1.75, mid - 1.15, 1.6, 2.3, { rx: 0.3, fill: "#c8ccd0", stroke: "#8a8f94", "stroke-width": 0.05 }) + rect(1.1, mid - 1.9, 3.6, 3.8, { rx: 0.15, fill: "#b9bec4", stroke: "#8b9399", "stroke-width": 0.05 }) + uprightText(2.9 - dx * flip, mid - dy * flip, "XIAO", rot, { "font-size": 0.62, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central", "font-weight": "bold" }) + uprightText(2.9 + dx * flip, mid + dy * flip, params.model, rot, { "font-size": 0.42, fill: "#2b2f34", "text-anchor": "middle", "dominant-baseline": "central" }) + headerPins(pins) + pinLabels(pins, w);
   }
 };
 var CHECK_BOARD = "\u8CA9\u58F2\u5143\u306B\u3088\u3063\u3066\u30D4\u30F3\u306E\u4E26\u3073\u3084\u5BF8\u6CD5\u304C\u9055\u3046\u5834\u5408\u304C\u3042\u308A\u307E\u3059\u3002\u8CFC\u5165\u3057\u305F\u88FD\u54C1\u306E\u8868\u8A18\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002";

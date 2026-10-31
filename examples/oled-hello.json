@@ -1,0 +1,391 @@
+{
+  "version": 1,
+  "title": "I2C OLED に Hello + LED (XIAO ESP32S3)",
+  "board": "half",
+  "parts": [
+    { "id": "U1", "type": "xiao", "at": "d27", "rot": 180, "model": "ESP32S3" },
+    { "id": "DISP1", "type": "ssd1306", "at": "j14", "idLabel": false },
+    { "id": "L1", "type": "led", "color": "red", "pins": { "A": "a7", "K": "T-7" } },
+    { "id": "L2", "type": "led", "color": "yellow", "pins": { "A": "a11", "K": "T-11" } },
+    { "id": "L3", "type": "led", "color": "green", "pins": { "A": "a15", "K": "T-15" } },
+    { "id": "R1", "type": "resistor", "value": "330", "pins": ["e7", "e10"] },
+    { "id": "R2", "type": "resistor", "value": "330", "pins": ["e11", "e14"] },
+    { "id": "R3", "type": "resistor", "value": "330", "pins": ["e15", "e18"] }
+  ],
+  "wires": [
+    { "id": "W1", "from": "j25", "to": "B+25", "color": "red", "note": "3V3 → 下の + レール" },
+    { "id": "W2", "from": "j26", "to": "B-27", "color": "black", "note": "GND → 下の − レール" },
+    { "id": "W3", "from": "T-3", "to": "B-3", "color": "black", "note": "上下の − レールをつなぐ" },
+    { "id": "W4", "from": "f15", "to": "B+7", "color": "red", "via": [[8, 11]], "note": "OLED の VCC" },
+    { "id": "W5", "from": "g14", "to": "B-9", "color": "black", "via": [[10, 12]], "note": "OLED の GND" },
+    { "id": "SCL", "from": "i21", "to": "h16", "color": "yellow", "note": "D7 → SCL" },
+    { "id": "SDA", "from": "j22", "to": "i17", "color": "blue", "note": "D8 → SDA" },
+    { "id": "W6", "from": "a21", "to": "a18", "color": "green", "note": "D6 → 緑の LED" },
+    { "id": "W7", "from": "b22", "to": "b14", "color": "orange", "note": "D5 → 黄の LED" },
+    { "id": "W8", "from": "c23", "to": "c10", "color": "purple", "note": "D4 → 赤の LED" }
+  ],
+  "animation": {
+    "duration": 6190,
+    "loop": true,
+    "tracks": [
+      {
+        "target": "DISP1",
+        "keys": [
+          {
+            "t": 0,
+            "text": ""
+          },
+          {
+            "t": 500,
+            "text": "H"
+          },
+          {
+            "t": 610,
+            "text": "He"
+          },
+          {
+            "t": 720,
+            "text": "Hel"
+          },
+          {
+            "t": 830,
+            "text": "Hell"
+          },
+          {
+            "t": 940,
+            "text": "Hello"
+          },
+          {
+            "t": 1050,
+            "text": "Hello\nB"
+          },
+          {
+            "t": 1160,
+            "text": "Hello\nBr"
+          },
+          {
+            "t": 1270,
+            "text": "Hello\nBre"
+          },
+          {
+            "t": 1380,
+            "text": "Hello\nBrea"
+          },
+          {
+            "t": 1490,
+            "text": "Hello\nBread"
+          },
+          {
+            "t": 1600,
+            "text": "Hello\nBreadb"
+          },
+          {
+            "t": 1710,
+            "text": "Hello\nBreadbo"
+          },
+          {
+            "t": 1820,
+            "text": "Hello\nBreadboa"
+          },
+          {
+            "t": 1930,
+            "text": "Hello\nBreadboar"
+          },
+          {
+            "t": 2040,
+            "text": "Hello\nBreadboard"
+          },
+          {
+            "t": 2150,
+            "text": "Hello\nBreadboard\nV"
+          },
+          {
+            "t": 2260,
+            "text": "Hello\nBreadboard\nVi"
+          },
+          {
+            "t": 2370,
+            "text": "Hello\nBreadboard\nVie"
+          },
+          {
+            "t": 2480,
+            "text": "Hello\nBreadboard\nView"
+          },
+          {
+            "t": 2590,
+            "text": "Hello\nBreadboard\nViewe"
+          },
+          {
+            "t": 2700,
+            "text": "Hello\nBreadboard\nViewer"
+          },
+          {
+            "t": 2810,
+            "text": "Hello\nBreadboard\nViewer!"
+          },
+          {
+            "t": 2920,
+            "text": "Hello\nBreadboard\nViewer!\n\\"
+          },
+          {
+            "t": 3030,
+            "text": "Hello\nBreadboard\nViewer!\n\\("
+          },
+          {
+            "t": 3140,
+            "text": "Hello\nBreadboard\nViewer!\n\\(^"
+          },
+          {
+            "t": 3250,
+            "text": "Hello\nBreadboard\nViewer!\n\\(^o"
+          },
+          {
+            "t": 3360,
+            "text": "Hello\nBreadboard\nViewer!\n\\(^o^"
+          },
+          {
+            "t": 3470,
+            "text": "Hello\nBreadboard\nViewer!\n\\(^o^)"
+          },
+          {
+            "t": 3580,
+            "text": "Hello\nBreadboard\nViewer!\n\\(^o^)/"
+          }
+        ]
+      },
+      {
+        "target": "L1",
+        "keys": [
+          {
+            "t": 0,
+            "on": false
+          },
+          {
+            "t": 0,
+            "on": true
+          },
+          {
+            "t": 250,
+            "on": false
+          },
+          {
+            "t": 750,
+            "on": true
+          },
+          {
+            "t": 1000,
+            "on": false
+          },
+          {
+            "t": 1500,
+            "on": true
+          },
+          {
+            "t": 1750,
+            "on": false
+          },
+          {
+            "t": 2250,
+            "on": true
+          },
+          {
+            "t": 2500,
+            "on": false
+          },
+          {
+            "t": 3000,
+            "on": true
+          },
+          {
+            "t": 3250,
+            "on": false
+          },
+          {
+            "t": 3750,
+            "on": true
+          },
+          {
+            "t": 4000,
+            "on": false
+          },
+          {
+            "t": 4500,
+            "on": true
+          },
+          {
+            "t": 4750,
+            "on": false
+          },
+          {
+            "t": 5250,
+            "on": true
+          },
+          {
+            "t": 5500,
+            "on": false
+          },
+          {
+            "t": 6000,
+            "on": true
+          },
+          {
+            "t": 6189,
+            "on": false
+          }
+        ]
+      },
+      {
+        "target": "L2",
+        "keys": [
+          {
+            "t": 0,
+            "on": false
+          },
+          {
+            "t": 250,
+            "on": true
+          },
+          {
+            "t": 500,
+            "on": false
+          },
+          {
+            "t": 1000,
+            "on": true
+          },
+          {
+            "t": 1250,
+            "on": false
+          },
+          {
+            "t": 1750,
+            "on": true
+          },
+          {
+            "t": 2000,
+            "on": false
+          },
+          {
+            "t": 2500,
+            "on": true
+          },
+          {
+            "t": 2750,
+            "on": false
+          },
+          {
+            "t": 3250,
+            "on": true
+          },
+          {
+            "t": 3500,
+            "on": false
+          },
+          {
+            "t": 4000,
+            "on": true
+          },
+          {
+            "t": 4250,
+            "on": false
+          },
+          {
+            "t": 4750,
+            "on": true
+          },
+          {
+            "t": 5000,
+            "on": false
+          },
+          {
+            "t": 5500,
+            "on": true
+          },
+          {
+            "t": 5750,
+            "on": false
+          }
+        ]
+      },
+      {
+        "target": "L3",
+        "keys": [
+          {
+            "t": 0,
+            "on": false
+          },
+          {
+            "t": 500,
+            "on": true
+          },
+          {
+            "t": 750,
+            "on": false
+          },
+          {
+            "t": 1250,
+            "on": true
+          },
+          {
+            "t": 1500,
+            "on": false
+          },
+          {
+            "t": 2000,
+            "on": true
+          },
+          {
+            "t": 2250,
+            "on": false
+          },
+          {
+            "t": 2750,
+            "on": true
+          },
+          {
+            "t": 3000,
+            "on": false
+          },
+          {
+            "t": 3500,
+            "on": true
+          },
+          {
+            "t": 3750,
+            "on": false
+          },
+          {
+            "t": 4250,
+            "on": true
+          },
+          {
+            "t": 4500,
+            "on": false
+          },
+          {
+            "t": 5000,
+            "on": true
+          },
+          {
+            "t": 5250,
+            "on": false
+          },
+          {
+            "t": 5750,
+            "on": true
+          },
+          {
+            "t": 6000,
+            "on": false
+          }
+        ]
+      }
+    ],
+    "captions": [
+      {
+        "t": 0,
+        "text": "I2C (D8=SDA, D7=SCL) で OLED に表示、D4〜D6 で LED を順番に点灯"
+      }
+    ]
+  }
+}

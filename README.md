@@ -32,14 +32,16 @@ claude.ai では [skill/breadboard-viewer.zip](skill/breadboard-viewer.zip) を�
 
 | | |
 |---|---|
-| ![トランジスタ2個で LED を交互に点滅](docs/images/flasher-kit.svg) | ![XIAO ESP32S3 で音声入出力](docs/images/xiao-voice.svg) |
-| [LED を交互に点滅 (無安定マルチバイブレータ)](examples/flasher-kit.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=flasher-kit)) | [XIAO ESP32S3 + I2S マイク・アンプ](examples/xiao-voice.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=xiao-voice)) |
-| ![トランジスタでモーター駆動 + サーボ](docs/images/motor-servo.svg) | ![HC-SR04 で距離アラーム](docs/images/distance-alarm.svg) |
-| [モーター + サーボ](examples/motor-servo.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=motor-servo)) | [HC-SR04 で距離アラーム](examples/distance-alarm.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=distance-alarm)) |
-| ![Pico でボタン入力とLED](docs/images/pico-button.svg) | ![カスタム部品の例: I2C OLED](docs/images/oled-custom-part.svg) |
-| [Pico でボタン入力とLED](examples/pico-button.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=pico-button)) | [独自部品 (OLED) の定義例](examples/oled-custom-part.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-custom-part)) |
-| ![スピーカーで音を鳴らす](docs/images/tone-speaker.svg) | ![抵抗なしで LED をつなぐと…](docs/images/led-burnout.svg) |
-| [スピーカー (ボード外に配置)](examples/tone-speaker.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=tone-speaker)) | [演出レイヤー (煙のSVG) の例](examples/led-burnout.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=led-burnout)) |
+| ![I2C OLED に Hello](docs/images/oled-hello.svg) | ![トランジスタ2個で LED を交互に点滅](docs/images/flasher-kit.svg) |
+| [XIAO ESP32S3 で I2C OLED に文字を表示](examples/oled-hello.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-hello)) | [LED を交互に点滅 (無安定マルチバイブレータ)](examples/flasher-kit.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=flasher-kit)) |
+| ![トランジスタでモーター駆動 + サーボ](docs/images/motor-servo.svg) | ![XIAO ESP32S3 で音声入出力](docs/images/xiao-voice.svg) |
+| [モーター + サーボ](examples/motor-servo.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=motor-servo)) | [XIAO ESP32S3 + I2S マイク・アンプ](examples/xiao-voice.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=xiao-voice)) |
+| ![Pico でボタン入力とLED](docs/images/pico-button.svg) | ![HC-SR04 で距離アラーム](docs/images/distance-alarm.svg) |
+| [Pico でボタン入力とLED](examples/pico-button.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=pico-button)) | [HC-SR04 で距離アラーム](examples/distance-alarm.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=distance-alarm)) |
+| ![カスタム部品の例: I2C OLED](docs/images/oled-custom-part.svg) | ![スピーカーで音を鳴らす](docs/images/tone-speaker.svg) |
+| [独自部品 (OLED) の定義例](examples/oled-custom-part.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-custom-part)) | [スピーカー (ボード外に配置)](examples/tone-speaker.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=tone-speaker)) |
+| ![抵抗なしで LED をつなぐと…](docs/images/led-burnout.svg) |  |
+| [演出レイヤー (煙のSVG) の例](examples/led-burnout.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=led-burnout)) |  |
 
 上の画像は、それぞれ1つのSVGファイルです。アニメーションはSVGの中のCSSで動いていて、回路データも埋め込まれています。
 SVGを保存してエディタにドロップすると、そのまま回路を編集できます。
