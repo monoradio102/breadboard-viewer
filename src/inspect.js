@@ -38,6 +38,29 @@ export function bodyCore(part) {
   return { x: cx - rx, y: cy - ry, w: 2 * rx, h: 2 * ry };
 }
 
+// The drawn body as a shape, for exact checks between parts with leads: { circle: {x, y, r} }
+// for round ones (def.body a radius: LED, CdS, capacitor), else { box }.
+function bodyShape(part) {
+  const leads = part.def.mount === "leads" && !part.offboard;
+  const box = bodyCore(part);
+  if (leads && typeof part.def.body === "number") return { leads, circle: { x: box.x + box.w / 2, y: box.y + box.h / 2, r: part.def.body } };
+  return { leads, box };
+}
+const distToBox = (p, b) => Math.hypot(Math.max(b.x - p.x, 0, p.x - b.x - b.w), Math.max(b.y - p.y, 0, p.y - b.y - b.h));
+// how far a point is from the shape's outline (negative inside)
+const distTo = (p, sh) => (sh.circle ? Math.hypot(p.x - sh.circle.x, p.y - sh.circle.y) - sh.circle.r : distToBox(p, sh.box) || -1);
+// two bodies of parts with leads drawn on top of each other (touching does not count)
+function shapesOverlap(a, b) {
+  if (a.circle && b.circle) return Math.hypot(a.circle.x - b.circle.x, a.circle.y - b.circle.y) < a.circle.r + b.circle.r - 0.05;
+  if (a.circle || b.circle) {
+    const [c, r] = a.circle ? [a.circle, b.box] : [b.circle, a.box];
+    return distToBox(c, r) < c.r - 0.05;
+  }
+  const w = Math.min(a.box.x + a.box.w, b.box.x + b.box.w) - Math.max(a.box.x, b.box.x);
+  const h = Math.min(a.box.y + a.box.h, b.box.y + b.box.h) - Math.max(a.box.y, b.box.y);
+  return w > 0.05 && h > 0.05;
+}
+
 // Holes hidden under part bodies: hole -> part id (its own pins excluded). For parts with leads,
 // under the drawn body (a resistor's barrel, an LED's dome), not under the thin legs.
 export function coveredBy(result) {
@@ -147,11 +170,13 @@ export function partSpec(def) {
 export function layoutIssues(result) {
   const out = [];
   // what is drawn as each body (an LED's dome, a resistor's barrel; not the thin legs)
-  const bodies = result.parts.map((p) => ({ part: p, box: bodyCore(p) }));
+  const bodies = result.parts.map((p) => ({ part: p, box: bodyCore(p), shape: bodyShape(p) }));
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
       const [a, b] = [bodies[i], bodies[j]];
-      if (overlap(a.box, b.box) > 0.4) out.push(`${a.part.id} と ${b.part.id} の本体が重なっています`);
+      // a resistor's barrel against a CdS cell: exact shapes; a module's outline is only approximate
+      const hit = a.shape.leads && b.shape.leads ? shapesOverlap(a.shape, b.shape) : overlap(a.box, b.box) > 0.4;
+      if (hit) out.push(`${a.part.id} と ${b.part.id} の本体が重なっています`);
     }
   }
   const covered = coveredBy(result);
@@ -181,17 +206,23 @@ export function layoutIssues(result) {
     const off = wirePoints(w).some((q) => q.x < b.x - 0.3 || q.x > b.x + b.w + 0.3 || q.y < b.y - 0.3 || q.y > b.y + b.h + 0.3);
     if (off) out.push(`${w.id} がボードの外にはみ出しています (bend / via を確かめてください)`);
   }
-  // wires running over a part's body (away from their own ends; a wire to the part's own pin
-  // may touch it). The box is shrunk a little: grazing an edge is fine.
+  // flexible wires running over a part's body (away from their own ends; a wire to the part's own pin
+  // may touch it). An LED's dome or a resistor's barrel counts even when the wire only grazes
+  // it (the wire is about 0.23 wide each side); a module's outline is approximate, so only
+  // its inner part counts.
   const traces = result.wires.map((w) => ({ w, pts: wirePoints(w, 0.2) }));
   for (const { w, pts } of traces) {
-    for (const { part, box } of bodies) {
+    if (w.kit) continue; // a kit wire lies flat on the board, under the parts (drawn below them)
+    for (const { part, box, shape } of bodies) {
       if ([w.from, w.to].some((r) => String(r).startsWith(`${part.id}.`))) continue;
-      const edge = part.def.mount === "leads" && !part.offboard ? 0.15 : 0.6; // grazing a module's edge is fine
-      const [mx, my] = [Math.min(edge, box.w * 0.2), Math.min(edge, box.h * 0.2)];
-      const core = { x: box.x + mx, y: box.y + my, w: box.w - 2 * mx, h: box.h - 2 * my };
       const away = pts.filter((q) => [w.a, w.b].every((e) => Math.hypot(q.x - e.x, q.y - e.y) > 0.6));
-      if (away.some((q) => inside(q, core))) out.push(`${w.id} が ${part.id} の本体の上を通っています (via で避けられます)`);
+      let over;
+      if (shape.leads) over = away.some((q) => distTo(q, shape) < 0.12);
+      else {
+        const [mx, my] = [Math.min(0.6, box.w * 0.2), Math.min(0.6, box.h * 0.2)];
+        over = away.some((q) => inside(q, { x: box.x + mx, y: box.y + my, w: box.w - 2 * mx, h: box.h - 2 * my }));
+      }
+      if (over) out.push(`${w.id} が ${part.id} の本体の上を通っています (via で避けられます)`);
     }
   }
   // id labels on top of other parts, labels or wires

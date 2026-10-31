@@ -247,3 +247,24 @@ test("a copy of the CLI elsewhere finds Playwright in the folder it is run from"
     rmSync(copy, { recursive: true, force: true });
   }
 });
+
+test("layout: round bodies are checked as circles (a CdS cell on a resistor, a wire grazing an LED)", () => {
+  const r = resolveCircuit({
+    board: "half",
+    parts: [
+      { id: "D1", type: "led", pins: { A: "a21", K: "a20" } },
+      { id: "CDS1", type: "cds", pins: ["i6", "i7"] },
+      { id: "R2", type: "resistor", pins: ["j6", "j10"] },
+      { id: "R3", type: "resistor", pins: ["f20", "f24"] },
+      { id: "CDS2", type: "cds", pins: ["h14", "h15"] },
+    ],
+    wires: [
+      { id: "W7", from: "c20", to: "T-19" }, // grazes D1's dome
+      { id: "W8", from: "c25", to: "T-26" }, // well clear of it
+    ],
+  });
+  const issues = layoutIssues(r);
+  assert.ok(issues.includes("CDS1 と R2 の本体が重なっています"), issues.join("\n"));
+  assert.ok(issues.includes("W7 が D1 の本体の上を通っています (via で避けられます)"), issues.join("\n"));
+  assert.ok(!issues.some((l) => /CDS2|R3|W8/.test(l)), issues.join("\n"));
+});

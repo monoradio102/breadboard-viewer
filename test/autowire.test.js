@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { autoWire } from "../src/autowire.js";
+import { createBoard } from "../src/board.js";
 import { resolveCircuit } from "../src/circuit.js";
 import { layoutIssues } from "../src/inspect.js";
 import { applyOps } from "../src/ops.js";
@@ -121,4 +122,30 @@ test("autoWire does not join nets through a part's insides (a tact switch's legs
   const r = resolveCircuit(c);
   const gnd = r.nets.find((n) => n.name === "T-/B-").pins.map((p) => p.ref);
   for (const m of ["U1.GND", "SW1.3", "SW1.4", "LED1.K"]) assert.ok(gnd.includes(m), m);
+});
+
+test("autoWire joins the top and bottom rails straight across at an end of the board", () => {
+  const base = {
+    board: "half",
+    parts: [
+      { id: "U1", type: "xiao", at: "d28", rot: 180, model: "ESP32S3" },
+      { id: "D1", type: "led", pins: { A: "a21", K: "a20" } },
+      { id: "SW1", type: "button", at: "e14" },
+      { id: "CDS1", type: "cds", pins: ["i5", "i6"] },
+      { id: "R2", type: "resistor", pins: ["j6", "j10"] },
+    ],
+    wires: [],
+  };
+  const nets = {
+    GND: ["U1.GND", "D1.K", "R2.2", "T-", "B-"],
+    "3V3": ["U1.3V3", "CDS1.1", "T+", "B+"],
+  };
+  const { wires } = autoWire(base, nets);
+  const cols = createBoard("half").railCols;
+  const edge = new Set([cols[0], cols[1], cols.at(-2), cols.at(-1)]);
+  for (const sign of ["+", "-"]) {
+    const bridge = wires.find((w) => [w.from, w.to].sort().join() === [`B${sign}`, `T${sign}`].map((r) => r + w.from.slice(2)).sort().join());
+    assert.ok(bridge, `${sign}: ${wires.map((w) => `${w.from}->${w.to}`).join(", ")}`);
+    assert.ok(edge.has(Number(bridge.from.slice(2))), bridge.from);
+  }
 });

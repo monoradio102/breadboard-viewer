@@ -53,6 +53,11 @@
 例: `h3` は `[4, 13]`、`T-5` は `[6, 2]`。`node bb.mjs coords h3 T-5 U1.D3 12.4,6.2 --in circuit.json` でも確かめられます (`--in` か `--board` がないと full ボードとして計算し、half / mini にない穴にはその旨を付けます)
 (穴・部品のピン・`x,y` に近い穴を返します)。
 
+## 削除した ID の記録 (`retiredIds`)
+
+編集操作 (`remove` など) で部品・配線・演出を消すと、その ID が `"retiredIds": ["W6"]` のように記録されます (種類ごとに一番大きい番号だけ)。
+新しい ID はこれより後の番号から振られるので、消した ID が別の部品や配線に使い回されることはありません。手で書く必要はありません。
+
 ## 部品 (`parts`)
 
 | キー | 必須 | 内容 |
@@ -424,7 +429,7 @@ node tools/bb.mjs check circuit.json
 ### 置く前に確かめる
 
 ```bash
-node bb.mjs place xiao --at h3 --rot 180 [--param width=6] [--in circuit.json]
+node bb.mjs place xiao --at d28 --rot 180 [--param width=6] [--in circuit.json]
 ```
 
 部品を置いたときの、各ピンの穴とその穴が属する列 (`strip`)、本体が覆う範囲 (列と行)、すでに使われている穴とのぶつかり、

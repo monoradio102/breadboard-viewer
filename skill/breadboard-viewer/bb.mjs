@@ -2693,6 +2693,24 @@ function bodyCore(part) {
   const [rx, ry] = [hl * c + hw * s, hl * s + hw * c];
   return { x: cx - rx, y: cy - ry, w: 2 * rx, h: 2 * ry };
 }
+function bodyShape(part) {
+  const leads = part.def.mount === "leads" && !part.offboard;
+  const box = bodyCore(part);
+  if (leads && typeof part.def.body === "number") return { leads, circle: { x: box.x + box.w / 2, y: box.y + box.h / 2, r: part.def.body } };
+  return { leads, box };
+}
+var distToBox = (p, b) => Math.hypot(Math.max(b.x - p.x, 0, p.x - b.x - b.w), Math.max(b.y - p.y, 0, p.y - b.y - b.h));
+var distTo = (p, sh) => sh.circle ? Math.hypot(p.x - sh.circle.x, p.y - sh.circle.y) - sh.circle.r : distToBox(p, sh.box) || -1;
+function shapesOverlap(a, b) {
+  if (a.circle && b.circle) return Math.hypot(a.circle.x - b.circle.x, a.circle.y - b.circle.y) < a.circle.r + b.circle.r - 0.05;
+  if (a.circle || b.circle) {
+    const [c, r] = a.circle ? [a.circle, b.box] : [b.circle, a.box];
+    return distToBox(c, r) < c.r - 0.05;
+  }
+  const w = Math.min(a.box.x + a.box.w, b.box.x + b.box.w) - Math.max(a.box.x, b.box.x);
+  const h = Math.min(a.box.y + a.box.h, b.box.y + b.box.h) - Math.max(a.box.y, b.box.y);
+  return w > 0.05 && h > 0.05;
+}
 function coveredBy(result) {
   const map = /* @__PURE__ */ new Map();
   for (const part of result.parts) {
@@ -2788,11 +2806,12 @@ function partSpec(def) {
 }
 function layoutIssues(result) {
   const out = [];
-  const bodies = result.parts.map((p) => ({ part: p, box: bodyCore(p) }));
+  const bodies = result.parts.map((p) => ({ part: p, box: bodyCore(p), shape: bodyShape(p) }));
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
       const [a, b2] = [bodies[i], bodies[j]];
-      if (overlap(a.box, b2.box) > 0.4) out.push(`${a.part.id} \u3068 ${b2.part.id} \u306E\u672C\u4F53\u304C\u91CD\u306A\u3063\u3066\u3044\u307E\u3059`);
+      const hit = a.shape.leads && b2.shape.leads ? shapesOverlap(a.shape, b2.shape) : overlap(a.box, b2.box) > 0.4;
+      if (hit) out.push(`${a.part.id} \u3068 ${b2.part.id} \u306E\u672C\u4F53\u304C\u91CD\u306A\u3063\u3066\u3044\u307E\u3059`);
     }
   }
   const covered = coveredBy(result);
@@ -2822,13 +2841,17 @@ function layoutIssues(result) {
   }
   const traces = result.wires.map((w) => ({ w, pts: wirePoints(w, 0.2) }));
   for (const { w, pts } of traces) {
-    for (const { part, box } of bodies) {
+    if (w.kit) continue;
+    for (const { part, box, shape } of bodies) {
       if ([w.from, w.to].some((r) => String(r).startsWith(`${part.id}.`))) continue;
-      const edge = part.def.mount === "leads" && !part.offboard ? 0.15 : 0.6;
-      const [mx, my] = [Math.min(edge, box.w * 0.2), Math.min(edge, box.h * 0.2)];
-      const core = { x: box.x + mx, y: box.y + my, w: box.w - 2 * mx, h: box.h - 2 * my };
       const away = pts.filter((q) => [w.a, w.b].every((e) => Math.hypot(q.x - e.x, q.y - e.y) > 0.6));
-      if (away.some((q) => inside(q, core))) out.push(`${w.id} \u304C ${part.id} \u306E\u672C\u4F53\u306E\u4E0A\u3092\u901A\u3063\u3066\u3044\u307E\u3059 (via \u3067\u907F\u3051\u3089\u308C\u307E\u3059)`);
+      let over;
+      if (shape.leads) over = away.some((q) => distTo(q, shape) < 0.12);
+      else {
+        const [mx, my] = [Math.min(0.6, box.w * 0.2), Math.min(0.6, box.h * 0.2)];
+        over = away.some((q) => inside(q, { x: box.x + mx, y: box.y + my, w: box.w - 2 * mx, h: box.h - 2 * my }));
+      }
+      if (over) out.push(`${w.id} \u304C ${part.id} \u306E\u672C\u4F53\u306E\u4E0A\u3092\u901A\u3063\u3066\u3044\u307E\u3059 (via \u3067\u907F\u3051\u3089\u308C\u307E\u3059)`);
     }
   }
   const labels = result.parts.map((p) => ({ part: p, box: labelBox(p) })).filter((l) => l.box);
@@ -2923,6 +2946,15 @@ function circuitLink(circuit, base = "https://monoradio102.github.io/breadboard-
   return `${base.replace(/#.*$/, "")}#data=${b64}`;
 }
 
+// src/ids.js
+var escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function highestId(circuit, prefix) {
+  const re = new RegExp(`"${escape(prefix)}(\\d+)"`, "g");
+  let max = 0;
+  for (const m of JSON.stringify(circuit).matchAll(re)) max = Math.max(max, Number(m[1]));
+  return max;
+}
+
 // src/autowire.js
 var RAILS2 = ["T+", "T-", "B+", "B-"];
 var COST = { length: 1, crossing: 25, alongside: 20, overHole: 40, overBody: 8, body: 12, offBoard: 10, bend: 2, detour: 1.5 };
@@ -2990,14 +3022,18 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300, res
     const union2 = (a, b) => parent.set(find(a), find(b));
     for (const strip of boardStrips(board)) strip.slice(1).forEach((h) => union2(strip[0], h));
     for (const w of result.wires) union2(w.nodes[0], w.nodes[1]);
-    for (const w of autos2) union2(w.a.node, w.b.node);
+    for (const w of [...fixed, ...autos2]) union2(w.a.node, w.b.node);
     return find;
   };
-  const context = (autos2) => ({
-    find: unionFind(autos2),
-    used: /* @__PURE__ */ new Set([...baseUsed, ...autos2.flatMap((w) => [w.a.hole, w.b.hole]).filter(Boolean)]),
-    drawn: [...baseDrawn, ...autos2.map((w) => w.points)]
-  });
+  const fixed = [];
+  const context = (autos2) => {
+    const all = [...fixed, ...autos2];
+    return {
+      find: unionFind(autos2),
+      used: /* @__PURE__ */ new Set([...baseUsed, ...all.flatMap((w) => [w.a.hole, w.b.hole]).filter(Boolean)]),
+      drawn: [...baseDrawn, ...all.map((w) => w.points)]
+    };
+  };
   const endsOf = (ctx, root) => [
     ...[...holeEnds.values()].filter((e) => !ctx.used.has(e.hole) && ctx.find(e.hole) === root),
     ...[...terminals.values()].filter((t) => ctx.find(t.node) === root)
@@ -3011,6 +3047,27 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300, res
         if (!keep.has(key) || others.includes(find(net.nodes[k])) && !others.includes(find(net.nodes[keep.get(key)]))) keep.set(key, k);
       });
       net.nodes = net.nodes.filter((_, k) => keep.get(net.keys[k]) === k);
+    }
+  }
+  if (board.rails) {
+    const cols = board.railCols;
+    const edges = [.../* @__PURE__ */ new Set([cols[0], cols[1], cols[cols.length - 2], cols[cols.length - 1]])];
+    for (const net of todo) {
+      for (const sign of ["+", "-"]) {
+        const [top, bottom] = [`T${sign}${cols[0]}`, `B${sign}${cols[0]}`];
+        if (!net.nodes.includes(top) || !net.nodes.includes(bottom)) continue;
+        const ctx = context([]);
+        if (ctx.find(top) === ctx.find(bottom)) continue;
+        let best = null;
+        for (const col of edges) {
+          const [a, b] = [holeEnds.get(`T${sign}${col}`), holeEnds.get(`B${sign}${col}`)];
+          if (!a || !b || ctx.used.has(a.hole) || ctx.used.has(b.hole)) continue;
+          const points = trace({ a, b, via: [], kit: kitStyle });
+          const cost = costOf(points, a, b, {}, ctx);
+          if (!best || cost < best.cost) best = { a, b, shape: {}, points, cost, net };
+        }
+        if (best) fixed.push(best);
+      }
     }
   }
   let spent = 0;
@@ -3111,7 +3168,7 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300, res
   }
   if (!autos) throw new Error(`net "${failed.name}" \u3092\u3064\u306A\u3052\u307E\u305B\u3093\u3067\u3057\u305F (\u7A7A\u3044\u3066\u3044\u308B\u7A74\u304C\u8DB3\u308A\u307E\u305B\u3093)`);
   const taken = /* @__PURE__ */ new Set([...result.wires.map((w) => w.id), ...result.parts.map((p) => p.id), ...(circuit.overlays ?? []).map((o) => o.id), ...reserved]);
-  let n2 = 0;
+  let n2 = highestId(circuit, idPrefix);
   const nextId2 = () => {
     do
       n2++;
@@ -3122,10 +3179,11 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300, res
   const wires = [];
   const notes = [];
   const netNames = [];
-  autos.forEach((w, i) => {
+  const laid = [...fixed, ...autos];
+  laid.forEach((w) => {
     netNames.push(w.net.name);
     const { detour, ...shape } = w.shape;
-    const trouble = inTrouble(w, autos.filter((_, k) => k !== i));
+    const trouble = inTrouble(w, autos.filter((o) => o !== w));
     const wire = { id: nextId2(), from: w.a.ref, to: w.b.ref, color: w.net.color, ...shape, note: `\u81EA\u52D5\u914D\u7DDA: ${w.net.name}${trouble ? " (\u4EA4\u5DEE\u30FB\u91CD\u306A\u308A\u3042\u308A)" : ""}` };
     wires.push(wire);
     if (trouble) notes.push(`${wire.id} (${w.net.name}) \u306F\u3001\u307B\u304B\u306E\u914D\u7DDA\u3068\u4EA4\u5DEE\u3059\u308B\u304B\u3001\u4F7F\u3063\u3066\u3044\u308B\u7A74\u3084\u90E8\u54C1\u306E\u4E0A\u3092\u901A\u308A\u307E\u3059`);
@@ -3141,8 +3199,9 @@ function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 300, res
     return autos2.reduce((sum, w, i) => sum + wireCost(w, autos2.filter((_, k) => k !== i)), 0);
   }
   function wireCost(w, others) {
-    const used = /* @__PURE__ */ new Set([...baseUsed, ...others.flatMap((o) => [o.a.hole, o.b.hole]).filter(Boolean)]);
-    return costOf(w.points, w.a, w.b, w.shape, { used, drawn: [...baseDrawn, ...others.map((o) => o.points)] });
+    const all = [...fixed.filter((f) => f !== w), ...others];
+    const used = /* @__PURE__ */ new Set([...baseUsed, ...all.flatMap((o) => [o.a.hole, o.b.hole]).filter(Boolean)]);
+    return costOf(w.points, w.a, w.b, w.shape, { used, drawn: [...baseDrawn, ...all.map((o) => o.points)] });
   }
   function cheapest(ctx, as, bs, k = 0) {
     spent++;
@@ -3586,9 +3645,21 @@ function overlayIndex(c, id) {
 function usedIds(c) {
   return /* @__PURE__ */ new Set([...c.parts.map((p) => p.id), ...c.wires.map((w) => w.id), ...(c.overlays ?? []).map((o) => o.id)]);
 }
+function retire(c, id) {
+  const m = /^(.*?)(\d+)$/.exec(String(id));
+  if (!m) return c;
+  const split = (r) => /^(.*?)(\d+)$/.exec(r);
+  const kept = (c.retiredIds ?? []).filter((r) => {
+    const k = split(r);
+    return !(k && k[1] === m[1]);
+  });
+  const prev = (c.retiredIds ?? []).map(split).find((k) => k && k[1] === m[1]);
+  const top = prev && Number(prev[2]) > Number(m[2]) ? prev[0] : String(id);
+  return { ...c, retiredIds: [...kept, top].sort() };
+}
 function nextId(c, prefix) {
   const used = usedIds(c);
-  let i = 1;
+  let i = highestId(c, prefix) + 1;
   while (used.has(`${prefix}${i}`)) i++;
   return `${prefix}${i}`;
 }
@@ -3749,7 +3820,7 @@ function differences(before, after) {
 }
 function retarget(c, from, to) {
   if (from === to) return c;
-  let out = c;
+  let out = to === null ? retire(c, from) : c;
   if (c.animation) {
     const swap = (ids) => ids.flatMap((id) => id !== from ? [id] : to === null ? [] : [to]);
     const tracks = (c.animation.tracks ?? []).flatMap((t) => {

@@ -26,6 +26,7 @@ import { autoSteps } from "./assembly.js";
 import { autoWire } from "./autowire.js";
 import { createBoard } from "./board.js";
 import { findFreeSpot, resolveCircuit, rotate, stripOf } from "./circuit.js";
+import { highestId } from "./ids.js";
 import { BUILTIN_PARTS } from "./parts/builtin.js";
 import { createRegistry, fromJson } from "./parts/registry.js";
 import { spriteError } from "./svg.js";
@@ -360,9 +361,25 @@ function usedIds(c) {
   return new Set([...c.parts.map((p) => p.id), ...c.wires.map((w) => w.id), ...(c.overlays ?? []).map((o) => o.id)]);
 }
 
+// A removed id is remembered in retiredIds (the highest number per prefix), so that nextId does
+// not hand it out again: an animation, step or note elsewhere may still mean the old one.
+function retire(c, id) {
+  const m = /^(.*?)(\d+)$/.exec(String(id));
+  if (!m) return c;
+  const split = (r) => /^(.*?)(\d+)$/.exec(r);
+  const kept = (c.retiredIds ?? []).filter((r) => {
+    const k = split(r);
+    return !(k && k[1] === m[1]);
+  });
+  const prev = (c.retiredIds ?? []).map(split).find((k) => k && k[1] === m[1]);
+  const top = prev && Number(prev[2]) > Number(m[2]) ? prev[0] : String(id);
+  return { ...c, retiredIds: [...kept, top].sort() };
+}
+
+// one past the highest number in use or retired (removed ids are not reused, see ids.js)
 function nextId(c, prefix) {
   const used = usedIds(c);
-  let i = 1;
+  let i = highestId(c, prefix) + 1;
   while (used.has(`${prefix}${i}`)) i++;
   return `${prefix}${i}`;
 }
@@ -551,7 +568,7 @@ function differences(before, after) {
 // Also keeps assembly steps pointing at renamed items (to = null drops the item).
 function retarget(c, from, to) {
   if (from === to) return c;
-  let out = c;
+  let out = to === null ? retire(c, from) : c;
   if (c.animation) {
     const swap = (ids) => ids.flatMap((id) => (id !== from ? [id] : to === null ? [] : [to]));
     const tracks = (c.animation.tracks ?? []).flatMap((t) => {

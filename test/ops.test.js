@@ -188,3 +188,13 @@ test("ops that leave a new error change nothing (strict), unless the editor asks
   // errors that were there before do not block other edits
   assert.doesNotThrow(() => applyOps(loose, [{ op: "setTitle", title: "x" }]));
 });
+
+test("a removed id is not handed out again", () => {
+  const c = { version: 1, board: "half", parts: [], wires: [{ id: "W5", from: "a1", to: "a3" }, { id: "W6", from: "b1", to: "b3" }] };
+  const { circuit, ids } = applyOps(c, [{ op: "remove", id: "W6" }, { op: "addWire", from: "c1", to: "c3" }]);
+  assert.deepEqual(ids, ["W6", "W7"]);
+  assert.deepEqual(circuit.wires.map((w) => w.id), ["W5", "W7"]);
+  // a name an animation still uses counts too
+  const anim = { ...c, wires: [], animation: { duration: 1000, tracks: [{ target: "W9", keys: [{ t: 0, flow: true }] }] } };
+  assert.deepEqual(applyOps(anim, [{ op: "addWire", from: "c1", to: "c3" }]).ids, ["W10"]);
+});

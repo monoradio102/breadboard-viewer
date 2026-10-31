@@ -9,6 +9,7 @@
 // wire is taken out and routed again with all the others in place, as long as that lowers the
 // total: a wire laid early no longer blocks one laid later.
 import { boardStrips } from "./board.js";
+import { highestId } from "./ids.js";
 import { resolveCircuit } from "./circuit.js";
 import { bodyBox, coveredBy } from "./inspect.js";
 import { wirePoints } from "./wires.js";
@@ -96,15 +97,20 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
     const union = (a, b) => parent.set(find(a), find(b));
     for (const strip of boardStrips(board)) strip.slice(1).forEach((h) => union(strip[0], h));
     for (const w of result.wires) union(w.nodes[0], w.nodes[1]);
-    for (const w of autos) union(w.a.node, w.b.node);
+    for (const w of [...fixed, ...autos]) union(w.a.node, w.b.node);
     return find;
   };
+  // rail bridges laid first and kept (see below)
+  const fixed = [];
   // everything that constrains a new wire, given the auto wires already laid
-  const context = (autos) => ({
-    find: unionFind(autos),
-    used: new Set([...baseUsed, ...autos.flatMap((w) => [w.a.hole, w.b.hole]).filter(Boolean)]),
-    drawn: [...baseDrawn, ...autos.map((w) => w.points)],
-  });
+  const context = (autos) => {
+    const all = [...fixed, ...autos];
+    return {
+      find: unionFind(autos),
+      used: new Set([...baseUsed, ...all.flatMap((w) => [w.a.hole, w.b.hole]).filter(Boolean)]),
+      drawn: [...baseDrawn, ...all.map((w) => w.points)],
+    };
+  };
   const endsOf = (ctx, root) => [
     ...[...holeEnds.values()].filter((e) => !ctx.used.has(e.hole) && ctx.find(e.hole) === root),
     ...[...terminals.values()].filter((t) => ctx.find(t.node) === root),
@@ -120,6 +126,30 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
         if (!keep.has(key) || (others.includes(find(net.nodes[k])) && !others.includes(find(net.nodes[keep.get(key)])))) keep.set(key, k);
       });
       net.nodes = net.nodes.filter((_, k) => keep.get(net.keys[k]) === k);
+    }
+  }
+
+  // rails first: a net with both the top and the bottom rail of one kind gets a straight wire
+  // across the board at its left or right end (whichever is clearer), as one wires it by hand
+  if (board.rails) {
+    const cols = board.railCols;
+    const edges = [...new Set([cols[0], cols[1], cols[cols.length - 2], cols[cols.length - 1]])];
+    for (const net of todo) {
+      for (const sign of ["+", "-"]) {
+        const [top, bottom] = [`T${sign}${cols[0]}`, `B${sign}${cols[0]}`];
+        if (!net.nodes.includes(top) || !net.nodes.includes(bottom)) continue;
+        const ctx = context([]);
+        if (ctx.find(top) === ctx.find(bottom)) continue;
+        let best = null;
+        for (const col of edges) {
+          const [a, b] = [holeEnds.get(`T${sign}${col}`), holeEnds.get(`B${sign}${col}`)];
+          if (!a || !b || ctx.used.has(a.hole) || ctx.used.has(b.hole)) continue;
+          const points = trace({ a, b, via: [], kit: kitStyle });
+          const cost = costOf(points, a, b, {}, ctx);
+          if (!best || cost < best.cost) best = { a, b, shape: {}, points, cost, net };
+        }
+        if (best) fixed.push(best);
+      }
     }
   }
 
@@ -232,7 +262,7 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
 
   // the wires, and a note for any that still cross or cover something
   const taken = new Set([...result.wires.map((w) => w.id), ...result.parts.map((p) => p.id), ...(circuit.overlays ?? []).map((o) => o.id), ...reserved]);
-  let n = 0;
+  let n = highestId(circuit, idPrefix); // count on from the highest id (removed ones are not reused)
   const nextId = () => {
     do n++;
     while (taken.has(`${idPrefix}${n}`));
@@ -242,10 +272,11 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
   const wires = [];
   const notes = [];
   const netNames = [];
-  autos.forEach((w, i) => {
+  const laid = [...fixed, ...autos];
+  laid.forEach((w) => {
     netNames.push(w.net.name);
     const { detour, ...shape } = w.shape;
-    const trouble = inTrouble(w, autos.filter((_, k) => k !== i));
+    const trouble = inTrouble(w, autos.filter((o) => o !== w));
     const wire = { id: nextId(), from: w.a.ref, to: w.b.ref, color: w.net.color, ...shape, note: `自動配線: ${w.net.name}${trouble ? " (交差・重なりあり)" : ""}` };
     wires.push(wire);
     if (trouble) notes.push(`${wire.id} (${w.net.name}) は、ほかの配線と交差するか、使っている穴や部品の上を通ります`);
@@ -267,8 +298,9 @@ export function autoWire(circuit, nets, { idPrefix = "W", passes = 3, budget = 3
   }
 
   function wireCost(w, others) {
-    const used = new Set([...baseUsed, ...others.flatMap((o) => [o.a.hole, o.b.hole]).filter(Boolean)]);
-    return costOf(w.points, w.a, w.b, w.shape, { used, drawn: [...baseDrawn, ...others.map((o) => o.points)] });
+    const all = [...fixed.filter((f) => f !== w), ...others];
+    const used = new Set([...baseUsed, ...all.flatMap((o) => [o.a.hole, o.b.hole]).filter(Boolean)]);
+    return costOf(w.points, w.a, w.b, w.shape, { used, drawn: [...baseDrawn, ...all.map((o) => o.points)] });
   }
 
   // best wire between two sets of possible ends
