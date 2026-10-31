@@ -58,8 +58,8 @@ claude.ai では [skill/breadboard-viewer.zip](skill/breadboard-viewer.zip) を�
 | [Pico でボタン入力とLED](examples/pico-button.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=pico-button)) | [HC-SR04 で距離アラーム](examples/distance-alarm.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=distance-alarm)) |
 | ![カスタム部品の例: I2C OLED](docs/images/oled-custom-part.svg) | ![スピーカーで音を鳴らす](docs/images/tone-speaker.svg) |
 | [独自部品 (OLED) の定義例](examples/oled-custom-part.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-custom-part)) | [スピーカー (ボード外に配置)](examples/tone-speaker.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=tone-speaker)) |
-| ![抵抗なしで LED をつなぐと…](docs/images/led-burnout.svg) |  |
-| [演出レイヤー (煙のSVG) の例](examples/led-burnout.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=led-burnout)) |  |
+| ![抵抗なしで LED をつなぐと…](docs/images/led-burnout.svg) | ![ボタンと可変抵抗で LED](docs/images/xiao-pot-led.svg) |
+| [演出レイヤー (煙のSVG) の例](examples/led-burnout.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=led-burnout)) | [XIAO ESP32S3: ボタンで点灯、可変抵抗で明るさ (PWM)](examples/xiao-pot-led.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=xiao-pot-led)) |
 
 上の画像は、それぞれ1つのSVGファイルです。アニメーションはSVGの中のCSSで動いていて、回路データも埋め込まれています。
 SVGを保存してエディタにドロップすると、そのまま回路を編集できます。

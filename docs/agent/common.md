@@ -78,6 +78,7 @@ Playwright がないか、その Chromium が起動できない環境では、�
 
 - [Arduino Nano で Lチカ]({{BASE}}examples/blink-nano.json)
 - [XIAO ESP32S3 で I2C OLED に文字を表示]({{BASE}}examples/oled-hello.json)
+- [XIAO ESP32S3: ボタンで LED を点灯、可変抵抗で明るさを変える (信号線を横にまっすぐ通した配置)]({{BASE}}examples/xiao-pot-led.json)
 - [Pico でボタン入力と LED (ジャンパ線キットの描き方)]({{BASE}}examples/pico-button.json)
 - [トランジスタでモーター駆動 + サーボ (ボード外配置)]({{BASE}}examples/motor-servo.json)
 - [HC-SR04 で距離アラーム]({{BASE}}examples/distance-alarm.json)

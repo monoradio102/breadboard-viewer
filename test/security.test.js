@@ -38,7 +38,7 @@ function assertClean(circuit, label) {
 }
 
 test("examples with every string poisoned render no foreign markup", () => {
-  for (const name of ["blink-nano", "xiao-voice", "flasher-kit", "led-burnout", "oled-custom-part", "oled-hello", "motor-servo", "tone-speaker", "pico-button"]) {
+  for (const name of ["blink-nano", "xiao-voice", "flasher-kit", "led-burnout", "oled-custom-part", "oled-hello", "motor-servo", "tone-speaker", "pico-button", "xiao-pot-led"]) {
     const c = JSON.parse(readFileSync(new URL(`../examples/${name}.json`, import.meta.url), "utf8"));
     assertClean(poison(c), name);
     // ids and pins stay valid, the rest is poisoned

@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "title": "XIAO ESP32S3: ボタンでLED、可変抵抗で明るさ",
+  "board": "half",
+  "parts": [
+    { "id": "U1", "type": "xiao", "at": "f3", "model": "ESP32S3" },
+    { "id": "VR1", "type": "pot", "at": "f12" },
+    { "id": "SW1", "type": "button", "at": "e19" },
+    { "id": "R1", "type": "resistor", "pins": { "1": "g22", "2": "g26" }, "value": "330" },
+    { "id": "LED1", "type": "led", "pins": { "A": "h26", "K": "h27" }, "color": "red" }
+  ],
+  "wires": [
+    { "id": "W1", "from": "T+29", "to": "B+29", "color": "red" },
+    { "id": "W2", "from": "T-28", "to": "B-28", "color": "black" },
+    { "id": "W3", "from": "B+16", "to": "j16", "color": "red", "note": "自動配線: 3V3" },
+    { "id": "W4", "from": "a4", "to": "T-4", "color": "black", "note": "自動配線: GND" },
+    { "id": "W5", "from": "T-18", "to": "a19", "color": "black", "note": "自動配線: GND" },
+    { "id": "W6", "from": "a5", "to": "T+5", "color": "red", "note": "自動配線: 3V3" },
+    { "id": "W7", "from": "B-27", "to": "j27", "color": "black", "note": "自動配線: GND" },
+    { "id": "W8", "from": "B-12", "to": "j12", "color": "black", "note": "自動配線: GND" },
+    { "id": "POT", "from": "g3", "to": "g14", "color": "green", "note": "自動配線: POT" },
+    { "id": "PWM", "from": "h5", "to": "h22", "color": "yellow", "note": "自動配線: LED" },
+    { "id": "BTN", "from": "i4", "to": "i21", "color": "blue", "note": "自動配線: BTN" }
+  ],
+  "animation": {
+    "duration": 7000,
+    "loop": true,
+    "tracks": [
+      {
+        "target": "SW1",
+        "keys": [
+          {
+            "t": 0,
+            "pressed": false
+          },
+          {
+            "t": 600,
+            "pressed": true
+          },
+          {
+            "t": 2200,
+            "pressed": false
+          }
+        ]
+      },
+      {
+        "target": "BTN",
+        "keys": [
+          {
+            "t": 0,
+            "flow": false
+          },
+          {
+            "t": 600,
+            "flow": true
+          },
+          {
+            "t": 2200,
+            "flow": false
+          }
+        ]
+      },
+      {
+        "target": "LED1",
+        "keys": [
+          {
+            "t": 0,
+            "on": false,
+            "brightness": 0.6
+          },
+          {
+            "t": 600,
+            "on": true
+          },
+          {
+            "t": 2200,
+            "on": false
+          },
+          {
+            "t": 3000,
+            "on": true,
+            "brightness": 0.1
+          },
+          {
+            "t": 6000,
+            "brightness": 1
+          },
+          {
+            "t": 6800,
+            "brightness": 0.1
+          }
+        ]
+      },
+      {
+        "target": "VR1",
+        "keys": [
+          {
+            "t": 0,
+            "angle": 40
+          },
+          {
+            "t": 3000,
+            "angle": 40
+          },
+          {
+            "t": 6000,
+            "angle": 280
+          },
+          {
+            "t": 6800,
+            "angle": 40
+          }
+        ]
+      },
+      {
+        "target": [
+          "POT",
+          "PWM"
+        ],
+        "keys": [
+          {
+            "t": 0,
+            "flow": false
+          },
+          {
+            "t": 3000,
+            "flow": true
+          },
+          {
+            "t": 6800,
+            "flow": false
+          }
+        ]
+      }
+    ],
+    "captions": [
+      {
+        "t": 0,
+        "text": "ボタンを押すと D1 が LOW → LED 点灯"
+      },
+      {
+        "t": 3000,
+        "text": "つまみを回すと A0 の電圧が変わり、PWM で明るさが変わる"
+      },
+      {
+        "t": 6200,
+        "text": "つまみを戻す"
+      }
+    ]
+  }
+}

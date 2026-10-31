@@ -92,6 +92,7 @@ Playwright がないか、その Chromium が起動できない環境では、�
 
 - [Arduino Nano で Lチカ](https://monoradio102.github.io/breadboard-viewer/examples/blink-nano.json)
 - [XIAO ESP32S3 で I2C OLED に文字を表示](https://monoradio102.github.io/breadboard-viewer/examples/oled-hello.json)
+- [XIAO ESP32S3: ボタンで LED を点灯、可変抵抗で明るさを変える (信号線を横にまっすぐ通した配置)](https://monoradio102.github.io/breadboard-viewer/examples/xiao-pot-led.json)
 - [Pico でボタン入力と LED (ジャンパ線キットの描き方)](https://monoradio102.github.io/breadboard-viewer/examples/pico-button.json)
 - [トランジスタでモーター駆動 + サーボ (ボード外配置)](https://monoradio102.github.io/breadboard-viewer/examples/motor-servo.json)
 - [HC-SR04 で距離アラーム](https://monoradio102.github.io/breadboard-viewer/examples/distance-alarm.json)
