@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Breadboard Viewer</title>
+    <meta name="description" content="ブレッドボード上の配線をJSONで記述・共有するビューア。AIエージェントから扱いやすい形式。" />
+    <link rel="stylesheet" href="src/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Breadboard Viewer</h1>
+      <input id="title" class="title-input" placeholder="回路のタイトル" aria-label="回路のタイトル" />
+      <div class="actions">
+        <select id="examples" aria-label="サンプルを開く">
+          <option value="">サンプルを開く…</option>
+          <option value="blink-nano">Arduino Nano で Lチカ</option>
+          <option value="pico-button">Pico でボタン入力とLED</option>
+          <option value="oled-custom-part">カスタム部品 (OLED)</option>
+        </select>
+        <button id="btn-new" type="button">新規</button>
+        <button id="btn-open" type="button" title="JSON または このアプリで書き出したSVG">開く</button>
+        <button id="btn-save" type="button" title="回路をJSONで保存">JSON保存</button>
+        <button id="btn-svg" type="button" title="回路データ入りのSVGを保存">SVG書き出し</button>
+        <input id="file" type="file" accept=".json,.svg,application/json,image/svg+xml" hidden />
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="panel parts-panel">
+        <h2>部品一覧</h2>
+        <input id="part-filter" type="search" placeholder="絞り込み" aria-label="部品を絞り込み" />
+        <div id="part-list"></div>
+        <div id="part-detail" class="part-detail" hidden></div>
+      </aside>
+
+      <section class="stage-wrap">
+        <div id="stage" class="stage" aria-label="ブレッドボード"></div>
+        <div id="status" class="status">穴にカーソルを合わせると位置とネットを表示します</div>
+      </section>
+
+      <aside class="panel editor-panel">
+        <h2>回路データ (JSON)</h2>
+        <textarea id="editor" spellcheck="false" aria-label="回路JSON"></textarea>
+        <div id="messages" class="messages"></div>
+        <h2>ネット</h2>
+        <pre id="nets" class="nets"></pre>
+      </aside>
+    </main>
+
+    <div id="drop-hint" class="drop-hint" hidden>JSON / SVG をドロップして読み込み</div>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>

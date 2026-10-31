@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "title": "Pico でボタン入力とLED",
+  "board": "half",
+  "parts": [
+    { "id": "U1", "type": "pico", "at": "i5" },
+    { "id": "SW1", "type": "button", "at": "e26" },
+    { "id": "R1", "type": "resistor", "value": "330", "pins": ["c24", "c27"] },
+    { "id": "D1", "type": "led", "color": "green", "pins": { "A": "b27", "K": "b28" } }
+  ],
+  "wires": [
+    { "from": "j24", "to": "j26", "color": "yellow", "note": "GP15 -> SW1" },
+    { "from": "a28", "to": "T-28", "color": "black" },
+    { "from": "a7", "to": "T-7", "color": "black", "note": "Pico GND7" }
+  ]
+}

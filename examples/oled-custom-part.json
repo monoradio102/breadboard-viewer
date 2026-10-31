@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "title": "カスタム部品の例: I2C OLED (SSD1306)",
+  "board": "full",
+  "partDefs": [
+    {
+      "type": "oled-ssd1306-i2c",
+      "name": "0.96インチ OLED (I2C)",
+      "category": "表示",
+      "description": "SSD1306 128x64 I2Cモジュール。ピン: GND, VCC, SCL, SDA",
+      "units": "mm",
+      "mount": "rigid",
+      "pins": [
+        { "name": "GND", "x": 0, "y": 0 },
+        { "name": "VCC", "x": 2.54, "y": 0 },
+        { "name": "SCL", "x": 5.08, "y": 0 },
+        { "name": "SDA", "x": 7.62, "y": 0 }
+      ],
+      "shapes": [
+        { "type": "rect", "x": -9.84, "y": -2.2, "w": 27.3, "h": 27.8, "r": 1.2, "fill": "#1b3a6b" },
+        { "type": "rect", "x": -8.4, "y": 4.2, "w": 24.4, "h": 14.5, "fill": "#0b0b0b", "stroke": "#333", "strokeWidth": 0.3 },
+        { "type": "text", "x": 3.81, "y": 11.4, "text": "SSD1306 128x64", "size": 1.8, "fill": "#7fd3ff" },
+        { "type": "rect", "x": -0.45, "y": -0.45, "w": 0.9, "h": 0.9, "fill": "#c9a74a" },
+        { "type": "rect", "x": 2.09, "y": -0.45, "w": 0.9, "h": 0.9, "fill": "#c9a74a" },
+        { "type": "rect", "x": 4.63, "y": -0.45, "w": 0.9, "h": 0.9, "fill": "#c9a74a" },
+        { "type": "rect", "x": 7.17, "y": -0.45, "w": 0.9, "h": 0.9, "fill": "#c9a74a" },
+        { "type": "text", "x": 0, "y": 1.9, "text": "GND", "size": 1.0 },
+        { "type": "text", "x": 2.54, "y": 1.9, "text": "VCC", "size": 1.0 },
+        { "type": "text", "x": 5.08, "y": 1.9, "text": "SCL", "size": 1.0 },
+        { "type": "text", "x": 7.62, "y": 1.9, "text": "SDA", "size": 1.0 }
+      ],
+      "source": { "note": "寸法は一般的な0.96インチモジュールの概略値" }
+    }
+  ],
+  "parts": [
+    { "id": "U1", "type": "nano", "at": "h3" },
+    { "id": "DISP1", "type": "oled-ssd1306-i2c", "at": "d24" }
+  ],
+  "wires": [
+    { "from": "a4", "to": "T-4", "color": "black" },
+    { "from": "a6", "to": "T+6", "color": "red" },
+    { "from": "a24", "to": "T-24", "color": "black" },
+    { "from": "a25", "to": "T+25", "color": "red" },
+    { "from": "c9", "to": "c26", "color": "yellow", "note": "A5 = SCL" },
+    { "from": "b10", "to": "b27", "color": "green", "note": "A4 = SDA" }
+  ]
+}

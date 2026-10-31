@@ -1,0 +1,253 @@
+// Resolves a circuit JSON into placed parts, validates it and computes the netlist.
+import { boardStrips, createBoard, parseHole } from "./board.js";
+import { createRegistry } from "./parts/registry.js";
+
+export const FORMAT_VERSION = 1;
+const RESERVED = new Set(["id", "type", "at", "rot", "pins", "note"]);
+const ROTATIONS = [0, 90, 180, 270];
+
+// Returns { board, registry, parts, wires, errors, warnings, nets }.
+// Never throws for bad circuit content: problems are reported in errors / warnings.
+export function resolveCircuit(circuit) {
+  const errors = [];
+  const warnings = [];
+  if (!circuit || typeof circuit !== "object") {
+    return { errors: ["回路データがオブジェクトではありません"], warnings, parts: [], wires: [], nets: [], netOfHole: () => null };
+  }
+  let board;
+  try {
+    board = createBoard(circuit.board ?? "half");
+  } catch (e) {
+    errors.push(e.message);
+    board = createBoard("half");
+  }
+  const registry = createRegistry(circuit.partDefs ?? []);
+  errors.push(...registry.errors);
+
+  const occupied = new Map(); // hole -> "R1.1" / "wire#3"
+  const occupy = (hole, who) => {
+    if (!hole) return;
+    if (occupied.has(hole)) errors.push(`穴 ${hole} に ${occupied.get(hole)} と ${who} が重なっています`);
+    else occupied.set(hole, who);
+  };
+
+  const ids = new Set();
+  const parts = [];
+  (circuit.parts ?? []).forEach((inst, index) => {
+    const id = inst.id ?? `#${index + 1}`;
+    if (ids.has(id)) errors.push(`部品ID "${id}" が重複しています`);
+    ids.add(id);
+    const def = registry.get(inst.type);
+    if (!def) {
+      errors.push(`${id}: 未知の部品タイプ "${inst.type}"`);
+      return;
+    }
+    const part = placePart(board, def, inst, id, errors, warnings);
+    if (!part) return;
+    part.pins.forEach((p) => occupy(p.hole, `${id}.${p.name}`));
+    parts.push(part);
+  });
+
+  const wires = [];
+  (circuit.wires ?? []).forEach((w, index) => {
+    const id = w.id ?? `W${index + 1}`;
+    const ends = [];
+    for (const key of ["from", "to"]) {
+      const hole = w[key];
+      if (!board.has(hole)) errors.push(`${id}: ${key} "${hole}" はこのボードにない穴です`);
+      else occupy(hole, `${id}.${key}`);
+      ends.push(board.pos(hole));
+    }
+    const via = (w.via ?? []).map((h) => {
+      if (!board.has(h)) warnings.push(`${id}: via "${h}" はこのボードにない穴です`);
+      return board.pos(h);
+    });
+    if (ends[0] && ends[1]) wires.push({ ...w, id, a: ends[0], b: ends[1], via: via.filter(Boolean) });
+  });
+
+  const { nets, netOfHole } = computeNets(board, parts, wires);
+  for (const part of parts) {
+    const holes = part.pins.filter((p) => p.hole);
+    if (holes.length >= 2 && part.pins.length === holes.length) {
+      const netIds = new Set(holes.map((p) => p.net));
+      if (netIds.size === 1) warnings.push(`${part.id}: 全てのピンが同じネット(${holes[0].net})につながっています (ショート)`);
+    }
+  }
+  return { board, registry, parts, wires, nets, netOfHole, occupied, errors, warnings };
+}
+
+function placePart(board, def, inst, id, errors, warnings) {
+  const params = {};
+  for (const [k, spec] of Object.entries(def.params ?? {})) params[k] = inst[k] ?? spec.default;
+  for (const k of Object.keys(inst)) {
+    if (!RESERVED.has(k) && !(k in (def.params ?? {}))) warnings.push(`${id}: 未知のパラメータ "${k}"`);
+  }
+  const layout = def.pins(params);
+  const internal = def.internal?.(params) ?? [];
+  let pins;
+  let transform = null;
+
+  if (inst.pins !== undefined) {
+    if (def.mount !== "leads") {
+      errors.push(`${id}: ${def.type} は足を曲げられない部品なので pins ではなく at/rot で置いてください`);
+      return null;
+    }
+    const list = Array.isArray(inst.pins) ? inst.pins : layout.map((p) => inst.pins[p.name]);
+    if (list.length !== layout.length || list.some((h) => h === undefined)) {
+      errors.push(`${id}: pins は ${layout.length} 個必要です (${layout.map((p) => p.name).join(", ")})`);
+      return null;
+    }
+    pins = layout.map((p, i) => {
+      const hole = list[i];
+      if (!board.has(hole)) errors.push(`${id}.${p.name}: "${hole}" はこのボードにない穴です`);
+      const pos = board.pos(hole);
+      return { name: p.name, hole: pos ? hole : null, x: pos?.x ?? 0, y: pos?.y ?? 0 };
+    });
+  } else if (inst.at !== undefined) {
+    const origin = board.pos(inst.at);
+    if (!origin) {
+      errors.push(`${id}: at "${inst.at}" はこのボードにない穴です`);
+      return null;
+    }
+    const rot = Number(inst.rot ?? 0);
+    if (!ROTATIONS.includes(rot)) errors.push(`${id}: rot は 0, 90, 180, 270 のいずれかです`);
+    transform = { x: origin.x, y: origin.y, rot };
+    pins = layout.map((p) => {
+      const [dx, dy] = rotate(p.x, p.y, rot);
+      const x = origin.x + dx;
+      const y = origin.y + dy;
+      const hole = board.holeAt(x, y);
+      if (!hole) errors.push(`${id}.${p.name}: ピンが穴の位置に来ません (ボード外か溝の上)`);
+      return { name: p.name, hole, x, y };
+    });
+  } else {
+    errors.push(`${id}: at か pins のどちらかで位置を指定してください`);
+    return null;
+  }
+  return { id, type: def.type, def, inst, params, pins, internal, transform };
+}
+
+// Rotation is clockwise on screen (y grows downward).
+export function rotate(x, y, rot) {
+  switch (rot) {
+    case 90:
+      return [-y, x];
+    case 180:
+      return [-x, -y];
+    case 270:
+      return [y, -x];
+    default:
+      return [x, y];
+  }
+}
+
+function computeNets(board, parts, wires) {
+  const parent = new Map();
+  const find = (a) => {
+    if (!parent.has(a)) parent.set(a, a);
+    let r = a;
+    while (parent.get(r) !== r) r = parent.get(r);
+    parent.set(a, r);
+    return r;
+  };
+  const union = (a, b) => parent.set(find(a), find(b));
+
+  for (const strip of boardStrips(board)) strip.slice(1).forEach((h) => union(strip[0], h));
+  for (const w of wires) union(w.from, w.to);
+  for (const part of parts) {
+    for (const group of part.internal) {
+      const holes = group.map((name) => part.pins.find((p) => p.name === name)?.hole).filter(Boolean);
+      holes.slice(1).forEach((h) => union(holes[0], h));
+    }
+  }
+
+  const groups = new Map();
+  for (const part of parts) {
+    for (const pin of part.pins) {
+      if (!pin.hole) continue;
+      const root = find(pin.hole);
+      if (!groups.has(root)) groups.set(root, { pins: [], rails: new Set() });
+      groups.get(root).pins.push({ ref: `${part.id}.${pin.name}`, hole: pin.hole, pin });
+    }
+  }
+  // name nets after the power rails they touch, otherwise N1, N2, ...
+  for (const rail of ["T+", "T-", "B+", "B-"]) {
+    for (const col of board.railCols.slice(0, 1)) {
+      const root = find(`${rail}${col}`);
+      groups.get(root)?.rails.add(rail);
+    }
+  }
+  const nets = [];
+  let i = 1;
+  for (const grp of groups.values()) {
+    const name = grp.rails.size ? [...grp.rails].join("/") : `N${i++}`;
+    for (const p of grp.pins) p.pin.net = name;
+    grp.name = name;
+    nets.push({ name, pins: grp.pins.map(({ ref, hole }) => ({ ref, hole })) });
+  }
+  // net name for any hole; holes not touching a part pin get null
+  const netOfHole = (hole) => (parent.has(hole) ? groups.get(find(hole))?.name ?? null : null);
+  return { nets, netOfHole };
+}
+
+// Plain-text summary for humans and AI agents.
+export function describe(result) {
+  const lines = [];
+  for (const e of result.errors) lines.push(`ERROR: ${e}`);
+  for (const w of result.warnings) lines.push(`WARN:  ${w}`);
+  lines.push(`部品 ${result.parts.length} 個, 配線 ${result.wires.length} 本`);
+  for (const p of result.parts) {
+    lines.push(`  ${p.id} (${p.type}): ${p.pins.map((pin) => `${pin.name}=${pin.hole ?? "?"}`).join(" ")}`);
+  }
+  lines.push("ネット (2ピン以上がつながっているもの):");
+  const alone = [];
+  for (const net of result.nets) {
+    if (net.pins.length < 2 && !/[+-]/.test(net.name)) alone.push(net.pins[0].ref);
+    else lines.push(`  ${net.name}: ${net.pins.map((p) => p.ref).join(", ")}`);
+  }
+  if (alone.length) lines.push(`未接続のピン: ${alone.join(", ")}`);
+  return lines.join("\n");
+}
+
+
+// Strip (electrically connected group) a hole belongs to, e.g. "12:top", "12:bottom", "T+".
+export function stripOf(hole) {
+  const h = parseHole(hole);
+  if (!h) return null;
+  if (h.kind === "rail") return h.rail;
+  return `${h.col}:${"abcde".includes(h.row) ? "top" : "bottom"}`;
+}
+
+// Finds the first spot where `def` fits on free holes without shorting its own pins.
+// Returns { at, pins } (pins = hole per layout pin) or null.
+export function findFreeSpot(result, def, params = {}) {
+  const full = {};
+  for (const [k, spec] of Object.entries(def.params ?? {})) full[k] = params[k] ?? spec.default;
+  const layout = def.pins(full);
+  const internal = new Set((def.internal?.(full) ?? []).flat());
+  const covered = coveredHoles(result);
+  for (const [hole, origin] of result.board.holes) {
+    if (!/^[a-j]/.test(hole)) continue;
+    const holes = layout.map((p) => result.board.holeAt(origin.x + p.x, origin.y + p.y));
+    if (holes.some((h) => !h || result.occupied.has(h) || covered.has(h))) continue;
+    const strips = holes.filter((_, i) => !internal.has(layout[i].name)).map(stripOf);
+    if (new Set(strips).size !== strips.length) continue;
+    return { at: hole, pins: holes };
+  }
+  return null;
+}
+
+// Holes hidden under the body of rigid parts (approximated by the bounding box of their pins).
+function coveredHoles(result) {
+  const covered = new Set();
+  for (const part of result.parts) {
+    if (part.def.mount !== "rigid" || part.pins.length < 2) continue;
+    const xs = part.pins.map((p) => p.x);
+    const ys = part.pins.map((p) => p.y);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    for (const [hole, p] of result.board.holes) {
+      if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) covered.add(hole);
+    }
+  }
+  return covered;
+}
