@@ -361,10 +361,14 @@ const nano = {
   type: "nano",
   name: "Arduino Nano",
   category: "マイコンボード",
-  description: "2x15ピン, 列間隔6ピッチ。atはピン1(TX1)の穴、USBはピン15側。同名ピンは RST2, GND2 と表記。",
+  description: "2x15ピン, 列間隔6ピッチ。atはピン1(TX1)の穴、USBはピン15側。同名ピンは RST2, GND2 と表記 (基板内で導通)。",
   mount: "rigid",
   params: {},
   pins: () => dualRow(30, 6, NANO_PINS),
+  internal: () => [
+    ["GND", "GND2"],
+    ["RST", "RST2"],
+  ],
   render({ pins }) {
     return (
       rect(-1.2, -6.55, 17.7, 7.1, { rx: 0.2, fill: "#1a5fa6", stroke: "#0e3d6e", "stroke-width": 0.06 }) +
@@ -389,10 +393,11 @@ const pico = {
   type: "pico",
   name: "Raspberry Pi Pico",
   category: "マイコンボード",
-  description: "2x20ピン, 列間隔7ピッチ。atはピン1(GP0)の穴、USBはピン1側。GNDは GND, GND2.. と番号付き。",
+  description: "2x20ピン, 列間隔7ピッチ。atはピン1(GP0)の穴、USBはピン1側。GNDは GND, GND2.. と番号付き (基板内で導通)。",
   mount: "rigid",
   params: {},
   pins: () => dualRow(40, 7, PICO_PINS),
+  internal: () => [["GND", "GND2", "GND3", "GND4", "GND5", "GND6", "GND7"]],
   render({ pins }) {
     return (
       rect(-0.55, -7.64, 20.1, 8.28, { rx: 0.2, fill: "#2e8b3e", stroke: "#1d5e29", "stroke-width": 0.06 }) +
@@ -701,6 +706,7 @@ const esp32 = {
   mount: "rigid",
   params: { width: { default: 10, description: "列間隔 (ピッチ単位)" } },
   pins: (p) => dualRow(38, Number(p.width) || 10, ESP32_PINS),
+  internal: () => [["GND", "GND2", "GND3"]],
   render({ pins, params }) {
     const w = Number(params.width) || 10;
     const mid = -w / 2;

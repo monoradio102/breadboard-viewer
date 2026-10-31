@@ -26,4 +26,5 @@
 - 依存パッケージなし、ビルド不要の ES Modules です。`src/` はブラウザとNodeの両方で動くようにしてください (`app.js` 以外ではDOMを使わないこと)。
 - 新しい組み込み部品に動きを付けるときは、`states` (状態の定義) と `animate` (状態からCSSへの変換) を書き、`render` の中で動く要素に `anim(name)` の属性を付けます (`src/parts/builtin.js` の `led` や `servo` が例です)。
 - 回路を変更する処理は `src/ops.js` に op として追加し、UI (`src/app.js`)、`window.bb`、CLI (`tools/bb.mjs`) からはそれを呼ぶようにしてください。
+- 部品の見た目や `examples/` を変えたら、`npm run images` で `docs/images/` を作り直してください。
 - `npm test` が通ることを確認してください。

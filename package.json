@@ -6,6 +6,7 @@
   "description": "ブレッドボード配線を共有するための静的Webビューア",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "serve": "python3 -m http.server 8000"
+    "serve": "python3 -m http.server 8000",
+    "images": "node tools/build-images.mjs"
   }
 }

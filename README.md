@@ -3,6 +3,19 @@
 ブレッドボード上の配線をJSONで書いて、絵として共有するための静的Webアプリです。
 Claude Code や Codex などのAIエージェントが、読み書きしやすい形式を目指しています。
 
+**エディタ: https://monoradio102.github.io/breadboard-viewer/**
+
+| | |
+|---|---|
+| ![トランジスタでモーター駆動 + サーボ](docs/images/motor-servo.svg) | ![HC-SR04 で距離アラーム](docs/images/distance-alarm.svg) |
+| [モーター + サーボ](examples/motor-servo.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=motor-servo)) | [HC-SR04 で距離アラーム](examples/distance-alarm.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=distance-alarm)) |
+| ![Pico でボタン入力とLED](docs/images/pico-button.svg) | ![カスタム部品の例: I2C OLED](docs/images/oled-custom-part.svg) |
+| [Pico でボタン入力とLED](examples/pico-button.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=pico-button)) | [独自部品 (OLED) の定義例](examples/oled-custom-part.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-custom-part)) |
+
+上の画像は、それぞれ1つのSVGファイルです。アニメーションはSVGの中のCSSで動いていて、回路データも埋め込まれています。
+SVGを保存してエディタにドロップすると、そのまま回路を編集できます。
+画像は `npm run images` で `examples/` から作り直せます。
+
 - 静的ページのみで動きます (GitHub Pagesにそのまま置けます)
 - 秋月電子などで手に入る、定番部品を28種類内蔵しています (抵抗、LED、フルカラーLED、DIP IC、7セグ、LCD1602、DHT11、HC-SR04、リレー、モーター、サーボ、Arduino Nano、Raspberry Pi Pico、ESP32 など)
 - 内蔵されていない部品は、回路ファイルの中にJSONで定義できます ([形式](docs/FORMAT.md))
@@ -71,3 +84,5 @@ bb.help()
 | `docs/FORMAT.md` | 回路ファイルの形式 |
 | `docs/OPS.md` | 編集操作 |
 | `examples/` | サンプル回路 |
+| `docs/images/` | README用の画像 (`npm run images` で生成) |
+| `tools/bb.mjs` | コマンドライン |

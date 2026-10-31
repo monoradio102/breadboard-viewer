@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "title": "HC-SR04 で距離アラーム",
+  "board": "full",
+  "parts": [
+    { "id": "U1", "type": "nano", "at": "h3" },
+    { "id": "U2", "type": "hcsr04", "at": "f40" },
+    { "id": "R1", "type": "resistor", "value": "220", "pins": ["a17", "a21"] },
+    { "id": "D1", "type": "led", "color": "red", "pins": { "A": "b21", "K": "b22" } }
+  ],
+  "wires": [
+    { "id": "W1", "from": "a6", "to": "T+6", "color": "red", "note": "5V" },
+    { "id": "W2", "from": "a4", "to": "T-4", "color": "black", "note": "GND" },
+    { "id": "W3", "from": "j6", "to": "B-6", "color": "black", "note": "GND" },
+    { "id": "W4", "from": "T+61", "to": "B+61", "color": "red", "note": "上下の+レールをつなぐ" },
+    { "id": "W5", "from": "c22", "to": "T-22", "color": "black" },
+    { "id": "W6", "from": "h40", "to": "B+40", "color": "red" },
+    { "id": "W7", "from": "h43", "to": "B-43", "color": "black" },
+    { "id": "TRIG", "from": "i14", "to": "i41", "color": "yellow", "note": "D9 → TRIG" },
+    { "id": "ECHO", "from": "j15", "to": "j42", "color": "green", "bend": -0.03, "note": "ECHO → D10" }
+  ],
+  "animation": {
+    "duration": 4000,
+    "loop": true,
+    "tracks": [
+      {
+        "target": "TRIG",
+        "keys": [
+          {
+            "t": 0,
+            "flow": true
+          },
+          {
+            "t": 1000,
+            "flow": false
+          },
+          {
+            "t": 2000,
+            "flow": true
+          },
+          {
+            "t": 2400,
+            "flow": false
+          }
+        ]
+      },
+      {
+        "target": "U2",
+        "keys": [
+          {
+            "t": 0,
+            "ping": true
+          },
+          {
+            "t": 1600,
+            "ping": false
+          },
+          {
+            "t": 2000,
+            "ping": true
+          },
+          {
+            "t": 3600,
+            "ping": false
+          }
+        ]
+      },
+      {
+        "target": "ECHO",
+        "keys": [
+          {
+            "t": 0,
+            "flow": false
+          },
+          {
+            "t": 1000,
+            "flow": true
+          },
+          {
+            "t": 1600,
+            "flow": false
+          },
+          {
+            "t": 2400,
+            "flow": true
+          },
+          {
+            "t": 2800,
+            "flow": false
+          }
+        ]
+      },
+      {
+        "target": "D1",
+        "keys": [
+          {
+            "t": 0,
+            "on": false
+          },
+          {
+            "t": 2000,
+            "on": true
+          }
+        ]
+      }
+    ],
+    "captions": [
+      {
+        "t": 0,
+        "text": "D9 から TRIG に 10µs のパルス → 超音波を発信"
+      },
+      {
+        "t": 1000,
+        "text": "反射が戻るまでの時間が ECHO (D10) に返る"
+      },
+      {
+        "t": 2000,
+        "text": "20cm より近いと D13 の LED を点灯"
+      }
+    ]
+  }
+}

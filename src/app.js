@@ -619,6 +619,7 @@ $("examples").addEventListener("change", async (ev) => {
 
 async function loadExample(name) {
   const res = await fetch(`examples/${name}.json`);
+  if (!res.ok) return showMessages([`サンプル "${name}" が見つかりません`], []);
   loadText(await res.text());
 }
 
@@ -724,6 +725,13 @@ window.addEventListener("hashchange", async () => {
     } catch (e) {
       showMessages([`共有URLを読み込めませんでした: ${e.message}`], []);
     }
+  }
+  // ?example=<name> opens a bundled example (used by the README links)
+  const example = new URLSearchParams(location.search).get("example");
+  if (example && /^[\w-]+$/.test(example)) {
+    await loadExample(example);
+    history.replaceState(null, "", location.pathname);
+    return;
   }
   let saved = null;
   try {
