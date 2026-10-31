@@ -13,6 +13,7 @@
 //   { "op": "remove", "id": "R1" }
 //   { "op": "addWire", "from": "a1", "to": "T-1", "color": "black" }
 //   { "op": "setBoard", "board": "full" }
+//   { "op": "setWireStyle", "style": "kit" }
 //   { "op": "animate", "target": "D1", "keys": [{ "t": 0, "on": true }, { "t": 500, "on": false }] }
 //   { "op": "setAnimation", "duration": 1000, "captions": [{ "t": 0, "text": "..." }] }
 //   { "op": "addOverlay", "svg": "<svg ...>...</svg>", "x": 10, "y": -4, "w": 6, "h": 6 }
@@ -257,6 +258,17 @@ const OPS = {
   setBoard(c, { board }) {
     createBoard(board);
     return { circuit: { ...c, board } };
+  },
+
+  // "flex": bendable jumper wires that arc above the board (default); "kit": wires from a
+  // jumper wire kit, flat on the board with right-angle bends and colored by length
+  setWireStyle(c, { style }) {
+    if (!["flex", "kit"].includes(style)) fail(`style は "flex" か "kit" です`);
+    if (style === "flex") {
+      const { wireStyle: _, ...rest } = c;
+      return { circuit: rest };
+    }
+    return { circuit: { ...c, wireStyle: style } };
   },
 
   setTitle(c, { title }) {

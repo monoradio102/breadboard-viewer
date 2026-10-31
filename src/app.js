@@ -1,6 +1,7 @@
 // Browser UI. Every edit goes through ops.js (the same operations AI agents use via window.bb).
 import { BOARD_TYPES } from "./board.js";
-import { describe, resolveCircuit, stripOf } from "./circuit.js";
+import { describe, kitList, resolveCircuit, stripOf } from "./circuit.js";
+import { kitInfo } from "./wires.js";
 import { emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "./io.js";
 import { fromJson } from "./parts/registry.js";
 import { OP_NAMES, OpError, applyOps, normalize } from "./ops.js";
@@ -31,6 +32,7 @@ const el = {
   board: $("board-type"),
   libFile: $("lib-file"),
   wireColor: $("wire-color"),
+  wireStyle: $("wire-style"),
   undo: $("btn-undo"),
   redo: $("btn-redo"),
   player: $("player"),
@@ -77,6 +79,7 @@ function commit(next, { record = true, updateEditor = true } = {}) {
   if (updateEditor) el.editor.value = stringifyCircuit(circuit);
   if (document.activeElement !== el.title) el.title.value = circuit.title ?? "";
   el.board.value = circuit.board ?? "half";
+  el.wireStyle.value = circuit.wireStyle ?? "flex";
   showMessages(result.errors, result.warnings);
   el.nets.textContent = describe({ ...result, errors: [], warnings: [] });
   try {
@@ -573,8 +576,9 @@ el.stage.addEventListener("pointermove", (ev) => {
     const [kind, index] = drag.handle.split(":");
     if (kind === "insert") via.splice(Number(index), 0, point);
     else via[Number(index)] = point;
-    // adding a bend point to a plain wire makes it a smooth curve
-    const set = kind === "insert" && wire.shape === undefined ? { via, shape: "curve" } : { via };
+    // adding a bend point to a plain wire makes it a smooth curve (kit wires stay square)
+    const kit = result.wires.find((w) => w.id === drag.id)?.kit;
+    const set = kind === "insert" && wire.shape === undefined && !kit ? { via, shape: "curve" } : { via };
     ops = [{ op: "update", id: drag.id, set }];
   } else {
     const to = drag.handle.startsWith("pin:") ? holeNear(pt) : endNear(pt)?.ref;
@@ -750,11 +754,21 @@ function renderInspector() {
     box.append(node("p", part.pins.map((p) => `${p.name}=${p.hole ?? (part.offboard ? "ボード外" : p.terminal ? "端子" : "?")}`).join("  "), "pins"));
   } else {
     const colors = Object.keys(WIRE_COLORS);
-    box.append(field("color", wire.color ?? "blue", (v) => tryApply([{ op: "update", id, set: { color: v } }]), colors));
-    box.append(field("shape", wire.shape ?? "straight", (v) => tryApply([{ op: "update", id, set: { shape: v === "straight" ? null : v } }]), ["straight", "curve"], "curve: 経由点をなめらかに通る"));
+    const resolved = result.wires.find((w) => w.id === id);
     box.append(
-      field("bend", wire.bend ?? 0, (v) => tryApply([{ op: "update", id, set: { bend: Number(v) ? Number(v) : null } }]), undefined, "経由点がないときの弧の大きさ (例: 0.2, 負で逆向き)"),
+      field("style", wire.style ?? "default", (v) => tryApply([{ op: "update", id, set: { style: v === "default" ? null : v } }]), ["default", "flex", "kit"], "default: 回路の設定 (ツールバーの「配線」) に従う"),
     );
+    box.append(field("color", wire.color ?? "blue", (v) => tryApply([{ op: "update", id, set: { color: v } }]), colors, resolved?.kit ? "キットの線は長さで色が決まります" : undefined));
+    if (resolved?.kit) {
+      const k = kitInfo(resolved);
+      box.append(field("elbow", wire.elbow ?? "h", (v) => tryApply([{ op: "update", id, set: { elbow: v === "h" ? null : v } }]), ["h", "v"], "斜めにつなぐときに折る向き (h: 先に横, v: 先に縦)"));
+      box.append(node("p", `キットの線: 長さ ${k.length} ピッチ・${k.colorName}${k.inKit ? "" : " (キットにない長さ)"}`, "pins"));
+    } else {
+      box.append(field("shape", wire.shape ?? "straight", (v) => tryApply([{ op: "update", id, set: { shape: v === "straight" ? null : v } }]), ["straight", "curve"], "curve: 経由点をなめらかに通る"));
+      box.append(
+        field("bend", wire.bend ?? 0, (v) => tryApply([{ op: "update", id, set: { bend: Number(v) ? Number(v) : null } }]), undefined, "経由点がないときの弧の大きさ (例: 0.2, 負で逆向き)"),
+      );
+    }
     box.append(field("from", wire.from, (v) => tryApply([{ op: "update", id, set: { from: v } }])));
     box.append(field("to", wire.to, (v) => tryApply([{ op: "update", id, set: { to: v } }])));
   }
@@ -960,6 +974,7 @@ for (const [type, spec] of Object.entries(BOARD_TYPES)) {
   el.board.append(Object.assign(document.createElement("option"), { value: type, textContent: spec.label }));
 }
 el.board.addEventListener("change", () => tryApply([{ op: "setBoard", board: el.board.value }]));
+el.wireStyle.addEventListener("change", () => tryApply([{ op: "setWireStyle", style: el.wireStyle.value }]));
 for (const c of Object.keys(WIRE_COLORS)) {
   el.wireColor.append(Object.assign(document.createElement("option"), { value: c, textContent: c }));
 }
@@ -1192,6 +1207,7 @@ window.bb = {
       ...report(),
       ...(layout ? { layout } : {}),
       nets: result.nets.map((n) => ({ name: n.name, pins: n.pins.map((p) => p.ref) })),
+      ...(kitList(result).length ? { kitWires: kitList(result) } : {}),
     };
   },
   /** Layout problems only visible in the drawing (overlapping bodies, hidden wire ends...). */

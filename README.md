@@ -19,7 +19,7 @@ claude.ai では [skill/breadboard-viewer.zip](skill/breadboard-viewer.zip) を�
 | ![トランジスタでモーター駆動 + サーボ](docs/images/motor-servo.svg) | ![HC-SR04 で距離アラーム](docs/images/distance-alarm.svg) |
 | [モーター + サーボ](examples/motor-servo.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=motor-servo)) | [HC-SR04 で距離アラーム](examples/distance-alarm.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=distance-alarm)) |
 | ![Pico でボタン入力とLED](docs/images/pico-button.svg) | ![カスタム部品の例: I2C OLED](docs/images/oled-custom-part.svg) |
-| [Pico でボタン入力とLED](examples/pico-button.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=pico-button)) | [独自部品 (OLED) の定義例](examples/oled-custom-part.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-custom-part)) |
+| [Pico でボタン入力とLED](examples/pico-button.json) (ジャンパ線キットの描き方) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=pico-button)) | [独自部品 (OLED) の定義例](examples/oled-custom-part.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-custom-part)) |
 | ![スピーカーで音を鳴らす](docs/images/tone-speaker.svg) | ![抵抗なしで LED をつなぐと…](docs/images/led-burnout.svg) |
 | [スピーカー (ボード外に配置)](examples/tone-speaker.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=tone-speaker)) | [演出レイヤー (煙のSVG) の例](examples/led-burnout.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=led-burnout)) |
 | ![XIAO ESP32S3 で音声入出力](docs/images/xiao-voice.svg) | |
@@ -39,6 +39,7 @@ SVGを保存してエディタにドロップすると、そのまま回路を�
 - 煙や矢印などの演出は、任意のSVGアニメーションとして流し込めます (安全のため画像として描画し、スクリプトは実行しません)
 - アニメーションは、フレームを指定して透過PNGの連番で書き出せるので、ffmpeg で GIF / MP4 にできます
 - 組み立て手順モード: ボードの外に部品を並べたところから、手順ごとに配置していく様子を見せられます
+- 配線の描き方を選べます: 曲がるジャンパ線 (弧を描いて浮く) か、市販のジャンパ線キット (板に沿って直角に折れ、長さで色が決まる。使う線の長さの一覧も出ます)
 
 ![組み立て手順 (Lチカ)](docs/images/blink-nano-assembly.svg)
 
@@ -57,7 +58,7 @@ npm run serve   # http://localhost:8000 で開く
   - 線を選ぶと出る「＋」をドラッグすると、経由点が増えて線がなめらかに曲がります。経由点はドラッグで移動、ダブルクリックで削除できます
   - `R` で回転 (`Shift+R` で逆回転)、`Delete` で削除、矢印キーで1マス移動、`Ctrl+Z` / `Ctrl+Shift+Z` で元に戻す / やり直し
   - 穴にカーソルを合わせると、その穴と導通している穴が光り、穴の名前とネットが表示されます
-- ツールバー: 元に戻す / やり直し、ボードの種類、配線の色、アニメーションの再生・一時停止・シーク (`Space` でも再生 / 一時停止)・長さ・ループ・キャプションの表示 (書き出す画像にも反映)、拡大・縮小
+- ツールバー: 元に戻す / やり直し、ボードの種類、配線の描き方 (曲がる / キット)、配線の色、アニメーションの再生・一時停止・シーク (`Space` でも再生 / 一時停止)・長さ・ループ・キャプションの表示 (書き出す画像にも反映)、拡大・縮小
 - 「組み立て」: 組み立て手順モード。部品がボードの下に並び、手順ごとに配置されていきます (「◀ 前」「次 ▶」で1手順ずつ)。右のパネルで手順の説明と対象を編集でき、「自動で作る」で手順を自動生成できます
 - 「画像を書き出す」: 透過PNG / 白背景PNG / 静止画SVG (いま表示している瞬間)、アニメーションSVG。組み立てモードのときは組み立て手順を書き出します
 - 右: 選択中の部品のプロパティと、回路のJSON。JSONを編集すると、すぐに図に反映されます

@@ -61,6 +61,7 @@ await bb.png({ background: null })     // その瞬間の透過PNG (Blob)
 | `animate` | `target`, `keys`, (`replace` = true) | 部品・配線・演出のアニメーションのキーを設定します。`target` はID、IDの配列、または `animation.groups` の名前。`replace: false` にすると、既存のキーに追加します |
 | `setAnimation` | `duration`, `loop`, `captions`, `tracks`, `groups` のうち必要なもの / `clear: true` | アニメーションの設定を上書きでマージします。`clear: true` でアニメーションを削除します |
 | `setBoard` | `board` | ボードの種類を変更します (`full` / `half` / `mini`) |
+| `setWireStyle` | `style` | 配線の描き方を変更します (`flex`: 曲がるジャンパ線 / `kit`: ジャンパ線キット。`docs/FORMAT.md` の「配線の描き方」)。1本だけ変えるときは `update` で `style` を設定します |
 | `setTitle` | `title` | タイトルを変更します |
 
 配線のIDは、読み込んだ時点で自動的に付けられます (`W1`, `W2`, …)。

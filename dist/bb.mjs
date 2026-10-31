@@ -1623,9 +1623,133 @@ function genericLeads(pins, label) {
   return pins.map((p) => leg(p, c)).join("") + rect(c.x - 0.8, c.y - 0.45, 1.6, 0.9, { rx: 0.15, fill: "#455a64" }) + text(c.x, c.y, label, { "font-size": 0.35, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" });
 }
 
+// src/wires.js
+var KIT_COLORS = ["bare", "brown", "red", "orange", "yellow", "green", "blue", "purple", "gray", "white"];
+var KIT_COLOR_NAMES = { bare: "\u88F8\u7DDA", brown: "\u8336", red: "\u8D64", orange: "\u6A59", yellow: "\u9EC4", green: "\u7DD1", blue: "\u9752", purple: "\u7D2B", gray: "\u7070", white: "\u767D" };
+var KIT_LENGTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50];
+function kitColor(length) {
+  if (length <= 1) return "bare";
+  return KIT_COLORS[Number(String(Math.round(length))[0])];
+}
+function kitRoute(w) {
+  const pts = [w.a];
+  const eq = (u, v) => Math.abs(u - v) < 1e-6;
+  for (const q of [...w.via, w.b]) {
+    const p = pts.at(-1);
+    if (!eq(p.x, q.x) && !eq(p.y, q.y)) pts.push(w.elbow === "v" ? { x: p.x, y: q.y } : { x: q.x, y: p.y });
+    pts.push(q);
+  }
+  const out = [];
+  for (const p of pts) {
+    if (out.length && eq(out.at(-1).x, p.x) && eq(out.at(-1).y, p.y)) continue;
+    const [a, b] = out.slice(-2);
+    if (b && (eq(a.x, b.x) && eq(b.x, p.x) || eq(a.y, b.y) && eq(b.y, p.y))) out.pop();
+    out.push(p);
+  }
+  return out.length > 1 ? out : [w.a, w.b];
+}
+var segLength = (pts) => pts.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - pts[i].x, p.y - pts[i].y), 0);
+function kitInfo(w) {
+  const route = kitRoute(w);
+  const length = Math.round(segLength(route) * 2) / 2;
+  const color = kitColor(length);
+  return { id: w.id, length, color, colorName: KIT_COLOR_NAMES[color], bends: route.length - 2, inKit: KIT_LENGTHS.includes(length) };
+}
+function trimRoute(pts, d0, d1) {
+  const total = segLength(pts);
+  if (total - d0 - d1 <= 0.05) return null;
+  const at = (d) => {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const len = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+      if (d <= len || i === pts.length - 2) {
+        const t = len ? Math.min(1, d / len) : 0;
+        return { i, p: { x: pts[i].x + (pts[i + 1].x - pts[i].x) * t, y: pts[i].y + (pts[i + 1].y - pts[i].y) * t } };
+      }
+      d -= len;
+    }
+  };
+  const s = at(d0);
+  const e = at(total - d1);
+  return [s.p, ...pts.slice(s.i + 1, e.i + 1), e.p];
+}
+function roundedPath(pts, r = 0.3) {
+  let d = `M ${n(pts[0].x)} ${n(pts[0].y)}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [p, c, q] = [pts[i - 1], pts[i], pts[i + 1]];
+    const l1 = Math.hypot(c.x - p.x, c.y - p.y);
+    const l2 = Math.hypot(q.x - c.x, q.y - c.y);
+    const k = Math.min(r, l1 / 2, l2 / 2);
+    const a = { x: c.x - (c.x - p.x) / l1 * k, y: c.y - (c.y - p.y) / l1 * k };
+    const b = { x: c.x + (q.x - c.x) / l2 * k, y: c.y + (q.y - c.y) / l2 * k };
+    d += ` L ${n(a.x)} ${n(a.y)} Q ${n(c.x)} ${n(c.y)} ${n(b.x)} ${n(b.y)}`;
+  }
+  return `${d} L ${n(pts.at(-1).x)} ${n(pts.at(-1).y)}`;
+}
+function wireGeometry(w) {
+  if (w.kit) return { lines: kitRoute(w), kit: true };
+  let pts = [w.a, ...w.via, w.b];
+  const bend = Number(w.bend) || 0;
+  const curve = w.shape === "curve" || bend && pts.length === 2;
+  if (bend && pts.length === 2) {
+    const dx = w.b.x - w.a.x;
+    const dy = w.b.y - w.a.y;
+    pts = [w.a, { x: (w.a.x + w.b.x) / 2 - dy * bend, y: (w.a.y + w.b.y) / 2 + dx * bend }, w.b];
+  }
+  if (!curve || pts.length < 3) return { lines: pts };
+  const beziers = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] ?? p2;
+    const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
+    const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
+    beziers.push([p1, c1, c2, p2]);
+  }
+  return { beziers };
+}
+function wirePath(w) {
+  const geo = wireGeometry(w);
+  if (geo.kit) return roundedPath(geo.lines);
+  if (geo.lines) return `M ${geo.lines.map((p) => `${n(p.x)} ${n(p.y)}`).join(" L ")}`;
+  const [first] = geo.beziers[0];
+  return `M ${n(first.x)} ${n(first.y)}${geo.beziers.map(([, c1, c2, p2]) => ` C ${n(c1.x)} ${n(c1.y)} ${n(c2.x)} ${n(c2.y)} ${n(p2.x)} ${n(p2.y)}`).join("")}`;
+}
+function wirePoints(w, step = 0.2) {
+  const geo = wireGeometry(w);
+  const out = [];
+  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  if (geo.lines) {
+    for (let i = 0; i < geo.lines.length - 1; i++) {
+      const [a, b] = [geo.lines[i], geo.lines[i + 1]];
+      const k = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
+      for (let j = 0; j < k; j++) out.push(lerp(a, b, j / k));
+    }
+    out.push(geo.lines.at(-1));
+    return out;
+  }
+  for (const [p1, c1, c2, p2] of geo.beziers) {
+    const k = Math.max(4, Math.ceil(Math.hypot(p2.x - p1.x, p2.y - p1.y) / step) * 2);
+    for (let j = 0; j < k; j++) {
+      const t = j / k;
+      const u = 1 - t;
+      out.push({
+        x: u * u * u * p1.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p2.x,
+        y: u * u * u * p1.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p2.y
+      });
+    }
+  }
+  out.push(geo.beziers.at(-1)[3]);
+  return out;
+}
+
 // src/circuit.js
 var RESERVED = /* @__PURE__ */ new Set(["id", "type", "at", "pos", "rot", "pins", "note", "state", "idLabel"]);
 var ROTATIONS = [0, 90, 180, 270];
+var WIRE_STYLES = ["flex", "kit"];
+function kitList(result) {
+  return result.wires.filter((w) => w.kit).map(kitInfo);
+}
 function resolveCircuit(circuit) {
   const errors = [];
   const warnings = [];
@@ -1639,6 +1763,7 @@ function resolveCircuit(circuit) {
     errors.push(e.message);
     board = createBoard("half");
   }
+  if (circuit.wireStyle !== void 0 && !WIRE_STYLES.includes(circuit.wireStyle)) warnings.push(`wireStyle \u306F "flex" (\u66F2\u304C\u308B\u30B8\u30E3\u30F3\u30D1\u7DDA) \u304B "kit" (\u30B8\u30E3\u30F3\u30D1\u7DDA\u30AD\u30C3\u30C8) \u3067\u3059`);
   const registry = createRegistry(circuit.partDefs ?? []);
   errors.push(...registry.errors);
   const occupied = /* @__PURE__ */ new Map();
@@ -1688,8 +1813,12 @@ function resolveCircuit(circuit) {
       return board.pos(v);
     });
     if (w.shape !== void 0 && !["straight", "curve"].includes(w.shape)) warnings.push(`${id}: shape \u306F "straight" \u304B "curve" \u3067\u3059`);
+    if (w.style !== void 0 && !WIRE_STYLES.includes(w.style)) warnings.push(`${id}: style \u306F "flex" \u304B "kit" \u3067\u3059`);
+    if (w.elbow !== void 0 && !["h", "v"].includes(w.elbow)) warnings.push(`${id}: elbow \u306F "h" (\u5148\u306B\u6A2A) \u304B "v" (\u5148\u306B\u7E26) \u3067\u3059`);
+    const onBoard = board.has(w.from) && board.has(w.to);
+    const kit = (w.style ?? (onBoard ? circuit.wireStyle : "flex")) === "kit";
     if (ends[0] && ends[1]) {
-      wires.push({ ...w, id, a: ends[0].pos, b: ends[1].pos, nodes: [ends[0].node, ends[1].node], via: via.filter(Boolean) });
+      wires.push({ ...w, id, a: ends[0].pos, b: ends[1].pos, nodes: [ends[0].node, ends[1].node], via: via.filter(Boolean), kit });
     }
   });
   const { nets, netOf } = computeNets(board, parts, wires);
@@ -1879,6 +2008,16 @@ function describe(result) {
     else lines.push(`  ${net.name}: ${net.pins.map((p) => p.ref).join(", ")}`);
   }
   if (alone.length) lines.push(`\u672A\u63A5\u7D9A\u306E\u30D4\u30F3: ${alone.join(", ")}`);
+  const kit = kitList(result);
+  if (kit.length) {
+    lines.push("\u30B8\u30E3\u30F3\u30D1\u7DDA\u30AD\u30C3\u30C8 (\u9577\u3055\u306F\u30D4\u30C3\u30C1\u6570\u3002\u8272\u306F\u9577\u3055\u3067\u6C7A\u307E\u308A\u307E\u3059):");
+    const byLength = /* @__PURE__ */ new Map();
+    for (const k of kit) byLength.set(k.length, [...byLength.get(k.length) ?? [], k]);
+    for (const [length, ks] of [...byLength].sort((a, b) => a[0] - b[0])) {
+      const notes = [ks[0].inKit ? "" : " (\u30AD\u30C3\u30C8\u306B\u306A\u3044\u9577\u3055)", ks.some((k) => k.bends) ? ` \u66F2\u3052\u3042\u308A: ${ks.filter((k) => k.bends).map((k) => k.id).join(", ")}` : ""].join("");
+      lines.push(`  ${length} ${ks[0].colorName} \xD7${ks.length}: ${ks.map((k) => k.id).join(", ")}${notes}`);
+    }
+  }
   return lines.join("\n");
 }
 function stripOf(hole) {
@@ -2132,8 +2271,10 @@ function renderSvg(result, options = {}) {
   const body = [
     shadowDefs(svgId, vb),
     g(drawBoard(board, svgId), { class: "board" }),
+    // kit wires lie flat on the board, under the parts; flexible wires arc above them
+    g(result.wires.filter((w) => w.kit).map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires flat" }),
     g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params), svgId)).join(""), { class: "parts" }),
-    g(result.wires.map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
+    g(result.wires.filter((w) => !w.kit).map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
     g(result.parts.map(drawTerminals).join(""), { class: "terminals" }),
     g(result.overlays.map((o) => drawOverlay(o, ctxFor(o.id, overlayAnimate), tl)).join(""), { class: "overlays" }),
     labels ? g(result.parts.map(drawLabel).join(""), { class: "labels", "pointer-events": "none" }) : "",
@@ -2262,74 +2403,32 @@ function drawPart(part, ctx, svgId) {
   });
   return g(body, { ...attrs2, ...shadow });
 }
-function wireGeometry(w) {
-  let pts = [w.a, ...w.via, w.b];
-  const bend = Number(w.bend) || 0;
-  const curve = w.shape === "curve" || bend && pts.length === 2;
-  if (bend && pts.length === 2) {
-    const dx = w.b.x - w.a.x;
-    const dy = w.b.y - w.a.y;
-    pts = [w.a, { x: (w.a.x + w.b.x) / 2 - dy * bend, y: (w.a.y + w.b.y) / 2 + dx * bend }, w.b];
-  }
-  if (!curve || pts.length < 3) return { lines: pts };
-  const beziers = [];
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] ?? pts[i];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2] ?? p2;
-    const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
-    const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
-    beziers.push([p1, c1, c2, p2]);
-  }
-  return { beziers };
-}
-function wirePath(w) {
-  const geo = wireGeometry(w);
-  if (geo.lines) return `M ${geo.lines.map((p) => `${n(p.x)} ${n(p.y)}`).join(" L ")}`;
-  const [first] = geo.beziers[0];
-  return `M ${n(first.x)} ${n(first.y)}${geo.beziers.map(([, c1, c2, p2]) => ` C ${n(c1.x)} ${n(c1.y)} ${n(c2.x)} ${n(c2.y)} ${n(p2.x)} ${n(p2.y)}`).join("")}`;
-}
-function wirePoints(w, step = 0.2) {
-  const geo = wireGeometry(w);
-  const out = [];
-  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-  if (geo.lines) {
-    for (let i = 0; i < geo.lines.length - 1; i++) {
-      const [a, b] = [geo.lines[i], geo.lines[i + 1]];
-      const k = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
-      for (let j = 0; j < k; j++) out.push(lerp(a, b, j / k));
-    }
-    out.push(geo.lines.at(-1));
-    return out;
-  }
-  for (const [p1, c1, c2, p2] of geo.beziers) {
-    const k = Math.max(4, Math.ceil(Math.hypot(p2.x - p1.x, p2.y - p1.y) / step) * 2);
-    for (let j = 0; j < k; j++) {
-      const t = j / k;
-      const u = 1 - t;
-      out.push({
-        x: u * u * u * p1.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p2.x,
-        y: u * u * u * p1.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p2.y
-      });
-    }
-  }
-  out.push(geo.beziers.at(-1)[3]);
-  return out;
-}
 function drawWire(w, ctx, drawIn = null) {
-  const color = WIRE_COLORS[w.color] ?? w.color ?? WIRE_COLORS.blue;
+  const kit = w.kit ? kitInfo(w) : null;
+  const color = kit ? KIT_WIRE_COLORS[kit.color] : WIRE_COLORS[w.color] ?? w.color ?? WIRE_COLORS.blue;
   const common = { d: wirePath(w), fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" };
   const drawable = drawIn ? { pathLength: 1, class: "asm-path", style: `stroke-dasharray:1 1;stroke-dashoffset:${n(drawIn.offset)}` } : {};
+  const path = (stroke, width, extra = {}) => tag("path", { ...common, stroke, "stroke-width": width, ...extra, ...drawable });
   const flows = ctx.state.flow || ctx.values("flow").includes("true");
   const flow = flows ? g(tag("path", { ...common, stroke: "#fff", "stroke-width": 0.14, "stroke-dasharray": "0.3 0.5", class: "bb-flow" }), {
     "pointer-events": "none",
     ...ctx.anim("flow")
   }) : "";
-  return g(
-    tag("path", { ...common, stroke: BOARD_COLOR, "stroke-width": 0.46, ...drawable }) + tag("path", { ...common, stroke: "rgba(0,0,0,.2)", "stroke-width": 0.34, transform: "translate(0.04 0.1)", ...drawable }) + tag("path", { ...common, stroke: "rgba(0,0,0,.35)", "stroke-width": 0.34, ...drawable }) + tag("path", { ...common, stroke: color, "stroke-width": 0.25, ...drawable }) + tag("path", { ...common, stroke: "rgba(255,255,255,.4)", "stroke-width": 0.06, ...drawable }) + flow + circle(w.a.x, w.a.y, 0.13, { fill: "#a7adb3" }) + circle(w.b.x, w.b.y, 0.13, { fill: "#a7adb3" }),
-    { class: "wire", "data-id": w.id, "data-from": w.from, "data-to": w.to }
-  );
+  let body;
+  if (kit) {
+    const sleeve = kit.color === "bare" ? null : trimRoute(kitRoute(w), 0.32, 0.32);
+    const ins = (stroke, width, extra = {}) => sleeve ? path(stroke, width, { d: roundedPath(sleeve), ...extra }) : "";
+    body = path(BOARD_COLOR, 0.42) + ins("rgba(0,0,0,.22)", 0.32, { transform: "translate(0.02 0.06)" }) + path("rgba(0,0,0,.4)", 0.15) + path("#c3c8cc", 0.09) + ins("rgba(0,0,0,.35)", 0.32) + ins(color, 0.24) + ins("rgba(255,255,255,.4)", 0.06);
+  } else {
+    body = path(BOARD_COLOR, 0.46) + path("rgba(0,0,0,.2)", 0.34, { transform: "translate(0.04 0.1)" }) + path("rgba(0,0,0,.35)", 0.34) + path(color, 0.25) + path("rgba(255,255,255,.4)", 0.06);
+  }
+  const end = kit ? 0.09 : 0.13;
+  return g(body + flow + circle(w.a.x, w.a.y, end, { fill: "#a7adb3" }) + circle(w.b.x, w.b.y, end, { fill: "#a7adb3" }), {
+    class: "wire",
+    "data-id": w.id,
+    "data-from": w.from,
+    "data-to": w.to
+  });
 }
 function labelSpot(part) {
   const opt = part.inst.idLabel;
@@ -2374,6 +2473,7 @@ function drawProblems(result) {
 }
 var ACCENT = "#1e6fd9";
 var BOARD_COLOR = "#f3efe6";
+var KIT_WIRE_COLORS = { ...WIRE_COLORS, bare: "#c3c8cc", white: "#fafafa", gray: "#90a4ae" };
 function handle(x, y, owner, name) {
   return circle(x, y, 0.32, {
     fill: "rgba(255,255,255,.85)",
@@ -2469,7 +2569,7 @@ function renderAssemblySvg(result, options) {
     const inner = drawPart(p, ctxStatic(p.id, p.def.animate, p.params), svgId) + (labels ? drawLabel(p) : "") + drawTerminals(p);
     return g(inner, { "data-asm": p.id, style: move(t) });
   });
-  const wires = result.wires.map((w) => {
+  const wires = (kit) => result.wires.filter((w) => !!w.kit === kit).map((w) => {
     const shown = (tt) => `opacity:${drawnAt(plan, w.id, tt) > 0 ? 1 : 0}`;
     const s = plan.stepOf.has(w.id) ? plan.start(plan.stepOf.get(w.id)) + plan.T.lead : 0;
     animated(w.id, [0, s, s + 1], shown);
@@ -2520,8 +2620,9 @@ function renderAssemblySvg(result, options) {
   const body = [
     shadowDefs(svgId, vb),
     g(drawBoard(result.board, svgId), { class: "board" }),
+    g(wires(true).join(""), { class: "wires flat" }),
     g(parts.join(""), { class: "parts" }),
-    g(wires.join(""), { class: "wires" }),
+    g(wires(false).join(""), { class: "wires" }),
     g(overlays.join(""), { class: "overlays" }),
     g(highlights.join(""), { class: "highlights", "pointer-events": "none" }),
     captions
@@ -2974,6 +3075,16 @@ var OPS = {
   setBoard(c, { board }) {
     createBoard(board);
     return { circuit: { ...c, board } };
+  },
+  // "flex": bendable jumper wires that arc above the board (default); "kit": wires from a
+  // jumper wire kit, flat on the board with right-angle bends and colored by length
+  setWireStyle(c, { style: style2 }) {
+    if (!["flex", "kit"].includes(style2)) fail(`style \u306F "flex" \u304B "kit" \u3067\u3059`);
+    if (style2 === "flex") {
+      const { wireStyle: _, ...rest } = c;
+      return { circuit: rest };
+    }
+    return { circuit: { ...c, wireStyle: style2 } };
   },
   setTitle(c, { title }) {
     return { circuit: { ...c, title: String(title ?? "") } };
@@ -3503,7 +3614,8 @@ function checkJson(result, layout) {
     ...layout ? { layout } : {},
     parts: result.parts.map((p) => ({ id: p.id, type: p.type, pins: Object.fromEntries(p.pins.map((q) => [q.name, q.hole ?? (p.offboard ? "offboard" : q.terminal ? "terminal" : null)])) })),
     nets: result.nets.filter((n2) => n2.pins.length > 1 || /[+-]/.test(n2.name)).map((n2) => ({ name: n2.name, pins: n2.pins.map((p) => p.ref) })),
-    unconnected: result.nets.filter((n2) => n2.pins.length < 2 && !/[+-]/.test(n2.name)).map((n2) => n2.pins[0].ref)
+    unconnected: result.nets.filter((n2) => n2.pins.length < 2 && !/[+-]/.test(n2.name)).map((n2) => n2.pins[0].ref),
+    ...kitList(result).length ? { kitWires: kitList(result) } : {}
   };
 }
 function viewBoxOf(result) {

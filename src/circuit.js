@@ -4,10 +4,17 @@ import { buildTimeline } from "./animation.js";
 import { electricalAdvice } from "./erc.js";
 import { spriteError } from "./svg.js";
 import { createRegistry } from "./parts/registry.js";
+import { kitInfo } from "./wires.js";
 
 export const FORMAT_VERSION = 1;
 const RESERVED = new Set(["id", "type", "at", "pos", "rot", "pins", "note", "state", "idLabel"]);
 const ROTATIONS = [0, 90, 180, 270];
+const WIRE_STYLES = ["flex", "kit"];
+
+// Kit wires with their length, color and bends (for the parts list).
+export function kitList(result) {
+  return result.wires.filter((w) => w.kit).map(kitInfo);
+}
 
 // Returns { board, registry, parts, wires, errors, warnings, nets }.
 // Never throws for bad circuit content: problems are reported in errors / warnings.
@@ -24,6 +31,7 @@ export function resolveCircuit(circuit) {
     errors.push(e.message);
     board = createBoard("half");
   }
+  if (circuit.wireStyle !== undefined && !WIRE_STYLES.includes(circuit.wireStyle)) warnings.push(`wireStyle は "flex" (曲がるジャンパ線) か "kit" (ジャンパ線キット) です`);
   const registry = createRegistry(circuit.partDefs ?? []);
   errors.push(...registry.errors);
 
@@ -80,8 +88,13 @@ export function resolveCircuit(circuit) {
       return board.pos(v);
     });
     if (w.shape !== undefined && !["straight", "curve"].includes(w.shape)) warnings.push(`${id}: shape は "straight" か "curve" です`);
+    if (w.style !== undefined && !WIRE_STYLES.includes(w.style)) warnings.push(`${id}: style は "flex" か "kit" です`);
+    if (w.elbow !== undefined && !["h", "v"].includes(w.elbow)) warnings.push(`${id}: elbow は "h" (先に横) か "v" (先に縦) です`);
+    // kit wires lie flat on the board, so a wire to a pin off the board stays flexible unless asked
+    const onBoard = board.has(w.from) && board.has(w.to);
+    const kit = (w.style ?? (onBoard ? circuit.wireStyle : "flex")) === "kit";
     if (ends[0] && ends[1]) {
-      wires.push({ ...w, id, a: ends[0].pos, b: ends[1].pos, nodes: [ends[0].node, ends[1].node], via: via.filter(Boolean) });
+      wires.push({ ...w, id, a: ends[0].pos, b: ends[1].pos, nodes: [ends[0].node, ends[1].node], via: via.filter(Boolean), kit });
     }
   });
 
@@ -290,6 +303,16 @@ export function describe(result) {
     else lines.push(`  ${net.name}: ${net.pins.map((p) => p.ref).join(", ")}`);
   }
   if (alone.length) lines.push(`未接続のピン: ${alone.join(", ")}`);
+  const kit = kitList(result);
+  if (kit.length) {
+    lines.push("ジャンパ線キット (長さはピッチ数。色は長さで決まります):");
+    const byLength = new Map();
+    for (const k of kit) byLength.set(k.length, [...(byLength.get(k.length) ?? []), k]);
+    for (const [length, ks] of [...byLength].sort((a, b) => a[0] - b[0])) {
+      const notes = [ks[0].inKit ? "" : " (キットにない長さ)", ks.some((k) => k.bends) ? ` 曲げあり: ${ks.filter((k) => k.bends).map((k) => k.id).join(", ")}` : ""].join("");
+      lines.push(`  ${length} ${ks[0].colorName} ×${ks.length}: ${ks.map((k) => k.id).join(", ")}${notes}`);
+    }
+  }
   return lines.join("\n");
 }
 

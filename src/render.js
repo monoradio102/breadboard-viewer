@@ -3,6 +3,9 @@ import { EFFECT_CSS, captionTrack, compileCss, cssDecl, initialState, stateAtTim
 import { drawnAt, highlightAt, keyframesCss, offsetAt, planAssembly, rampTimes } from "./assembly.js";
 import { rotate } from "./circuit.js";
 import { attrs, circle, esc, g, line, n, rect, spriteImage, tag, text } from "./svg.js";
+import { kitInfo, kitRoute, roundedPath, trimRoute, wirePath, wirePoints } from "./wires.js";
+
+export { wirePath, wirePoints };
 
 export const SCALE = 24; // px per pitch unit for the default SVG size
 
@@ -67,8 +70,10 @@ export function renderSvg(result, options = {}) {
   const body = [
     shadowDefs(svgId, vb),
     g(drawBoard(board, svgId), { class: "board" }),
+    // kit wires lie flat on the board, under the parts; flexible wires arc above them
+    g(result.wires.filter((w) => w.kit).map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires flat" }),
     g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params), svgId)).join(""), { class: "parts" }),
-    g(result.wires.map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
+    g(result.wires.filter((w) => !w.kit).map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
     g(result.parts.map(drawTerminals).join(""), { class: "terminals" }),
     g(result.overlays.map((o) => drawOverlay(o, ctxFor(o.id, overlayAnimate), tl)).join(""), { class: "overlays" }),
     labels ? g(result.parts.map(drawLabel).join(""), { class: "labels", "pointer-events": "none" }) : "",
@@ -234,75 +239,15 @@ function drawPart(part, ctx, svgId) {
   return g(body, { ...attrs, ...shadow });
 }
 
-// Shape of a wire: straight segments through the via points, or (shape: "curve") a
-// Catmull-Rom spline through them. `bend` bows a plain wire sideways by that fraction of its
-// length: positive values bow to the right of the from → to direction (as seen on screen).
-function wireGeometry(w) {
-  let pts = [w.a, ...w.via, w.b];
-  const bend = Number(w.bend) || 0;
-  const curve = w.shape === "curve" || (bend && pts.length === 2);
-  if (bend && pts.length === 2) {
-    const dx = w.b.x - w.a.x;
-    const dy = w.b.y - w.a.y;
-    pts = [w.a, { x: (w.a.x + w.b.x) / 2 - dy * bend, y: (w.a.y + w.b.y) / 2 + dx * bend }, w.b];
-  }
-  if (!curve || pts.length < 3) return { lines: pts };
-  const beziers = [];
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] ?? pts[i];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2] ?? p2;
-    const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
-    const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
-    beziers.push([p1, c1, c2, p2]);
-  }
-  return { beziers };
-}
-
-export function wirePath(w) {
-  const geo = wireGeometry(w);
-  if (geo.lines) return `M ${geo.lines.map((p) => `${n(p.x)} ${n(p.y)}`).join(" L ")}`;
-  const [first] = geo.beziers[0];
-  return `M ${n(first.x)} ${n(first.y)}${geo.beziers.map(([, c1, c2, p2]) => ` C ${n(c1.x)} ${n(c1.y)} ${n(c2.x)} ${n(c2.y)} ${n(p2.x)} ${n(p2.y)}`).join("")}`;
-}
-
-// Points along a wire (for layout checks), about `step` pitch units apart.
-export function wirePoints(w, step = 0.2) {
-  const geo = wireGeometry(w);
-  const out = [];
-  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-  if (geo.lines) {
-    for (let i = 0; i < geo.lines.length - 1; i++) {
-      const [a, b] = [geo.lines[i], geo.lines[i + 1]];
-      const k = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
-      for (let j = 0; j < k; j++) out.push(lerp(a, b, j / k));
-    }
-    out.push(geo.lines.at(-1));
-    return out;
-  }
-  for (const [p1, c1, c2, p2] of geo.beziers) {
-    const k = Math.max(4, Math.ceil(Math.hypot(p2.x - p1.x, p2.y - p1.y) / step) * 2);
-    for (let j = 0; j < k; j++) {
-      const t = j / k;
-      const u = 1 - t;
-      out.push({
-        x: u * u * u * p1.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p2.x,
-        y: u * u * u * p1.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p2.y,
-      });
-    }
-  }
-  out.push(geo.beziers.at(-1)[3]);
-  return out;
-}
-
 // drawIn: { offset } makes the wire paths drawable from 0 (offset 1) to fully drawn (offset 0)
 function drawWire(w, ctx, drawIn = null) {
-  const color = WIRE_COLORS[w.color] ?? w.color ?? WIRE_COLORS.blue;
+  const kit = w.kit ? kitInfo(w) : null;
+  const color = kit ? KIT_WIRE_COLORS[kit.color] : WIRE_COLORS[w.color] ?? w.color ?? WIRE_COLORS.blue;
   const common = { d: wirePath(w), fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" };
   const drawable = drawIn
     ? { pathLength: 1, class: "asm-path", style: `stroke-dasharray:1 1;stroke-dashoffset:${n(drawIn.offset)}` }
     : {};
+  const path = (stroke, width, extra = {}) => tag("path", { ...common, stroke, "stroke-width": width, ...extra, ...drawable });
   const flows = ctx.state.flow || ctx.values("flow").includes("true");
   // the timeline toggles the group; the dashes inside run their own endless animation
   const flow = flows
@@ -311,19 +256,36 @@ function drawWire(w, ctx, drawIn = null) {
         ...ctx.anim("flow"),
       })
     : "";
-  // board-colored edge (cuts a gap where this wire crosses an earlier one), offset shadow,
-  // dark outline, the wire, and a thin highlight along its middle
-  return g(
-    tag("path", { ...common, stroke: BOARD_COLOR, "stroke-width": 0.46, ...drawable }) +
-      tag("path", { ...common, stroke: "rgba(0,0,0,.2)", "stroke-width": 0.34, transform: "translate(0.04 0.1)", ...drawable }) +
-      tag("path", { ...common, stroke: "rgba(0,0,0,.35)", "stroke-width": 0.34, ...drawable }) +
-      tag("path", { ...common, stroke: color, "stroke-width": 0.25, ...drawable }) +
-      tag("path", { ...common, stroke: "rgba(255,255,255,.4)", "stroke-width": 0.06, ...drawable }) +
-      flow +
-      circle(w.a.x, w.a.y, 0.13, { fill: "#a7adb3" }) +
-      circle(w.b.x, w.b.y, 0.13, { fill: "#a7adb3" }),
-    { class: "wire", "data-id": w.id, "data-from": w.from, "data-to": w.to },
-  );
+  let body;
+  if (kit) {
+    // flat on the board: a short shadow, bare metal at the ends, the insulation in between
+    const sleeve = kit.color === "bare" ? null : trimRoute(kitRoute(w), 0.32, 0.32);
+    const ins = (stroke, width, extra = {}) => (sleeve ? path(stroke, width, { d: roundedPath(sleeve), ...extra }) : "");
+    body =
+      path(BOARD_COLOR, 0.42) +
+      ins("rgba(0,0,0,.22)", 0.32, { transform: "translate(0.02 0.06)" }) +
+      path("rgba(0,0,0,.4)", 0.15) +
+      path("#c3c8cc", 0.09) +
+      ins("rgba(0,0,0,.35)", 0.32) +
+      ins(color, 0.24) +
+      ins("rgba(255,255,255,.4)", 0.06);
+  } else {
+    // board-colored edge (cuts a gap where this wire crosses an earlier one), offset shadow,
+    // dark outline, the wire, and a thin highlight along its middle
+    body =
+      path(BOARD_COLOR, 0.46) +
+      path("rgba(0,0,0,.2)", 0.34, { transform: "translate(0.04 0.1)" }) +
+      path("rgba(0,0,0,.35)", 0.34) +
+      path(color, 0.25) +
+      path("rgba(255,255,255,.4)", 0.06);
+  }
+  const end = kit ? 0.09 : 0.13;
+  return g(body + flow + circle(w.a.x, w.a.y, end, { fill: "#a7adb3" }) + circle(w.b.x, w.b.y, end, { fill: "#a7adb3" }), {
+    class: "wire",
+    "data-id": w.id,
+    "data-from": w.from,
+    "data-to": w.to,
+  });
 }
 
 // Where the part id label goes: { x, y, anchor } (null when hidden).
@@ -376,6 +338,7 @@ function drawProblems(result) {
 
 const ACCENT = "#1e6fd9";
 const BOARD_COLOR = "#f3efe6";
+const KIT_WIRE_COLORS = { ...WIRE_COLORS, bare: "#c3c8cc", white: "#fafafa", gray: "#90a4ae" };
 
 function handle(x, y, owner, name) {
   return circle(x, y, 0.32, {
@@ -497,7 +460,7 @@ function renderAssemblySvg(result, options) {
     return g(inner, { "data-asm": p.id, style: move(t) });
   });
 
-  const wires = result.wires.map((w) => {
+  const wires = (kit) => result.wires.filter((w) => !!w.kit === kit).map((w) => {
     const shown = (tt) => `opacity:${drawnAt(plan, w.id, tt) > 0 ? 1 : 0}`;
     const s = plan.stepOf.has(w.id) ? plan.start(plan.stepOf.get(w.id)) + plan.T.lead : 0;
     animated(w.id, [0, s, s + 1], shown);
@@ -554,8 +517,9 @@ function renderAssemblySvg(result, options) {
   const body = [
     shadowDefs(svgId, vb),
     g(drawBoard(result.board, svgId), { class: "board" }),
+    g(wires(true).join(""), { class: "wires flat" }),
     g(parts.join(""), { class: "parts" }),
-    g(wires.join(""), { class: "wires" }),
+    g(wires(false).join(""), { class: "wires" }),
     g(overlays.join(""), { class: "overlays" }),
     g(highlights.join(""), { class: "highlights", "pointer-events": "none" }),
     captions,

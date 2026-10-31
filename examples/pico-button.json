@@ -2,6 +2,7 @@
   "version": 1,
   "title": "Pico でボタン入力とLED",
   "board": "half",
+  "wireStyle": "kit",
   "parts": [
     { "id": "U1", "type": "pico", "at": "i5" },
     { "id": "SW1", "type": "button", "at": "e26" },

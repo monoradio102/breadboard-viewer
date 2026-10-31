@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
 import { join } from "node:path";
 import { planAssembly } from "../src/assembly.js";
-import { describe, resolveCircuit } from "../src/circuit.js";
+import { describe, kitList, resolveCircuit } from "../src/circuit.js";
 import { bodyBox, coordsOf, layoutIssues, partSpec, previewPlacement } from "../src/inspect.js";
 import { emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "../src/io.js";
 import { OpError, applyOps } from "../src/ops.js";
@@ -296,6 +296,7 @@ function checkJson(result, layout) {
     parts: result.parts.map((p) => ({ id: p.id, type: p.type, pins: Object.fromEntries(p.pins.map((q) => [q.name, q.hole ?? (p.offboard ? "offboard" : q.terminal ? "terminal" : null)])) })),
     nets: result.nets.filter((n) => n.pins.length > 1 || /[+-]/.test(n.name)).map((n) => ({ name: n.name, pins: n.pins.map((p) => p.ref) })),
     unconnected: result.nets.filter((n) => n.pins.length < 2 && !/[+-]/.test(n.name)).map((n) => n.pins[0].ref),
+    ...(kitList(result).length ? { kitWires: kitList(result) } : {}),
   };
 }
 

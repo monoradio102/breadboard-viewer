@@ -89,6 +89,8 @@ PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx pl
 - 部品の置き方: `at` (1 番ピンの穴) + `rot`、`pins` (抵抗や LED など足を曲げられる部品の穴を個別に)、`pos: [x, y]` (ボードの外)
 - 座標: 列 n の x = n + 1。行の y は a=4 … e=8、f=11 … j=15。レールの y は T+=1, T-=2, B+=17, B-=18 (`node bb.mjs coords h3 T-5` でも確かめられる)
 - 配線の `bend` は、正の値で from → to の向きに対して右側 (画面上) に膨らむ
+- 配線の描き方は回路の `"wireStyle"` で選ぶ: `"flex"` (既定値。曲がるジャンパ線) / `"kit"` (市販のジャンパ線キット。板に沿って直角に折れ、色は長さで決まる)。
+  キットで描くと `check` の最後に、使う線が長さごとに出る。整理された組み方を見せたいときは、縦か横にまっすぐつなげる穴を選ぶ
 - 配線の端: 穴の名前、または `"部品ID.ピン名"` (ボード外の部品のピンや、端子)
 - 独自部品のピンに `"role"` (`gnd` / `supply` + `volts` / `vin` + `vmax` など) を書くと、電気的なチェックに使われる
 - 独自部品のピンに `"insert": false` を付けると、ボードに挿さない端子 (端子台、パッド、リード線) になる。ボードに挿した部品のスピーカー端子などに使う
@@ -106,7 +108,7 @@ PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx pl
 ## サンプル回路 (JSON)
 
 - [Arduino Nano で Lチカ](https://monoradio102.github.io/breadboard-viewer/examples/blink-nano.json)
-- [Pico でボタン入力と LED](https://monoradio102.github.io/breadboard-viewer/examples/pico-button.json)
+- [Pico でボタン入力と LED (ジャンパ線キットの描き方)](https://monoradio102.github.io/breadboard-viewer/examples/pico-button.json)
 - [トランジスタでモーター駆動 + サーボ (ボード外配置)](https://monoradio102.github.io/breadboard-viewer/examples/motor-servo.json)
 - [HC-SR04 で距離アラーム](https://monoradio102.github.io/breadboard-viewer/examples/distance-alarm.json)
 - [スピーカーで音を鳴らす (ボード外配置)](https://monoradio102.github.io/breadboard-viewer/examples/tone-speaker.json)
