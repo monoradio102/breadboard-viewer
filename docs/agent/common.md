@@ -74,5 +74,6 @@ PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx pl
 - [独自部品の定義例 (I2C OLED)]({{BASE}}examples/oled-custom-part.json)
 - [演出 SVG の例 (抵抗なしで LED をつなぐと…)]({{BASE}}examples/led-burnout.json)
 - [XIAO ESP32S3 で音声入出力 (I2S マイク + アンプ + WS2812B + OLED)]({{BASE}}examples/xiao-voice.json)
+- [トランジスタ2個で LED を交互に点滅 (ジャンパ線キットの描き方、組み立て手順つき)]({{BASE}}examples/flasher-kit.json)
 
 エディタで開くには `{{BASE}}?example=<名前>` (例: `?example=motor-servo`)。

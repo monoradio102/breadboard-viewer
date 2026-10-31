@@ -1398,7 +1398,8 @@ var battery = {
       const flip = i % 2 === 1;
       body += rect(-3, y, 6.6, 1.9, { rx: 0.9, fill: "#c62828" }) + rect(flip ? -3 : 1.6, y, 2, 1.9, { rx: 0.9, fill: "#9e9e9e" }) + uprightText(0.3, y + 0.95, flip ? "\u2212  +" : "+  \u2212", rot, { "font-size": 0.7, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" });
     }
-    return leadWires(-2.4) + body + uprightText(0.5, top - 0.6, `${params.kind} ${volts}`, rot, { "font-size": 0.6, fill: "#333", "text-anchor": "middle", "dominant-baseline": "central" });
+    const gap = rot % 180 ? 1.9 : 0.6;
+    return leadWires(-2.4) + body + uprightText(0.5, top - gap, `${params.kind} ${volts}`, rot, { "font-size": 0.6, fill: "#333", "text-anchor": "middle", "dominant-baseline": "central" });
   }
 };
 var BUILTIN_PARTS = [

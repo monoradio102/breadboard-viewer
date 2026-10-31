@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "title": "トランジスタ2個で LED を交互に点滅 (ジャンパ線キット)",
+  "board": "half",
+  "wireStyle": "kit",
+  "parts": [
+    { "id": "BAT1", "type": "battery", "kind": "AAx2", "pos": [35, 3], "rot": 90 },
+    { "id": "Q1", "type": "transistor", "pins": { "E": "d5", "C": "d6", "B": "d7" } },
+    { "id": "Q2", "type": "transistor", "pins": { "E": "d22", "C": "d23", "B": "d24" } },
+    { "id": "R1", "type": "resistor", "value": "330", "pins": ["T+4", "a4"] },
+    { "id": "R2", "type": "resistor", "value": "47k", "pins": ["T+7", "a7"] },
+    { "id": "R3", "type": "resistor", "value": "47k", "pins": ["T+24", "a24"] },
+    { "id": "R4", "type": "resistor", "value": "330", "pins": ["T+21", "a21"] },
+    { "id": "D1", "type": "led", "color": "red", "pins": { "A": "b4", "K": "b6" } },
+    { "id": "D2", "type": "led", "color": "green", "pins": { "A": "b21", "K": "b23" } },
+    { "id": "C1", "type": "electrolytic", "value": "10uF", "pins": { "+": "d13", "-": "d14" } },
+    { "id": "C2", "type": "electrolytic", "value": "10uF", "pins": { "+": "h15", "-": "h16" } }
+  ],
+  "wires": [
+    { "id": "W1", "from": "BAT1.+", "to": "T+29", "color": "red" },
+    { "id": "W2", "from": "BAT1.-", "to": "T-29", "color": "black" },
+    { "id": "W3", "from": "a5", "to": "T-5", "color": "black", "note": "Q1 のエミッタを GND へ" },
+    { "id": "W4", "from": "a22", "to": "T-22", "color": "black", "note": "Q2 のエミッタを GND へ" },
+    { "id": "W5", "from": "c6", "to": "c13", "color": "yellow", "note": "Q1 のコレクタ → C1 の +" },
+    { "id": "W6", "from": "c14", "to": "c24", "color": "green", "note": "C1 の - → Q2 のベース" },
+    { "id": "W7", "from": "e23", "to": "f23", "color": "blue", "note": "Q2 のコレクタを下の段へ" },
+    { "id": "W8", "from": "e7", "to": "f7", "color": "purple", "note": "Q1 のベースを下の段へ" },
+    { "id": "W9", "from": "g23", "to": "g15", "color": "blue", "note": "Q2 のコレクタ → C2 の +" },
+    { "id": "W10", "from": "j16", "to": "j7", "color": "purple", "note": "C2 の - → Q1 のベース" }
+  ],
+  "animation": {
+    "duration": 1600,
+    "loop": true,
+    "tracks": [
+      {
+        "target": "D1",
+        "keys": [
+          {
+            "t": 0,
+            "on": true
+          },
+          {
+            "t": 800,
+            "on": false
+          }
+        ]
+      },
+      {
+        "target": "D2",
+        "keys": [
+          {
+            "t": 0,
+            "on": false
+          },
+          {
+            "t": 800,
+            "on": true
+          }
+        ]
+      }
+    ],
+    "captions": [
+      {
+        "t": 0,
+        "text": "Q1 がオン → 赤が点灯 (C1 が Q2 のベースを下げてオフに保つ)"
+      },
+      {
+        "t": 800,
+        "text": "R3 で C1 が充電されると Q2 がオン → 緑が点灯、Q1 はオフ"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "text": "GND のジャンパ線 (赤・2ピッチ) を、a5 と a22 から上の − レールへ",
+      "items": [
+        "W3",
+        "W4"
+      ]
+    },
+    {
+      "text": "溝をまたぐジャンパ線 (橙・3ピッチ) を e7–f7 と e23–f23 に",
+      "items": [
+        "W7",
+        "W8"
+      ]
+    },
+    {
+      "text": "長いジャンパ線を挿す (紫 7・茶 10・灰 8・白 9 ピッチ)",
+      "items": [
+        "W5",
+        "W6",
+        "W9",
+        "W10"
+      ]
+    },
+    {
+      "text": "トランジスタ 2SC1815 を d 行に挿す (Q1: E C B = d5 d6 d7、Q2: d22 d23 d24)",
+      "items": [
+        "Q1",
+        "Q2"
+      ]
+    },
+    {
+      "text": "抵抗を + レールから a 行へ立てて挿す (330Ω: R1 R4、47kΩ: R2 R3)",
+      "items": [
+        "R1",
+        "R2",
+        "R3",
+        "R4"
+      ]
+    },
+    {
+      "text": "LED を b 行に挿す (長い足 A を抵抗の列へ)",
+      "items": [
+        "D1",
+        "D2"
+      ]
+    },
+    {
+      "text": "電解コンデンサを挿す (+ の向きに注意: C1 は d13、C2 は h15 が +)",
+      "items": [
+        "C1",
+        "C2"
+      ]
+    },
+    {
+      "text": "電池ボックスをレールにつないで完成",
+      "items": [
+        "BAT1",
+        "W1",
+        "W2"
+      ]
+    }
+  ]
+}

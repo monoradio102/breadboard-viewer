@@ -5,6 +5,8 @@ Claude Code や Codex などのAIエージェントが、読み書きしやす�
 
 **エディタ: https://monoradio102.github.io/breadboard-viewer/**
 
+![エディタの操作 (穴の導通の表示、ジャンパ線を引く、描き方の切り替え、組み立て手順)](docs/images/editor-demo.gif)
+
 **AIに使わせるとき**は、Claude Code や Codex に次のURLを渡してください。リポジトリのクローンは不要です。
 回路の書き方、1ファイルのコマンドラインツール (`dist/bb.mjs`)、ブラウザからの操作方法がまとまっています。
 
@@ -14,20 +16,7 @@ https://monoradio102.github.io/breadboard-viewer/llms.txt
 「ブレッドボードの配線図を描いて」と頼むだけで使われます (インストールのコマンドは llms.txt にあります)。
 claude.ai では [skill/breadboard-viewer.zip](skill/breadboard-viewer.zip) をスキルとしてアップロードします。
 
-| | |
-|---|---|
-| ![トランジスタでモーター駆動 + サーボ](docs/images/motor-servo.svg) | ![HC-SR04 で距離アラーム](docs/images/distance-alarm.svg) |
-| [モーター + サーボ](examples/motor-servo.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=motor-servo)) | [HC-SR04 で距離アラーム](examples/distance-alarm.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=distance-alarm)) |
-| ![Pico でボタン入力とLED](docs/images/pico-button.svg) | ![カスタム部品の例: I2C OLED](docs/images/oled-custom-part.svg) |
-| [Pico でボタン入力とLED](examples/pico-button.json) (ジャンパ線キットの描き方) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=pico-button)) | [独自部品 (OLED) の定義例](examples/oled-custom-part.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-custom-part)) |
-| ![スピーカーで音を鳴らす](docs/images/tone-speaker.svg) | ![抵抗なしで LED をつなぐと…](docs/images/led-burnout.svg) |
-| [スピーカー (ボード外に配置)](examples/tone-speaker.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=tone-speaker)) | [演出レイヤー (煙のSVG) の例](examples/led-burnout.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=led-burnout)) |
-| ![XIAO ESP32S3 で音声入出力](docs/images/xiao-voice.svg) | |
-| [XIAO ESP32S3 + I2S マイク・アンプ](examples/xiao-voice.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=xiao-voice)) | |
-
-上の画像は、それぞれ1つのSVGファイルです。アニメーションはSVGの中のCSSで動いていて、回路データも埋め込まれています。
-SVGを保存してエディタにドロップすると、そのまま回路を編集できます。
-画像は `npm run images` で `examples/` から作り直せます。
+## できること
 
 - 静的ページのみで動きます (GitHub Pagesにそのまま置けます)
 - 秋月電子などで手に入る、定番部品を36種類内蔵しています (抵抗、LED、フルカラーLED、DIP IC、7セグ、LCD1602、DHT11、HC-SR04、リレー、モーター、サーボ、スピーカー、電池ボックス、Arduino Nano、Raspberry Pi Pico、ESP32、XIAO ESP32、I2Sマイク INMP441、I2Sアンプ MAX98357A、WS2812B、OLED SSD1306、Qwiic など)
@@ -41,7 +30,37 @@ SVGを保存してエディタにドロップすると、そのまま回路を�
 - 組み立て手順モード: ボードの外に部品を並べたところから、手順ごとに配置していく様子を見せられます
 - 配線の描き方を選べます: 曲がるジャンパ線 (弧を描いて浮く) か、市販のジャンパ線キット (板に沿って直角に折れ、長さで色が決まる。使う線の長さの一覧も出ます)
 
-![組み立て手順 (Lチカ)](docs/images/blink-nano-assembly.svg)
+## サンプル
+
+| | |
+|---|---|
+| ![トランジスタ2個で LED を交互に点滅](docs/images/flasher-kit.svg) | ![XIAO ESP32S3 で音声入出力](docs/images/xiao-voice.svg) |
+| [LED を交互に点滅 (無安定マルチバイブレータ)](examples/flasher-kit.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=flasher-kit)) | [XIAO ESP32S3 + I2S マイク・アンプ](examples/xiao-voice.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=xiao-voice)) |
+| ![トランジスタでモーター駆動 + サーボ](docs/images/motor-servo.svg) | ![HC-SR04 で距離アラーム](docs/images/distance-alarm.svg) |
+| [モーター + サーボ](examples/motor-servo.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=motor-servo)) | [HC-SR04 で距離アラーム](examples/distance-alarm.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=distance-alarm)) |
+| ![Pico でボタン入力とLED](docs/images/pico-button.svg) | ![カスタム部品の例: I2C OLED](docs/images/oled-custom-part.svg) |
+| [Pico でボタン入力とLED](examples/pico-button.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=pico-button)) | [独自部品 (OLED) の定義例](examples/oled-custom-part.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=oled-custom-part)) |
+| ![スピーカーで音を鳴らす](docs/images/tone-speaker.svg) | ![抵抗なしで LED をつなぐと…](docs/images/led-burnout.svg) |
+| [スピーカー (ボード外に配置)](examples/tone-speaker.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=tone-speaker)) | [演出レイヤー (煙のSVG) の例](examples/led-burnout.json) ([エディタで開く](https://monoradio102.github.io/breadboard-viewer/?example=led-burnout)) |
+
+上の画像は、それぞれ1つのSVGファイルです。アニメーションはSVGの中のCSSで動いていて、回路データも埋め込まれています。
+SVGを保存してエディタにドロップすると、そのまま回路を編集できます。
+画像は `npm run images` で `examples/` から作り直せます。
+
+### 配線の描き方
+
+同じ回路を、2通りの描き方で描けます (`"wireStyle"`、エディタではツールバーの「配線」)。
+
+| ジャンパ線キット (`"kit"`) | 曲がるジャンパ線 (`"flex"`, 既定値) |
+|---|---|
+| ![ジャンパ線キットで描いた回路](docs/images/flasher-kit.svg) | ![曲がるジャンパ線で描いた回路](docs/images/flasher-kit-flex.svg) |
+| 板に沿って直角に折れ、部品の下を通ります。色は長さで決まり、`check` で使う線の長さの一覧が出ます | 部品の上に浮いて、経由点で自由に曲げられます。色は自由に選べます |
+
+### 組み立て手順
+
+部品をボードの外に並べたところから、手順ごとに配置していく様子を描けます (`steps`、エディタでは「組み立て」)。
+
+![組み立て手順 (LED を交互に点滅)](docs/images/flasher-kit-assembly.svg)
 
 ## 使い方
 
@@ -117,7 +136,7 @@ bb.help()
 | `docs/FORMAT.md` | 回路ファイルの形式 |
 | `docs/OPS.md` | 編集操作 |
 | `examples/` | サンプル回路 |
-| `docs/images/` | README用の画像 (`npm run images` で生成) |
+| `docs/images/` | README用の画像 (`npm run images` で生成。`editor-demo.gif` は `npm run demo` で生成) |
 | `tools/bb.mjs` | コマンドライン |
 | `dist/bb.mjs` | コマンドラインを1ファイルにまとめたもの (`npm run build` で生成。Pagesから配布) |
 | `docs/agent/common.md` | AIエージェント向けの手引きの本文 (`llms.txt` と `SKILL.md` の元) |

@@ -88,5 +88,6 @@ PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx pl
 - [独自部品の定義例 (I2C OLED)](https://monoradio102.github.io/breadboard-viewer/examples/oled-custom-part.json)
 - [演出 SVG の例 (抵抗なしで LED をつなぐと…)](https://monoradio102.github.io/breadboard-viewer/examples/led-burnout.json)
 - [XIAO ESP32S3 で音声入出力 (I2S マイク + アンプ + WS2812B + OLED)](https://monoradio102.github.io/breadboard-viewer/examples/xiao-voice.json)
+- [トランジスタ2個で LED を交互に点滅 (ジャンパ線キットの描き方、組み立て手順つき)](https://monoradio102.github.io/breadboard-viewer/examples/flasher-kit.json)
 
 エディタで開くには `https://monoradio102.github.io/breadboard-viewer/?example=<名前>` (例: `?example=motor-servo`)。
