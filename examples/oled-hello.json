@@ -3,18 +3,18 @@
   "title": "I2C OLED に Hello (XIAO ESP32S3)",
   "board": "half",
   "parts": [
-    { "id": "U1", "type": "xiao", "at": "h12", "model": "ESP32S3" },
-    { "id": "DISP1", "type": "ssd1306", "pos": [14.5, 21], "idLabel": false }
+    { "id": "U1", "type": "xiao", "at": "d28", "rot": 180, "model": "ESP32S3" },
+    { "id": "DISP1", "type": "ssd1306", "at": "b14", "idLabel": false }
   ],
   "wires": [
-    { "id": "W1", "from": "a13", "to": "T-13", "color": "black", "note": "GND" },
-    { "id": "W2", "from": "a14", "to": "T+15", "color": "red", "note": "3V3" },
-    { "id": "W3", "from": "T-3", "to": "B-3", "color": "black", "note": "上下の − レールをつなぐ" },
-    { "id": "W4", "from": "T+29", "to": "B+29", "color": "red", "note": "上下の + レールをつなぐ (3V3)" },
-    { "id": "W5", "from": "DISP1.GND", "to": "B-12", "color": "black" },
-    { "id": "W6", "from": "DISP1.VCC", "to": "B+13", "color": "red" },
-    { "id": "SCL", "from": "DISP1.SCL", "to": "j14", "color": "yellow", "note": "SCL ← D2 (Wire.begin(D3, D2))" },
-    { "id": "SDA", "from": "DISP1.SDA", "to": "j15", "color": "blue", "note": "SDA ← D3" }
+    { "id": "W1", "from": "j26", "to": "B+25", "color": "red", "note": "3V3 → 下の + レール" },
+    { "id": "W2", "from": "j27", "to": "B-27", "color": "black", "note": "GND → 下の − レール" },
+    { "id": "W3", "from": "B+3", "to": "T+3", "color": "red", "note": "上下の + レールをつなぐ (3V3)" },
+    { "id": "W4", "from": "B-4", "to": "T-4", "color": "black", "note": "上下の − レールをつなぐ" },
+    { "id": "W5", "from": "a14", "to": "T-13", "color": "black", "note": "OLED の GND" },
+    { "id": "W6", "from": "a15", "to": "T+15", "color": "red", "note": "OLED の VCC" },
+    { "id": "SCL", "from": "a16", "to": "a23", "color": "yellow", "via": [[17, 3], [24, 3]], "note": "SCL ← D5 (SDA の上を通す)" },
+    { "id": "SDA", "from": "a17", "to": "b24", "color": "blue", "note": "SDA ← D4" }
   ],
   "animation": {
     "duration": 6190,
@@ -149,7 +149,7 @@
     "captions": [
       {
         "t": 0,
-        "text": "I2C (D3=SDA, D2=SCL) で OLED に文字を送る"
+        "text": "I2C (D4=SDA, D5=SCL) で OLED に文字を送る"
       }
     ]
   }
