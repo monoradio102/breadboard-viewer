@@ -2,7 +2,7 @@
 import { EFFECT_CSS, captionTrack, compileCss, cssDecl, initialState, stateAtTime, stillEffectCss, valuesOf } from "./animation.js";
 import { drawnAt, highlightAt, keyframesCss, offsetAt, planAssembly, rampTimes } from "./assembly.js";
 import { rotate } from "./circuit.js";
-import { circle, esc, g, line, n, rect, spriteImage, tag, text } from "./svg.js";
+import { attrs, circle, esc, g, line, n, rect, spriteImage, tag, text } from "./svg.js";
 
 export const SCALE = 24; // px per pitch unit for the default SVG size
 
@@ -65,8 +65,9 @@ export function renderSvg(result, options = {}) {
   const capRoom = captions ? 2.4 : 0; // the caption band sits below the content, not on it
   const vb = options.viewBox ? String(options.viewBox).split(/[\s,]+/).map(Number) : [b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2 + capRoom];
   const body = [
-    g(drawBoard(board), { class: "board" }),
-    g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params))).join(""), { class: "parts" }),
+    shadowDefs(svgId, vb),
+    g(drawBoard(board, svgId), { class: "board" }),
+    g(result.parts.map((p) => drawPart(p, ctxFor(p.id, p.def.animate, p.params), svgId)).join(""), { class: "parts" }),
     g(result.wires.map((w) => drawWire(w, ctxFor(w.id, wireAnimate))).join(""), { class: "wires" }),
     g(result.parts.map(drawTerminals).join(""), { class: "terminals" }),
     g(result.overlays.map((o) => drawOverlay(o, ctxFor(o.id, overlayAnimate), tl)).join(""), { class: "overlays" }),
@@ -177,9 +178,19 @@ function drawCaptions(tl, vb, animEls, svgId, animate, stateOf) {
   );
 }
 
-function drawBoard(board) {
+// Soft drop shadows for the board and the parts. The region is in user space (not the
+// element's box) so thin parts don't clip the blur; renderers only filter what's drawn.
+function shadowDefs(svgId, vb) {
+  const [x, y, w, h] = vb;
+  const region = { filterUnits: "userSpaceOnUse", x: x - 50, y: y - 50, width: w + 100, height: h + 100, "color-interpolation-filters": "sRGB" };
+  const shadow = (id, dx, dy, blur, opacity) =>
+    `<filter id="${svgId}-${id}"${attrs(region)}>${tag("feDropShadow", { dx, dy, stdDeviation: blur, "flood-color": "#000", "flood-opacity": opacity })}</filter>`;
+  return `<defs>${shadow("board-shadow", 0, 0.18, 0.22, 0.22)}${shadow("part-shadow", 0.05, 0.12, 0.07, 0.3)}</defs>`;
+}
+
+function drawBoard(board, svgId) {
   const b = board.bounds;
-  const out = [rect(b.x, b.y, b.w, b.h, { rx: 0.4, fill: "#f3efe6", stroke: "#d3ccbc", "stroke-width": 0.06 })];
+  const out = [rect(b.x, b.y, b.w, b.h, { rx: 0.4, fill: BOARD_COLOR, stroke: "#d3ccbc", "stroke-width": 0.06, filter: `url(#${svgId}-board-shadow)` })];
   const left = 1.2;
   const right = board.cols + 1.8;
   if (board.rails) {
@@ -208,17 +219,19 @@ function drawBoard(board) {
   return out.join("");
 }
 
-function drawPart(part, ctx) {
+// The shadow filter sits on an untransformed wrapper, so it falls the same way on rotated parts.
+function drawPart(part, ctx, svgId) {
   const attrs = { class: "part", "data-id": part.id, "data-type": part.type };
+  const shadow = { filter: `url(#${svgId}-part-shadow)` };
   if (part.def.mount === "leads") {
-    return g(part.def.render({ ...ctx, pins: part.pins, params: part.params, inst: part.inst }), attrs);
+    return g(part.def.render({ ...ctx, pins: part.pins, params: part.params, inst: part.inst }), { ...attrs, ...shadow });
   }
   const t = part.transform;
   const local = part.def.pins(part.params);
-  return g(part.def.render({ ...ctx, rot: t.rot, pins: local, params: part.params, inst: part.inst }), {
-    ...attrs,
+  const body = g(part.def.render({ ...ctx, rot: t.rot, pins: local, params: part.params, inst: part.inst }), {
     transform: `translate(${n(t.x)} ${n(t.y)}) rotate(${t.rot})`,
   });
+  return g(body, { ...attrs, ...shadow });
 }
 
 // Shape of a wire: straight segments through the via points, or (shape: "curve") a
@@ -298,9 +311,14 @@ function drawWire(w, ctx, drawIn = null) {
         ...ctx.anim("flow"),
       })
     : "";
+  // board-colored edge (cuts a gap where this wire crosses an earlier one), offset shadow,
+  // dark outline, the wire, and a thin highlight along its middle
   return g(
-    tag("path", { ...common, stroke: "rgba(0,0,0,.35)", "stroke-width": 0.36, ...drawable }) +
-      tag("path", { ...common, stroke: color, "stroke-width": 0.26, ...drawable }) +
+    tag("path", { ...common, stroke: BOARD_COLOR, "stroke-width": 0.46, ...drawable }) +
+      tag("path", { ...common, stroke: "rgba(0,0,0,.2)", "stroke-width": 0.34, transform: "translate(0.04 0.1)", ...drawable }) +
+      tag("path", { ...common, stroke: "rgba(0,0,0,.35)", "stroke-width": 0.34, ...drawable }) +
+      tag("path", { ...common, stroke: color, "stroke-width": 0.25, ...drawable }) +
+      tag("path", { ...common, stroke: "rgba(255,255,255,.4)", "stroke-width": 0.06, ...drawable }) +
       flow +
       circle(w.a.x, w.a.y, 0.13, { fill: "#a7adb3" }) +
       circle(w.b.x, w.b.y, 0.13, { fill: "#a7adb3" }),
@@ -357,6 +375,7 @@ function drawProblems(result) {
 }
 
 const ACCENT = "#1e6fd9";
+const BOARD_COLOR = "#f3efe6";
 
 function handle(x, y, owner, name) {
   return circle(x, y, 0.32, {
@@ -474,7 +493,7 @@ function renderAssemblySvg(result, options) {
     };
     const s = plan.stepOf.has(p.id) ? plan.start(plan.stepOf.get(p.id)) + plan.T.lead : 0;
     animated(p.id, rampTimes(s, plan.T.move), move);
-    const inner = drawPart(p, ctxStatic(p.id, p.def.animate, p.params)) + (labels ? drawLabel(p) : "") + drawTerminals(p);
+    const inner = drawPart(p, ctxStatic(p.id, p.def.animate, p.params), svgId) + (labels ? drawLabel(p) : "") + drawTerminals(p);
     return g(inner, { "data-asm": p.id, style: move(t) });
   });
 
@@ -533,7 +552,8 @@ function renderAssemblySvg(result, options) {
   const capState = (track) => (still ? stateAtTime(track, t) : initialState(track));
   const captions = withCaptions ? drawCaptions(capTl, vb, animEls, svgId, !still, capState) : "";
   const body = [
-    g(drawBoard(result.board), { class: "board" }),
+    shadowDefs(svgId, vb),
+    g(drawBoard(result.board, svgId), { class: "board" }),
     g(parts.join(""), { class: "parts" }),
     g(wires.join(""), { class: "wires" }),
     g(overlays.join(""), { class: "overlays" }),
