@@ -124,15 +124,6 @@ test("wires: via points as holes or [x, y], curves and bend", async () => {
   assert.match(r.warnings.join("\n"), /W3: shape は/);
 });
 
-test("share URLs round-trip the circuit through the fragment", async () => {
-  const { decodeShare, shareCodeFromHash, shareUrl } = await import("../src/io.js");
-  const c = load("motor-servo");
-  const url = await shareUrl(c, "https://example.com/viewer/");
-  assert.match(url, /^https:\/\/example\.com\/viewer\/#c=[A-Za-z0-9_-]+$/);
-  assert.deepEqual(await decodeShare(shareCodeFromHash(new URL(url).hash)), c);
-  assert.equal(shareCodeFromHash("#x=1"), null);
-});
-
 test("every built-in part can be auto-placed, validated and rendered", async () => {
   const { BUILTIN_PARTS } = await import("../src/parts/builtin.js");
   const { applyOps } = await import("../src/ops.js");

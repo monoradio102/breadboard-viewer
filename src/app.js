@@ -1,7 +1,7 @@
 // Browser UI. Every edit goes through ops.js (the same operations AI agents use via window.bb).
 import { BOARD_TYPES } from "./board.js";
 import { describe, resolveCircuit, stripOf } from "./circuit.js";
-import { decodeShare, emptyCircuit, parseCircuitText, shareCodeFromHash, shareUrl, stringifyCircuit } from "./io.js";
+import { emptyCircuit, parseCircuitText, stringifyCircuit } from "./io.js";
 import { OP_NAMES, OpError, applyOps, normalize } from "./ops.js";
 import { WIRE_COLORS, renderSvg } from "./render.js";
 
@@ -125,7 +125,7 @@ function draw(previewResult = result, extra = {}) {
 }
 
 // ---- animation player ----
-// Re-rendering creates new CSS animations; they are re-synced to the shared clock here.
+// Re-rendering creates new CSS animations; they are re-synced to one clock here.
 
 const player = { playing: true, start: performance.now(), time: 0 };
 
@@ -688,15 +688,6 @@ async function svgToPng(svg, { scale = 2, background = null } = {}) {
     URL.revokeObjectURL(url);
   }
 }
-$("btn-share").addEventListener("click", async () => {
-  const url = await shareUrl(circuit, location.href.split("#")[0]);
-  try {
-    await navigator.clipboard.writeText(url);
-    el.status.textContent = `共有URLをコピーしました (${url.length}文字)`;
-  } catch {
-    window.prompt("共有URL (コピーしてください)", url);
-  }
-});
 $("btn-new").addEventListener("click", () => commit(emptyCircuit()));
 $("btn-open").addEventListener("click", () => el.file.click());
 el.file.addEventListener("change", async () => {
@@ -784,8 +775,6 @@ window.bb = {
       params: Object.fromEntries(Object.entries(d.params ?? {}).map(([k, s]) => [k, s.default])),
       pins: d.pins(Object.fromEntries(Object.entries(d.params ?? {}).map(([k, s]) => [k, s.default]))).map((p) => p.name),
     })),
-  /** Share URL with the circuit in the fragment. */
-  shareUrl: () => shareUrl(circuit, location.href.split("#")[0]),
   /** SVG with the circuit embedded; { time: ms } gives a still frame. */
   svg: (opts = {}) => renderSvg(result, { embed: circuit, ...opts }),
   /** PNG (Blob) of the frame at { time } (default: now); background null = transparent. */
@@ -795,33 +784,9 @@ window.bb = {
     "bb.get() / bb.load(json) / bb.apply([{op:'addPart',type:'led',at:'a10'}, ...]) / bb.check() / bb.inspect('a10') / bb.parts() / bb.undo() — 詳細は docs/OPS.md",
 };
 
-window.addEventListener("hashchange", async () => {
-  const code = shareCodeFromHash(location.hash);
-  if (!code) return;
-  try {
-    selection = null;
-    commit(await decodeShare(code));
-    history.replaceState(null, "", location.pathname + location.search);
-  } catch (e) {
-    showMessages([`共有URLを読み込めませんでした: ${e.message}`], []);
-  }
-});
-
 // ---- start ----
 
 (async () => {
-  // a shared URL (#c=...) wins over the last session; the hash is then cleared so a reload
-  // keeps later edits (they are in localStorage)
-  const code = shareCodeFromHash(location.hash);
-  if (code) {
-    try {
-      commit(await decodeShare(code), { record: false });
-      history.replaceState(null, "", location.pathname + location.search);
-      return;
-    } catch (e) {
-      showMessages([`共有URLを読み込めませんでした: ${e.message}`], []);
-    }
-  }
   // ?example=<name> opens a bundled example (used by the README links)
   const example = new URLSearchParams(location.search).get("example");
   if (example && /^[\w-]+$/.test(example)) {
