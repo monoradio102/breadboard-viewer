@@ -50,3 +50,34 @@ export function emptyCircuit() {
   return { version: 1, title: "", board: "half", parts: [], wires: [] };
 }
 
+
+// ---- part libraries ----
+// A library is { "name": "...", "partDefs": [...] }, a bare array of definitions, or any
+// circuit file (its partDefs are taken). Returns { name, defs, errors }.
+export function parseLibrary(text, fromJson) {
+  const data = parseCircuitText(text);
+  const list = Array.isArray(data) ? data : data?.partDefs;
+  if (!Array.isArray(list)) throw new Error("部品定義 (partDefs) が見つかりません");
+  const defs = [];
+  const errors = [];
+  for (const def of list) {
+    try {
+      fromJson(def);
+      defs.push(def);
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+  return { name: Array.isArray(data) ? "" : (data.name ?? data.title ?? ""), defs, errors };
+}
+
+// Merges definitions by type; later ones win.
+export function mergeDefs(...lists) {
+  const byType = new Map();
+  for (const list of lists) for (const def of list ?? []) byType.set(def.type, def);
+  return [...byType.values()];
+}
+
+export function stringifyLibrary(name, defs) {
+  return `${JSON.stringify({ name, partDefs: defs }, null, 2)}\n`;
+}

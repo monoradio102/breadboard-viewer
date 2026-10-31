@@ -50,6 +50,7 @@ await bb.png({ background: null })     // その瞬間の透過PNG (Blob)
 | `remove` | `id` | 部品または配線を削除します。部品を削除すると、そのピン (`"R1.2"` など) につながった配線も削除します |
 | `addWire` | `from`, `to`, (`color`, `id`, `via`, `shape`, `bend`, `note`) | ジャンパ線を追加します。`id` を省略すると `W1`, `W2`… を自動で付けます |
 | `addOverlay` | `svg`, `x`, `y`, `w`, `h`, (`id`, `fit`) | 任意のSVGを演出レイヤーとして追加します (`docs/FORMAT.md` 参照)。`move` の `pos` で位置を、`update` で大きさなどを変えられます |
+| `definePart` | `def` | 独自部品の定義 (`partDefs` の1件) を追加します。同じ `type` があれば差し替えます |
 | `animate` | `target`, `keys`, (`replace` = true) | 部品または配線のアニメーションのキーを設定します。`replace: false` にすると、既存のキーに追加します |
 | `setAnimation` | `duration`, `loop`, `captions`, `tracks` のうち必要なもの / `clear: true` | アニメーションの設定を上書きでマージします。`clear: true` でアニメーションを削除します |
 | `setBoard` | `board` | ボードの種類を変更します (`full` / `half` / `mini`) |

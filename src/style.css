@@ -492,3 +492,20 @@ button.danger {
 .ai-link:hover {
   text-decoration: underline;
 }
+
+.lib-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lib-actions button {
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.part-detail .row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}

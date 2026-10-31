@@ -6,17 +6,19 @@
 //                                                                still frame of the animation
 //   node tools/bb.mjs frames <circuit.json> -o <dir> [--fps n] [--from ms] [--to ms] [--transparent] [--scale n]
 //                                                                PNG sequence of the animation (for ffmpeg)
-//   node tools/bb.mjs apply  <circuit.json> <ops.json | '<json>'> [-o out.json]
+//   node tools/bb.mjs apply  <circuit.json> <ops.json | '<json>'> [-o out.json] [--lib lib.json]
 //                                                                apply edit ops (docs/OPS.md);
-//                                                                writes back to circuit.json unless -o
-//   node tools/bb.mjs parts  [circuit.json]                      list part types, pins and params
+//                                                                writes back to circuit.json unless -o;
+//                                                                parts from --lib are copied in when used
+//   node tools/bb.mjs parts  [circuit.json] [--lib lib.json]     list part types, pins and params
+//   node tools/bb.mjs lib    <out.json> <circuit|library.json...> collect custom part definitions
 //   node tools/bb.mjs new    <circuit.json> [board]               create an empty circuit
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, resolveCircuit } from "../src/circuit.js";
-import { emptyCircuit, parseCircuitText, stringifyCircuit } from "../src/io.js";
+import { emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "../src/io.js";
 import { OpError, applyOps } from "../src/ops.js";
-import { createRegistry } from "../src/parts/registry.js";
+import { createRegistry, fromJson } from "../src/parts/registry.js";
 import { renderSvg } from "../src/render.js";
 import { openCapture } from "./capture.mjs";
 
@@ -24,8 +26,9 @@ const USAGE = `usage:
   bb.mjs check  <circuit.json>
   bb.mjs render <circuit.json> [-o out.svg|out.png] [--time ms] [--transparent] [--scale n] [--no-captions]
   bb.mjs frames <circuit.json> -o <dir> [--fps 30] [--from ms] [--to ms] [--transparent] [--scale 1] [--no-captions]
-  bb.mjs apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json]
-  bb.mjs parts  [circuit.json]
+  bb.mjs apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json] [--lib lib.json]
+  bb.mjs parts  [circuit.json] [--lib lib.json]
+  bb.mjs lib    <out.json> <circuit.json|library.json ...>
   bb.mjs new    <circuit.json> [full|half|mini]`;
 
 const args = process.argv.slice(2);
@@ -44,10 +47,18 @@ const transparent = flag("--transparent");
 const captions = !flag("--no-captions");
 const scale = option("--scale");
 const fps = Number(option("--fps") ?? 30);
+const libFiles = [];
+for (let f = option("--lib"); f !== undefined; f = option("--lib")) libFiles.push(f);
 const from = option("--from");
 const to = option("--to");
 const [cmd, file, extra] = args;
 const readCircuit = (f) => parseCircuitText(readFileSync(f, "utf8"));
+const readLibrary = (f) => {
+  const lib = parseLibrary(readFileSync(f, "utf8"), fromJson);
+  for (const e of lib.errors) console.error(`WARN:  ${f}: ${e}`);
+  return lib.defs;
+};
+const libDefs = () => mergeDefs(...libFiles.map(readLibrary));
 
 try {
   await main();
@@ -103,7 +114,8 @@ async function main() {
     }
     case "apply": {
       need(file && extra);
-      const ops = JSON.parse(existsSync(extra) ? readFileSync(extra, "utf8") : extra);
+      let ops = JSON.parse(existsSync(extra) ? readFileSync(extra, "utf8") : extra);
+      ops = withLibraryParts(readCircuit(file), Array.isArray(ops) ? ops : [ops], libDefs());
       try {
         const { circuit, ids } = applyOps(readCircuit(file), ops);
         writeFileSync(out ?? file, stringifyCircuit(circuit));
@@ -119,13 +131,20 @@ async function main() {
       break;
     }
     case "parts": {
-      const registry = createRegistry(file ? (readCircuit(file).partDefs ?? []) : []);
+      const registry = createRegistry(mergeDefs(libDefs(), file ? readCircuit(file).partDefs : []));
       for (const def of registry.parts.values()) {
         const params = Object.fromEntries(Object.entries(def.params ?? {}).map(([k, s]) => [k, s.default]));
         const pins = def.pins(params).map((p) => p.name);
         const paramText = Object.entries(params).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
         console.log(`${def.type}  [${def.mount}]  ${def.name}\n    pins: ${pins.join(", ")}${paramText ? `\n    params: ${paramText}` : ""}`);
       }
+      break;
+    }
+    case "lib": {
+      need(file && args.length > 2);
+      const defs = mergeDefs(...args.slice(2).map(readLibrary));
+      writeFileSync(file, stringifyLibrary(file.replace(/^.*\//, "").replace(/\.json$/, ""), defs));
+      console.log(`${defs.length} part(s): ${defs.map((d) => d.type).join(", ")} -> ${file}`);
       break;
     }
     case "new": {
@@ -137,6 +156,26 @@ async function main() {
       console.error(USAGE);
       process.exit(2);
   }
+}
+
+// Before each addPart whose type the circuit does not know yet, insert a definePart op
+// with the definition from the libraries.
+function withLibraryParts(circuit, ops, defs) {
+  if (!defs.length) return ops;
+  const known = new Set([...createRegistry(circuit.partDefs ?? []).parts.keys()]);
+  const out = [];
+  for (const op of ops) {
+    if (op?.op === "definePart" && op.def?.type) known.add(op.def.type);
+    if (op?.op === "addPart" && !known.has(op.type)) {
+      const def = defs.find((d) => d.type === op.type);
+      if (def) {
+        out.push({ op: "definePart", def });
+        known.add(def.type);
+      }
+    }
+    out.push(op);
+  }
+  return out;
 }
 
 function need(ok) {

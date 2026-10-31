@@ -1577,6 +1577,31 @@ function unescapeXml(s) {
 function emptyCircuit() {
   return { version: 1, title: "", board: "half", parts: [], wires: [] };
 }
+function parseLibrary(text2, fromJson2) {
+  const data = parseCircuitText(text2);
+  const list = Array.isArray(data) ? data : data?.partDefs;
+  if (!Array.isArray(list)) throw new Error("\u90E8\u54C1\u5B9A\u7FA9 (partDefs) \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
+  const defs = [];
+  const errors = [];
+  for (const def of list) {
+    try {
+      fromJson2(def);
+      defs.push(def);
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+  return { name: Array.isArray(data) ? "" : data.name ?? data.title ?? "", defs, errors };
+}
+function mergeDefs(...lists) {
+  const byType = /* @__PURE__ */ new Map();
+  for (const list of lists) for (const def of list ?? []) byType.set(def.type, def);
+  return [...byType.values()];
+}
+function stringifyLibrary(name, defs) {
+  return `${JSON.stringify({ name, partDefs: defs }, null, 2)}
+`;
+}
 
 // src/ops.js
 var OpError = class extends Error {
@@ -1809,8 +1834,20 @@ var OPS = {
   },
   setTitle(c, { title }) {
     return { circuit: { ...c, title: String(title ?? "") } };
+  },
+  // Adds a JSON part definition to the circuit (replaces one with the same type).
+  definePart(c, { def }) {
+    try {
+      fromJson(def);
+    } catch (e) {
+      fail(e.message);
+    }
+    if (BUILTIN_TYPES.has(def.type)) fail(`"${def.type}" \u306F\u7D44\u307F\u8FBC\u307F\u90E8\u54C1\u3068\u540C\u3058\u540D\u524D\u3067\u3059`);
+    const others = (c.partDefs ?? []).filter((d) => d.type !== def.type);
+    return { circuit: { ...c, partDefs: [...others, def] }, id: def.type };
   }
 };
+var BUILTIN_TYPES = new Set(BUILTIN_PARTS.map((p) => p.type));
 var OP_NAMES = Object.keys(OPS);
 function registryFor(c) {
   return createRegistry(c.partDefs ?? []);
@@ -2277,8 +2314,9 @@ var USAGE = `usage:
   bb.mjs check  <circuit.json>
   bb.mjs render <circuit.json> [-o out.svg|out.png] [--time ms] [--transparent] [--scale n] [--no-captions]
   bb.mjs frames <circuit.json> -o <dir> [--fps 30] [--from ms] [--to ms] [--transparent] [--scale 1] [--no-captions]
-  bb.mjs apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json]
-  bb.mjs parts  [circuit.json]
+  bb.mjs apply  <circuit.json> <ops.json | '<ops json>'> [-o out.json] [--lib lib.json]
+  bb.mjs parts  [circuit.json] [--lib lib.json]
+  bb.mjs lib    <out.json> <circuit.json|library.json ...>
   bb.mjs new    <circuit.json> [full|half|mini]`;
 var args = process.argv.slice(2);
 var option = (name) => {
@@ -2296,10 +2334,18 @@ var transparent = flag("--transparent");
 var captions = !flag("--no-captions");
 var scale = option("--scale");
 var fps = Number(option("--fps") ?? 30);
+var libFiles = [];
+for (let f = option("--lib"); f !== void 0; f = option("--lib")) libFiles.push(f);
 var from = option("--from");
 var to = option("--to");
 var [cmd, file, extra] = args;
 var readCircuit = (f) => parseCircuitText(readFileSync(f, "utf8"));
+var readLibrary = (f) => {
+  const lib = parseLibrary(readFileSync(f, "utf8"), fromJson);
+  for (const e of lib.errors) console.error(`WARN:  ${f}: ${e}`);
+  return lib.defs;
+};
+var libDefs = () => mergeDefs(...libFiles.map(readLibrary));
 try {
   await main();
 } catch (e) {
@@ -2352,7 +2398,8 @@ async function main() {
     }
     case "apply": {
       need(file && extra);
-      const ops = JSON.parse(existsSync(extra) ? readFileSync(extra, "utf8") : extra);
+      let ops = JSON.parse(existsSync(extra) ? readFileSync(extra, "utf8") : extra);
+      ops = withLibraryParts(readCircuit(file), Array.isArray(ops) ? ops : [ops], libDefs());
       try {
         const { circuit, ids } = applyOps(readCircuit(file), ops);
         writeFileSync(out ?? file, stringifyCircuit(circuit));
@@ -2368,7 +2415,7 @@ async function main() {
       break;
     }
     case "parts": {
-      const registry = createRegistry(file ? readCircuit(file).partDefs ?? [] : []);
+      const registry = createRegistry(mergeDefs(libDefs(), file ? readCircuit(file).partDefs : []));
       for (const def of registry.parts.values()) {
         const params = Object.fromEntries(Object.entries(def.params ?? {}).map(([k, s]) => [k, s.default]));
         const pins = def.pins(params).map((p) => p.name);
@@ -2377,6 +2424,13 @@ async function main() {
     pins: ${pins.join(", ")}${paramText ? `
     params: ${paramText}` : ""}`);
       }
+      break;
+    }
+    case "lib": {
+      need(file && args.length > 2);
+      const defs = mergeDefs(...args.slice(2).map(readLibrary));
+      writeFileSync(file, stringifyLibrary(file.replace(/^.*\//, "").replace(/\.json$/, ""), defs));
+      console.log(`${defs.length} part(s): ${defs.map((d) => d.type).join(", ")} -> ${file}`);
       break;
     }
     case "new": {
@@ -2388,6 +2442,23 @@ async function main() {
       console.error(USAGE);
       process.exit(2);
   }
+}
+function withLibraryParts(circuit, ops, defs) {
+  if (!defs.length) return ops;
+  const known = /* @__PURE__ */ new Set([...createRegistry(circuit.partDefs ?? []).parts.keys()]);
+  const out2 = [];
+  for (const op of ops) {
+    if (op?.op === "definePart" && op.def?.type) known.add(op.def.type);
+    if (op?.op === "addPart" && !known.has(op.type)) {
+      const def = defs.find((d) => d.type === op.type);
+      if (def) {
+        out2.push({ op: "definePart", def });
+        known.add(def.type);
+      }
+    }
+    out2.push(op);
+  }
+  return out2;
 }
 function need(ok) {
   if (ok) return;

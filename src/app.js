@@ -1,12 +1,14 @@
 // Browser UI. Every edit goes through ops.js (the same operations AI agents use via window.bb).
 import { BOARD_TYPES } from "./board.js";
 import { describe, resolveCircuit, stripOf } from "./circuit.js";
-import { emptyCircuit, parseCircuitText, stringifyCircuit } from "./io.js";
+import { emptyCircuit, mergeDefs, parseCircuitText, parseLibrary, stringifyCircuit, stringifyLibrary } from "./io.js";
+import { fromJson } from "./parts/registry.js";
 import { OP_NAMES, OpError, applyOps, normalize } from "./ops.js";
 import { WIRE_COLORS, contentBounds, renderSvg } from "./render.js";
 
 const STORAGE_KEY = "breadboard-viewer:last";
 const CAPTIONS_KEY = "breadboard-viewer:captions";
+const LIBRARY_KEY = "breadboard-viewer:library";
 const PART_MIME = "application/x-breadboard-part";
 
 const $ = (id) => document.getElementById(id);
@@ -23,6 +25,7 @@ const el = {
   inspector: $("inspector"),
   file: $("file"),
   board: $("board-type"),
+  libFile: $("lib-file"),
   wireColor: $("wire-color"),
   undo: $("btn-undo"),
   redo: $("btn-redo"),
@@ -43,6 +46,7 @@ let selection = null; // id of the selected part or wire
 let drag = null;
 let view = null; // visible area {x, y, w, h} in pitch units (pan / zoom); null = fit on next draw
 let showCaptions = readCaptionsSetting();
+let library = readLibrarySetting(); // "my parts": JSON part definitions kept in this browser
 const undoStack = { past: [], future: [] };
 
 // ---- state ----
@@ -167,6 +171,15 @@ new ResizeObserver(() => {
   view = { x: cx - sw / k / 2, y: cy - sh / k / 2, w: sw / k, h: sh / k };
   applyView();
 }).observe(el.stage);
+
+function readLibrarySetting() {
+  try {
+    const defs = JSON.parse(localStorage.getItem(LIBRARY_KEY) ?? "[]");
+    return Array.isArray(defs) ? defs : [];
+  } catch {
+    return [];
+  }
+}
 
 function readCaptionsSetting() {
   try {
@@ -631,13 +644,24 @@ el.title.addEventListener("change", () => tryApply([{ op: "setTitle", title: el.
 
 function renderPartList() {
   const q = el.partFilter.value.trim().toLowerCase();
-  const byCat = new Map();
-  for (const def of result.registry?.parts.values() ?? []) {
+  const byCat = new Map([["マイ部品", []]]);
+  const add = (cat, def) => {
     const hay = `${def.type} ${def.name} ${def.category} ${def.description}`.toLowerCase();
-    if (q && !hay.includes(q)) continue;
-    if (!byCat.has(def.category)) byCat.set(def.category, []);
-    byCat.get(def.category).push(def);
+    if (q && !hay.includes(q)) return;
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat).push(def);
+  };
+  // library parts first; a type the circuit already defines is shown from the circuit
+  for (const json of library) {
+    if (result.registry?.get(json.type)) continue;
+    try {
+      add("マイ部品", fromJson(json));
+    } catch {
+      // invalid entries are skipped (they were validated on import)
+    }
   }
+  for (const def of result.registry?.parts.values() ?? []) add(def.category, def);
+  if (!byCat.get("マイ部品").length) byCat.delete("マイ部品");
   const frag = document.createDocumentFragment();
   for (const [cat, defs] of byCat) {
     frag.append(node("h3", cat));
@@ -675,10 +699,70 @@ function showPartDetail(def) {
     .map(([k, s]) => `${k} = ${JSON.stringify(s.default)}  … ${s.description ?? ""}`)
     .join("\n");
   if (paramText) d.append(node("pre", paramText));
-  d.append(
-    button("回路に追加", () => selectAfter(tryApply([{ op: "addPart", type: def.type }])), "primary"),
-  );
+  const row = node("div", undefined, "row");
+  row.append(button("回路に追加", () => selectAfter(tryApply([...libraryOps(def.type), { op: "addPart", type: def.type }])), "primary"));
+  if (!def.builtin && def.json) {
+    const inLibrary = library.some((x) => x.type === def.type);
+    if (inLibrary) row.append(button("マイ部品から削除", () => removeFromLibrary(def.type), "danger"));
+    else row.append(button("マイ部品に保存", () => addToLibrary([def.json])));
+  }
+  d.append(row);
 }
+
+// ---- my parts library ----
+
+// definePart op for a library part the circuit does not define yet
+function libraryOps(type) {
+  if (result.registry?.get(type)) return [];
+  const def = library.find((d) => d.type === type);
+  return def ? [{ op: "definePart", def }] : [];
+}
+
+function saveLibrary() {
+  try {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
+  } catch {
+    flash("ブラウザに保存できませんでした (プライベートモードなど)");
+  }
+  renderPartList();
+  el.partDetail.hidden = true;
+}
+
+function addToLibrary(defs) {
+  library = mergeDefs(library, defs);
+  saveLibrary();
+  el.status.textContent = `マイ部品に保存しました: ${defs.map((d) => d.type).join(", ")}`;
+}
+
+function removeFromLibrary(type) {
+  library = library.filter((d) => d.type !== type);
+  saveLibrary();
+}
+
+function importLibrary(text) {
+  try {
+    const lib = parseLibrary(text, fromJson);
+    if (!lib.defs.length) return showMessages([`部品定義が見つかりませんでした`, ...lib.errors], []);
+    addToLibrary(lib.defs);
+    if (lib.errors.length) showMessages(lib.errors, []);
+  } catch (e) {
+    showMessages([`部品を読み込めませんでした: ${e.message}`], []);
+  }
+}
+
+$("btn-lib-import").addEventListener("click", () => el.libFile.click());
+el.libFile.addEventListener("change", async () => {
+  for (const f of el.libFile.files ?? []) importLibrary(await f.text());
+  el.libFile.value = "";
+});
+$("btn-lib-save").addEventListener("click", () => {
+  if (!circuit.partDefs?.length) return flash("この回路には独自部品がありません");
+  addToLibrary(circuit.partDefs);
+});
+$("btn-lib-export").addEventListener("click", () => {
+  if (!library.length) return flash("マイ部品は空です");
+  download("my-parts.json", stringifyLibrary("my-parts", library), "application/json");
+});
 
 // drop a part from the list onto the board
 el.stage.addEventListener("dragover", (ev) => {
@@ -693,8 +777,8 @@ el.stage.addEventListener("drop", (ev) => {
   ev.stopPropagation();
   const pt = svgPoint(ev);
   const hole = holeNear(pt, 0.7);
-  if (hole) return selectAfter(tryApply([{ op: "addPart", type, at: hole }]));
-  if (!onBoard(pt.x, pt.y)) return selectAfter(tryApply([{ op: "addPart", type, pos: [half(pt.x), half(pt.y)] }]));
+  if (hole) return selectAfter(tryApply([...libraryOps(type), { op: "addPart", type, at: hole }]));
+  if (!onBoard(pt.x, pt.y)) return selectAfter(tryApply([...libraryOps(type), { op: "addPart", type, pos: [half(pt.x), half(pt.y)] }]));
   flash("穴の上か、ボードの外にドロップしてください");
 });
 
@@ -863,8 +947,19 @@ window.addEventListener("drop", async (ev) => {
   if (text.trimStart().startsWith("<") && !text.includes('id="breadboard-circuit"') && el.stage.contains(ev.target)) {
     return addOverlayFromSvg(text, svgPoint(ev));
   }
+  if (isLibraryFile(text)) return importLibrary(text);
   loadText(text);
 });
+
+// a JSON with part definitions but no parts is a library, not a circuit
+function isLibraryFile(text) {
+  try {
+    const data = JSON.parse(text);
+    return Array.isArray(data) || (Array.isArray(data?.partDefs) && !Array.isArray(data?.parts));
+  } catch {
+    return false;
+  }
+}
 
 function addOverlayFromSvg(svg, at) {
   const ratio = svgAspect(svg);
@@ -888,6 +983,9 @@ window.bb = {
   get: () => structuredClone(circuit),
   /** Replace the circuit (object, JSON text, or exported SVG text). */
   load: (c) => commit(typeof c === "string" ? parseCircuitText(c) : c),
+  /** My parts library: list / add definitions (kept in this browser). */
+  library: () => structuredClone(library),
+  addToLibrary: (defs) => addToLibrary(Array.isArray(defs) ? defs : [defs]),
   /** Add user SVG drawn above the circuit (x, y, w, h in pitch units). */
   addOverlay: (svg, box) => apply([{ op: "addOverlay", svg, ...box }])[0],
   /** Apply edit ops (see docs/OPS.md) as one undo step. Throws on error. Returns affected ids. */

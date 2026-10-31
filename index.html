@@ -42,6 +42,12 @@
     <main class="layout">
       <aside class="panel parts-panel">
         <h2>部品一覧</h2>
+        <div class="lib-actions" title="マイ部品: 独自部品の定義をこのブラウザに保存して使い回せます">
+          <button id="btn-lib-import" type="button" title="部品ライブラリ (JSON) や回路ファイルの独自部品を読み込む">部品を読み込む</button>
+          <button id="btn-lib-save" type="button" title="この回路の独自部品をマイ部品に保存">回路から保存</button>
+          <button id="btn-lib-export" type="button" title="マイ部品をJSONで書き出す">書き出す</button>
+          <input id="lib-file" type="file" accept=".json,.svg,application/json,image/svg+xml" multiple hidden />
+        </div>
         <input id="part-filter" type="search" placeholder="絞り込み" aria-label="部品を絞り込み" />
         <div id="part-list"></div>
         <div id="part-detail" class="part-detail" hidden></div>

@@ -29,7 +29,7 @@ SVGを保存してエディタにドロップすると、そのまま回路を�
 
 - 静的ページのみで動きます (GitHub Pagesにそのまま置けます)
 - 秋月電子などで手に入る、定番部品を30種類内蔵しています (抵抗、LED、フルカラーLED、DIP IC、7セグ、LCD1602、DHT11、HC-SR04、リレー、モーター、サーボ、スピーカー、電池ボックス、Arduino Nano、Raspberry Pi Pico、ESP32 など)
-- 内蔵されていない部品は、回路ファイルの中にJSONで定義できます ([形式](docs/FORMAT.md))
+- 内蔵されていない部品は、回路ファイルの中にJSONで定義できます ([形式](docs/FORMAT.md))。定義した部品は「マイ部品」ライブラリとして保存・流し込みができます
 - 回路ファイル1つ (JSON) で、独自部品も含めて共有できます。書き出したSVGにも回路データが入っているので、SVGをドロップすれば元の回路に戻せます
 - 回路の検証と、ネットリスト (どのピン同士がつながっているか) の表示ができます
 - 動作のアニメーション (LEDの点滅、モーターの回転、サーボ、ボタン操作、信号の流れ、キャプション) を台本として書けます。書き出したSVGは、ファイル単体でもアニメーションします
@@ -43,6 +43,7 @@ npm run serve   # http://localhost:8000 で開く
 ```
 
 - 左: 部品一覧。ボードにドラッグして置くか、部品をクリックして「回路に追加」を押します
+  - 「部品を読み込む」: 部品ライブラリ (JSON) や回路ファイルの独自部品を「マイ部品」に取り込みます (ページへのドロップでも可)。「回路から保存」「書き出す」も使えます
 - 中央: ブレッドボード (領域全体がキャンバスです。何もないところをドラッグで移動、ホイール / ピンチで拡大・縮小、「全体」で全体表示)
   - 部品をクリックで選択、ドラッグで移動します。LEDや抵抗などは、選択すると出る丸いハンドルで、足を1本ずつ動かせます
   - ボードの外にドラッグすると、部品を自由な位置に置けます (サーボ、スピーカー、電池ボックスなど)。ボードの上に戻すと穴に挿さります
@@ -64,6 +65,8 @@ node tools/bb.mjs parts                                      # 使える部品�
 node tools/bb.mjs new my.json half                           # 空の回路を作る
 node tools/bb.mjs apply my.json '[{"op":"addPart","type":"led","at":"a10"}]'  # 編集操作を適用する
 node tools/bb.mjs check examples/blink-nano.json             # 検証とネットリストの表示
+node tools/bb.mjs lib my-parts.json examples/oled-custom-part.json            # 独自部品を集めてライブラリにする
+node tools/bb.mjs apply my.json '[{"op":"addPart","type":"oled-ssd1306-i2c","at":"d24"}]' --lib my-parts.json  # ライブラリの部品を使う
 node tools/bb.mjs render examples/blink-nano.json -o out.svg # SVGに描画
 node tools/bb.mjs render examples/blink-nano.json -o out.png # PNGに描画 (Playwrightが必要)
 node tools/bb.mjs render examples/motor-servo.json -o f.png --time 1500 --transparent  # 1.5秒時点の透過PNG

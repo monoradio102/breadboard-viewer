@@ -16,10 +16,12 @@
 //   { "op": "animate", "target": "D1", "keys": [{ "t": 0, "on": true }, { "t": 500, "on": false }] }
 //   { "op": "setAnimation", "duration": 1000, "captions": [{ "t": 0, "text": "..." }] }
 //   { "op": "addOverlay", "svg": "<svg ...>...</svg>", "x": 10, "y": -4, "w": 6, "h": 6 }
+//   { "op": "definePart", "def": { "type": "my-sensor", "pins": [...], "shapes": [...] } }
 // See docs/OPS.md for the full list.
 import { createBoard } from "./board.js";
 import { findFreeSpot, resolveCircuit, rotate } from "./circuit.js";
-import { createRegistry } from "./parts/registry.js";
+import { BUILTIN_PARTS } from "./parts/builtin.js";
+import { createRegistry, fromJson } from "./parts/registry.js";
 import { spriteError } from "./svg.js";
 
 export class OpError extends Error {}
@@ -254,7 +256,21 @@ const OPS = {
   setTitle(c, { title }) {
     return { circuit: { ...c, title: String(title ?? "") } };
   },
+
+  // Adds a JSON part definition to the circuit (replaces one with the same type).
+  definePart(c, { def }) {
+    try {
+      fromJson(def);
+    } catch (e) {
+      fail(e.message);
+    }
+    if (BUILTIN_TYPES.has(def.type)) fail(`"${def.type}" は組み込み部品と同じ名前です`);
+    const others = (c.partDefs ?? []).filter((d) => d.type !== def.type);
+    return { circuit: { ...c, partDefs: [...others, def] }, id: def.type };
+  },
 };
+
+const BUILTIN_TYPES = new Set(BUILTIN_PARTS.map((p) => p.type));
 
 export const OP_NAMES = Object.keys(OPS);
 
