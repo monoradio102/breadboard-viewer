@@ -63,20 +63,27 @@
 | `diode` | A, K | leads | `model` ("1N4148", "1N4007"...) |
 | `capacitor` | 1, 2 | leads | `value` |
 | `electrolytic` | +, - | leads | `value` |
+| `rgbled` | R, K, G, B | leads | |
 | `cds` | 1, 2 | leads | |
+| `dht11` | VCC, DATA, NC, GND | rigid | |
+| `hcsr04` | VCC, TRIG, ECHO, GND | rigid | (本体はピンの上側に描かれます) |
 | `transistor` | `pinout` の文字 (E, C, B) | leads | `model`, `pinout` ("ECB", "EBC") |
 | `regulator` | IN, GND, OUT | rigid | `model` |
 | `button` | 1, 2, 3, 4 (1-2, 3-4 は内部で導通) | rigid | |
 | `trimmer` | 1, 2, 3 | rigid | `value` |
+| `pot` | 1, 2, 3 (ピン間2ピッチ) | rigid | `value` |
 | `buzzer` | +, - | rigid | |
 | `motor` | +, - | leads | |
 | `servo` | GND, VCC, SIG | rigid | (本体はコネクタの上側に描かれます) |
 | `seg7` | E, D, COM, C, DP, B, A, COM2, F, G | rigid | `color` |
+| `lcd1602` | GND, VCC, SDA, SCL | rigid | (I2C変換基板付き。本体はピンの上側に描かれます) |
+| `relay` | VCC, GND, IN | rigid | (1chリレーモジュール。本体はピンの上側に描かれます) |
 | `header` | 1..count | rigid | `count` |
 | `dip` | 1..count | rigid | `count`, `width`, `label`, `pinNames` |
 | `ne555` / `lm358` / `74hc595` | データシートのピン名 | rigid | `label` |
 | `nano` | TX1, RX0, ..., D13, A0..A7, 5V, VIN | rigid | |
 | `pico` | GP0.., GND.., 3V3, VSYS, VBUS | rigid | |
+| `esp32` | 3V3, EN, IO36.., GND.., 5V | rigid | `width` (列間隔, 既定値10) |
 
 同じ名前のピンが複数ある場合は、`GND`, `GND2`, `GND3`… のように番号を付けて区別します。
 各部品の詳しい説明は、アプリの部品一覧、または `src/parts/builtin.js` を見てください。
@@ -199,6 +206,11 @@ CSSアニメーションに変換してSVGに埋め込むので、書き出し�
 | 部品 | 状態 |
 |---|---|
 | `led` | `on` (bool), `brightness` (0〜1) |
+| `rgbled` | `r`, `g`, `b` (それぞれ 0〜1) |
+| `pot` | `angle` (0〜300°) |
+| `hcsr04` | `ping` (bool) |
+| `relay` | `on` (bool) |
+| `lcd1602` | `text` (`\n` で2行目), `backlight` (bool) |
 | `button` | `pressed` (bool) |
 | `buzzer` | `on` (bool) |
 | `motor` | `speed` (rpm, 負で逆回転) |

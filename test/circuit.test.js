@@ -132,3 +132,16 @@ test("share URLs round-trip the circuit through the fragment", async () => {
   assert.deepEqual(await decodeShare(shareCodeFromHash(new URL(url).hash)), c);
   assert.equal(shareCodeFromHash("#x=1"), null);
 });
+
+test("every built-in part can be auto-placed, validated and rendered", async () => {
+  const { BUILTIN_PARTS } = await import("../src/parts/builtin.js");
+  const { applyOps } = await import("../src/ops.js");
+  for (const def of BUILTIN_PARTS) {
+    const { circuit } = applyOps({ board: "full" }, [{ op: "addPart", type: def.type }]);
+    const r = resolveCircuit(circuit);
+    assert.deepEqual(r.errors, [], def.type);
+    const names = r.parts[0].pins.map((p) => p.name);
+    assert.equal(new Set(names).size, names.length, `${def.type}: pin names must be unique`);
+    assert.match(renderSvg(r), /<\/svg>$/, def.type);
+  }
+});

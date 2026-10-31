@@ -6,7 +6,7 @@
 //
 // Leads parts draw in board coordinates (ctx.pins are absolute positions).
 // Rigid parts draw in local coordinates (first pin at the origin); the renderer applies at/rot.
-import { circle, g, line, n, rect, tag, text } from "../svg.js";
+import { circle, esc, g, line, n, rect, tag, text } from "../svg.js";
 import {
   bandColors,
   centroid,
@@ -523,21 +523,271 @@ const seg7 = {
   },
 };
 
+const dht11 = {
+  type: "dht11",
+  name: "温湿度センサ DHT11",
+  category: "センサ",
+  description: "4ピン単体品。格子面を手前にして左から VCC, DATA, NC, GND。DATAは10kΩでVCCにプルアップ。",
+  mount: "rigid",
+  params: {},
+  pins: () => inline(["VCC", "DATA", "NC", "GND"]),
+  extent: [-0.9, -6.5, 3.9, 0.5],
+  render() {
+    let grid = "";
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 4; c++) grid += rect(0.05 + c * 0.75, -5.6 + r * 0.8, 0.45, 0.5, { rx: 0.08, fill: "#1b5f9e" });
+    return (
+      inline(["", "", "", ""]).map((p) => rect(p.x - 0.12, -0.6, 0.24, 0.6, { fill: "#b9c0c7" })).join("") +
+      rect(-0.86, -6.4, 4.72, 6.0, { rx: 0.2, fill: "#2b7bd0", stroke: "#1b5f9e", "stroke-width": 0.06 }) +
+      grid +
+      text(1.5, -1.3, "DHT11", { "font-size": 0.55, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" })
+    );
+  },
+};
+
+const hcsr04 = {
+  type: "hcsr04",
+  name: "超音波距離センサ HC-SR04",
+  category: "センサ",
+  description: "ピン: VCC, TRIG, ECHO, GND。本体はピンの上側に描く。ping で超音波を出すアニメーション。",
+  mount: "rigid",
+  params: {},
+  states: { ping: { type: "bool", default: false, description: "超音波を出している" } },
+  animate: () => ({ waves: (s) => ({ opacity: s.ping ? 1 : 0 }) }),
+  pins: () => inline(["VCC", "TRIG", "ECHO", "GND"]),
+  extent: [-7.4, -13.5, 10.4, 0.6],
+  render({ anim }) {
+    const can = (x, label) =>
+      circle(x, -3.9, 3.0, { fill: "#d7dbdf", stroke: "#8b9399", "stroke-width": 0.08 }) +
+      circle(x, -3.9, 2.3, { fill: "#4a4f55" }) +
+      circle(x, -3.9, 2.3, { fill: "none", stroke: "#6c737a", "stroke-width": 0.05, "stroke-dasharray": "0.15 0.15" }) +
+      text(x, -0.6, label, { "font-size": 0.5, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" });
+    const arc = (cls) => tag("path", { d: "M -2.6 -3.6 A 4.2 4.2 0 0 1 2.6 -3.6", fill: "none", stroke: "#29b6f6", "stroke-width": 0.16, class: cls });
+    return (
+      headerPins(inline(["", "", "", ""])) +
+      rect(-7.36, -7.6, 17.72, 7.9, { rx: 0.3, fill: "#1f5fa8", stroke: "#164477", "stroke-width": 0.06 }) +
+      can(-3.6, "T") +
+      can(6.6, "R") +
+      rect(0.2, -6.9, 2.6, 1.2, { fill: "#c9ccd0", rx: 0.1 }) +
+      text(1.5, -2.2, "HC-SR04", { "font-size": 0.55, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" }) +
+      g(g(arc("bb-wave") + arc("bb-wave bb-wave2"), anim("waves")), { transform: "translate(-3.6 -3.9)", "pointer-events": "none" })
+    );
+  },
+};
+
+const relay = {
+  type: "relay",
+  name: "リレーモジュール (1ch, 5V)",
+  category: "出力",
+  description: "ピン: VCC, GND, IN。本体はピンの上側に描く (端子台 NO / COM / NC は上端)。on で表示LEDと接点が切り替わる。",
+  mount: "rigid",
+  params: {},
+  states: { on: { type: "bool", default: false, description: "リレーがオン (COM-NO 導通)" } },
+  animate: () => ({
+    led: (s) => ({ opacity: s.on ? 1 : 0 }),
+    no: (s) => ({ opacity: s.on ? 1 : 0 }),
+    nc: (s) => ({ opacity: s.on ? 0 : 1 }),
+  }),
+  pins: () => inline(["VCC", "GND", "IN"]),
+  extent: [-4.2, -19.4, 6.2, 0.6],
+  render({ anim }) {
+    const screw = (x, label) =>
+      circle(x, -17.6, 0.85, { fill: "#c9ccd0", stroke: "#888", "stroke-width": 0.05 }) +
+      line(x - 0.55, -17.6, x + 0.55, -17.6, { stroke: "#666", "stroke-width": 0.12 }) +
+      text(x, -15.7, label, { "font-size": 0.5, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" });
+    return (
+      headerPins(inline(["", "", ""])) +
+      rect(-4.1, -19.2, 10.2, 19.6, { rx: 0.3, fill: "#1f5fa8", stroke: "#164477", "stroke-width": 0.06 }) +
+      rect(-3.4, -19.0, 8.8, 2.8, { rx: 0.15, fill: "#2e7d32" }) +
+      screw(-2.0, "NO") +
+      screw(1.0, "COM") +
+      screw(4.0, "NC") +
+      // contact symbol: COM swings to NO when on
+      circle(1.0, -14.2, 0.15, { fill: "#fff" }) +
+      line(1.0, -14.2, -1.6, -14.9, { stroke: "#ffeb3b", "stroke-width": 0.14, "stroke-linecap": "round", ...anim("no") }) +
+      line(1.0, -14.2, 3.6, -14.9, { stroke: "#ffeb3b", "stroke-width": 0.14, "stroke-linecap": "round", ...anim("nc") }) +
+      rect(-2.8, -12.6, 7.6, 6.2, { rx: 0.2, fill: "#2a64c8", stroke: "#173f86", "stroke-width": 0.06 }) +
+      text(1.0, -10.2, "SRD-05VDC", { "font-size": 0.6, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" }) +
+      text(1.0, -9.1, "SL-C", { "font-size": 0.45, fill: "#d0dcff", "text-anchor": "middle", "dominant-baseline": "central" }) +
+      circle(4.6, -3.0, 0.35, { fill: "#5a1a1a" }) +
+      g(circle(0, 0, 0.9, { fill: "#ff3d00", opacity: 0.35 }) + circle(0, 0, 0.35, { fill: "#ff5252" }), {
+        transform: "translate(4.6 -3)",
+        ...anim("led"),
+      }) +
+      text(-2.0, -2.2, "VCC GND IN", { "font-size": 0.4, fill: "#fff", "text-anchor": "start", "dominant-baseline": "central" })
+    );
+  },
+};
+
+const rgbled = {
+  type: "rgbled",
+  name: "フルカラーLED (カソードコモン)",
+  category: "半導体",
+  description: "5mm 4本足。ピンは R, K(共通カソード, 一番長い足), G, B。r / g / b (0〜1) で発光色をアニメーション。",
+  mount: "leads",
+  params: {},
+  states: {
+    r: { type: "number", default: 0, description: "赤の明るさ 0〜1" },
+    g: { type: "number", default: 0, description: "緑の明るさ 0〜1" },
+    b: { type: "number", default: 0, description: "青の明るさ 0〜1" },
+  },
+  animate: () => ({
+    glow: (s) => {
+      const [r, gg, b] = [s.r, s.g, s.b].map((v) => clamp(Number(v) || 0, 0, 1));
+      const max = Math.max(r, gg, b);
+      const c = (v) => Math.round((max ? v / max : 0) * 255);
+      return { fill: `rgb(${c(r)},${c(gg)},${c(b)})`, opacity: Math.round(max * 1000) / 1000 };
+    },
+  }),
+  pins: () => inline(["R", "K", "G", "B"]),
+  render({ pins, anim }) {
+    const c = centroid(pins);
+    return (
+      pins.map((p) => leg(p, c, 0.1)).join("") +
+      g(
+        circle(0, 0, 1.05, { fill: "#eef1f3", stroke: "rgba(0,0,0,.3)", "stroke-width": 0.06, opacity: 0.95 }) +
+          g(circle(0, 0, 2.0, { opacity: 0.2 }) + circle(0, 0, 1.4, { opacity: 0.4 }) + circle(0, 0, 1.0) + circle(0, 0, 0.5, { fill: "#fff", opacity: 0.7 }), {
+            ...anim("glow"),
+            "pointer-events": "none",
+          }) +
+          circle(-0.35, -0.35, 0.2, { fill: "#fff", opacity: 0.6 }),
+        { transform: `translate(${n(c.x)} ${n(c.y)})` },
+      )
+    );
+  },
+};
+
+const pot = {
+  type: "pot",
+  name: "可変抵抗 (16mm, Bカーブ)",
+  category: "受動部品",
+  description: "ピン間5mm (2ピッチ)。ピン2がワイパー。本体はピンの上側に描く。angle (0〜300°) でつまみの回転をアニメーション。",
+  mount: "rigid",
+  params: { value: { default: "10k", description: "抵抗値" } },
+  states: { angle: { type: "number", default: 150, description: "つまみの角度 0〜300°" } },
+  animate: () => ({ knob: (s) => ({ transform: `rotate(${Math.round((Number(s.angle) - 150) * 10) / 10}deg)` }) }),
+  pins: () => [
+    { name: "1", x: 0, y: 0 },
+    { name: "2", x: 2, y: 0 },
+    { name: "3", x: 4, y: 0 },
+  ],
+  extent: [-1.3, -6.6, 5.3, 0.5],
+  render({ params, anim }) {
+    return (
+      [0, 2, 4].map((x) => rect(x - 0.15, -1.2, 0.3, 1.2, { fill: "#b9c0c7" })).join("") +
+      circle(2, -3.3, 3.15, { fill: "#9ea7ad", stroke: "#6d767c", "stroke-width": 0.06 }) +
+      g(
+        g(circle(0, 0, 1.9, { fill: "#2b2b2b", stroke: "#111", "stroke-width": 0.06 }) + line(0, 0, 0, -1.6, { stroke: "#fff", "stroke-width": 0.22, "stroke-linecap": "round" }), anim("knob")),
+        { transform: "translate(2 -3.3)" },
+      ) +
+      text(2, -0.4, params.value, { "font-size": 0.42, fill: "#222", "text-anchor": "middle", "dominant-baseline": "central" })
+    );
+  },
+};
+
+// prettier-ignore
+const ESP32_PINS = [
+  "3V3", "EN", "IO36", "IO39", "IO34", "IO35", "IO32", "IO33", "IO25", "IO26",
+  "IO27", "IO14", "IO12", "GND", "IO13", "SD2", "SD3", "CMD", "5V",
+  "CLK", "SD0", "SD1", "IO15", "IO2", "IO0", "IO4", "IO16", "IO17", "IO5",
+  "IO18", "IO19", "GND2", "IO21", "IO3", "IO1", "IO22", "IO23", "GND3",
+];
+
+const esp32 = {
+  type: "esp32",
+  name: "ESP32-DevKitC",
+  category: "マイコンボード",
+  description:
+    "2x19ピン。atはピン1(3V3)の穴、USBはピン19(5V)側。IO1=TX, IO3=RX。列間隔は既定で10ピッチ (フルサイズのブレッドボードで片側1列だけ空く)。製品により異なるので width で調整。",
+  mount: "rigid",
+  params: { width: { default: 10, description: "列間隔 (ピッチ単位)" } },
+  pins: (p) => dualRow(38, Number(p.width) || 10, ESP32_PINS),
+  render({ pins, params }) {
+    const w = Number(params.width) || 10;
+    const mid = -w / 2;
+    return (
+      rect(-2.7, -w - 0.55, 21.6, w + 1.1, { rx: 0.25, fill: "#1c1c1c", stroke: "#000", "stroke-width": 0.06 }) +
+      rect(-2.5, mid - 3.55, 2.4, 7.1, { fill: "#20301f" }) +
+      tag("path", { d: `M -2.2 ${n(mid - 2.8)} h 1.6 v 0.8 h -1.2 v 0.8 h 1.2 v 0.8 h -1.2 v 0.8 h 1.2`, fill: "none", stroke: "#c9a74a", "stroke-width": 0.12 }) +
+      rect(-0.1, mid - 3.55, 7.6, 7.1, { rx: 0.1, fill: "#b9bec4", stroke: "#8b9399", "stroke-width": 0.06 }) +
+      text(3.7, mid - 0.4, "ESP32-WROOM-32", { "font-size": 0.5, fill: "#333", "text-anchor": "middle", "dominant-baseline": "central" }) +
+      rect(18.0, mid - 1.1, 1.6, 2.2, { fill: "#c8ccd0", stroke: "#8a8f94", "stroke-width": 0.05 }) +
+      headerPins(pins) +
+      pinLabels(pins, w) +
+      text(12.5, mid, "ESP32-DevKitC", { "font-size": 0.6, fill: "#fff", "text-anchor": "middle", "dominant-baseline": "central" })
+    );
+  },
+};
+
+const LCD_COLS = 16;
+
+const lcd1602 = {
+  type: "lcd1602",
+  name: "キャラクタLCD 1602 (I2C)",
+  category: "表示",
+  description: "16文字x2行, I2C変換基板付き。ピン: GND, VCC, SDA, SCL。本体はピンの上側に描く。text (\\n で2行目) と backlight でアニメーション。",
+  mount: "rigid",
+  params: {},
+  states: {
+    text: { type: "string", default: "", description: "表示する文字 (1行16文字, \\n で改行)" },
+    backlight: { type: "bool", default: true, description: "バックライト" },
+  },
+  animate: ({ values }) => ({
+    light: (s) => ({ opacity: s.backlight ? 1 : 0 }),
+    ...Object.fromEntries(values("text").map((v, i) => [`text:${i}`, (s) => ({ opacity: String(s.text) === v ? 1 : 0 })])),
+  }),
+  pins: () => inline(["GND", "VCC", "SDA", "SCL"]),
+  extent: [-1.4, -15.4, 30.2, 0.6],
+  render({ anim, values }) {
+    const x0 = 1.9;
+    const y0 = -11.4;
+    const cw = 25.4 / LCD_COLS;
+    const size = cw / 0.6;
+    const texts = values("text")
+      .map((v, i) =>
+        tag(
+          "text",
+          { x: x0 + 0.25, y: y0, "font-size": size, "font-family": "monospace", fill: "#10241a", ...anim(`text:${i}`) },
+          v
+            .split("\n")
+            .slice(0, 2)
+            .map((l, j) => tag("tspan", { x: x0 + 0.25, dy: j === 0 ? size * 1.05 : size * 1.15 }, esc(l.slice(0, LCD_COLS))))
+            .join(""),
+        ),
+      )
+      .join("");
+    return (
+      headerPins(inline(["", "", "", ""])) +
+      rect(-1.3, -15.2, 31.4, 14.6, { rx: 0.3, fill: "#1f6b3a", stroke: "#124526", "stroke-width": 0.06 }) +
+      rect(0.4, -13.4, 28.4, 10.4, { rx: 0.2, fill: "#111" }) +
+      rect(x0, y0 - 0.6, 25.4 + 0.5, 7.0, { fill: "#4c6b3a" }) +
+      rect(x0, y0 - 0.6, 25.4 + 0.5, 7.0, { fill: "#a8d45a", ...anim("light") }) +
+      texts +
+      text(-0.9, -1.0, "GND VCC SDA SCL", { "font-size": 0.38, fill: "#fff", "text-anchor": "start", "dominant-baseline": "central" })
+    );
+  },
+};
+
 export const BUILTIN_PARTS = [
   resistor,
   led,
+  rgbled,
   diode,
   capacitor,
   electrolytic,
   cds,
+  dht11,
+  hcsr04,
   transistor,
   regulator,
   button,
   trimmer,
+  pot,
   buzzer,
   motor,
   servo,
   seg7,
+  lcd1602,
+  relay,
   header,
   dip,
   ne555,
@@ -545,4 +795,5 @@ export const BUILTIN_PARTS = [
   hc595,
   nano,
   pico,
+  esp32,
 ];
