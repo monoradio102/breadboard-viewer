@@ -2,35 +2,30 @@
 
 > ブレッドボード上の配線を JSON で記述し、SVG / PNG / アニメーションとして描画するツールです。
 > このファイルは、AIエージェントがこのサイトの URL だけを渡されたときの手引きです。リポジトリをクローンする必要はありません。
+> (このファイルは docs/agent/common.md から生成しています)
 
 Base URL: https://monoradio102.github.io/breadboard-viewer/
 
-## できること
+## 使い始める (シェルと Node.js 18 以上がある場合)
 
-- 回路 (ブレッドボード、部品、ジャンパ線) を JSON で書き、検証してネットリストを得る
-- SVG (アニメーション付き)、PNG (透過可・時刻指定)、連番 PNG (→ ffmpeg で GIF / MP4) に描画する
-- 動作の台本 (LED 点灯、モーター回転、サーボ角度、信号の流れ、キャプション) を付ける
-- 組み込みにない部品を JSON で定義する。煙・矢印などの演出は任意の SVG アニメーションとして流し込む
-
-## 手順 A: シェルと Node.js 18 以上がある場合 (推奨)
-
-依存のない1ファイルのコマンドラインツールを取得して使います。
+依存のない1ファイルのコマンドラインツールを取得します。以下の `node bb.mjs` はこのファイルを指します。
 
 ```bash
 curl -fsSLO https://monoradio102.github.io/breadboard-viewer/dist/bb.mjs
-node bb.mjs parts                      # 使える部品の type とピン名
-node bb.mjs new circuit.json half      # 空の回路 (full / half / mini)
-node bb.mjs apply circuit.json '[{"op":"addPart","type":"nano","at":"h3"},{"op":"addPart","type":"led","pins":{"A":"b21","K":"b22"}}]'
-node bb.mjs check circuit.json         # エラー / 警告 / ネットリスト。エラーがあると終了コード 1
-node bb.mjs render circuit.json -o circuit.svg              # アニメーション付き SVG (回路データ入り)
-node bb.mjs render circuit.json -o f.png --time 1500 --transparent   # 1.5 秒時点の透過 PNG
-node bb.mjs frames circuit.json -o frames --fps 30 --transparent     # 1 周分の連番 PNG と ffmpeg のコマンド
 ```
 
-PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx playwright install chromium`)。
-SVG の出力と、parts / new / apply / check は Node.js だけで動きます。
+## よく使う場合: Claude のスキルとしてインストール
 
-## 手順 B: ブラウザを操作できる場合
+一度インストールすると、URL を渡さなくても、ブレッドボードの配線図を頼むだけで使われます。
+
+```bash
+# Claude Code (個人のスキル。プロジェクト単位なら ~/.claude を .claude に)
+d=~/.claude/skills/breadboard-viewer; mkdir -p "$d"; for f in SKILL.md bb.mjs FORMAT.md OPS.md; do curl -fsSL "https://monoradio102.github.io/breadboard-viewer/skill/breadboard-viewer/$f" -o "$d/$f"; done
+```
+
+claude.ai では、https://monoradio102.github.io/breadboard-viewer/skill/breadboard-viewer.zip をスキルとしてアップロードします。
+
+## ブラウザを操作できる場合
 
 エディタ https://monoradio102.github.io/breadboard-viewer/ を開き、`window.bb` を使います。
 
@@ -44,10 +39,33 @@ bb.get()                        // 現在の回路 JSON
 bb.help()
 ```
 
-## 手順 C: 結果を人に渡す
+## できること
 
-回路の JSON ファイル、または書き出した SVG ファイル (回路データ入り) を渡してください。
-エディタにドロップすると、そのまま編集できます。
+- 回路 (ブレッドボード、部品、ジャンパ線) を JSON で書き、検証してネットリストを得る
+- SVG (アニメーション付き)、PNG (透過可・時刻指定)、連番 PNG (→ ffmpeg で GIF / MP4) に描画する
+- 動作の台本 (LED 点灯、モーター回転、サーボ角度、信号の流れ、キャプション) を付ける
+- 組み込みにない部品を JSON で定義する。煙・矢印などの演出は任意の SVG アニメーションとして流し込む
+
+## 進め方
+
+```bash
+node bb.mjs parts                      # 使える部品の type とピン名
+node bb.mjs new circuit.json half      # 空の回路 (full / half / mini)
+node bb.mjs apply circuit.json '[{"op":"addPart","type":"nano","at":"h3"},{"op":"addPart","type":"led","pins":{"A":"b21","K":"b22"}}]'
+node bb.mjs check circuit.json         # エラー / 警告 / ネットリスト。エラーがあると終了コード 1
+node bb.mjs render circuit.json -o circuit.svg                          # アニメーション付き SVG (回路データ入り)
+node bb.mjs render circuit.json -o f.png --time 1500 --transparent      # 1.5 秒時点の透過 PNG
+node bb.mjs frames circuit.json -o frames --fps 30 --transparent        # 1 周分の連番 PNG と ffmpeg のコマンド
+```
+
+1. `parts` で部品の `type` とピン名を確かめる
+2. `apply` で部品を置き、配線する (操作の一覧は https://monoradio102.github.io/breadboard-viewer/docs/OPS.md)。JSON を直接書いてもよい
+3. 必ず `check` を実行し、エラーがなく、ネットリストが意図どおりか確かめる
+4. `render` で画像にして、見た目を確かめる
+5. 動作を説明するときは `animate` / `setAnimation` でアニメーションを付ける。部品の状態で表せない演出は SVG を書いて `addOverlay` で流し込む
+
+SVG の出力と、parts / new / apply / check は Node.js 18 以上だけで動きます。
+PNG と連番 PNG には Playwright が必要です (`npm i playwright && npx playwright install chromium`)。
 
 ## 回路を書くときの要点
 
@@ -56,13 +74,13 @@ bb.help()
 - 部品の置き方: `at` (1 番ピンの穴) + `rot`、`pins` (抵抗や LED など足を曲げられる部品の穴を個別に)、`pos: [x, y]` (ボードの外)
 - 配線の端: 穴の名前、または `"部品ID.ピン名"` (ボード外の部品のピン)
 - DIP の IC は 1 番ピンを f 行に置くと溝をまたぐ (例: `"at": "f10"`)
-- 書いたら必ず `check` を実行し、ネットリストが意図どおりか確かめる
+- 組み込みにない部品は、データシートを調べて `partDefs` に JSON で定義する (`units: "mm"` でデータシートの寸法をそのまま書ける)
+- 結果を人に渡すときは、回路の JSON か、書き出した SVG (回路データ入り) を渡す。エディタ (https://monoradio102.github.io/breadboard-viewer/) にドロップすると編集できる
 
 ## ドキュメント
 
-- [回路ファイルの形式](https://monoradio102.github.io/breadboard-viewer/docs/FORMAT.md): 穴、部品、配線、独自部品、アニメーション、演出 SVG
-- [編集操作 (ops)](https://monoradio102.github.io/breadboard-viewer/docs/OPS.md): addPart, move, rotate, setPin, update, remove, addWire, addOverlay, animate, setAnimation
-- [README](https://monoradio102.github.io/breadboard-viewer/README.md)
+- 回路ファイルの形式: https://monoradio102.github.io/breadboard-viewer/docs/FORMAT.md (穴、部品、配線、独自部品、アニメーション、演出 SVG)
+- 編集操作 (ops): https://monoradio102.github.io/breadboard-viewer/docs/OPS.md (addPart, move, rotate, setPin, update, remove, addWire, addOverlay, animate, setAnimation)
 
 ## サンプル回路 (JSON)
 

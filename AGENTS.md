@@ -29,5 +29,5 @@
 - 回路を変更する処理は `src/ops.js` に op として追加し、UI (`src/app.js`)、`window.bb`、CLI (`tools/bb.mjs`) からはそれを呼ぶようにしてください。
 - 部品の見た目や `examples/` を変えたら、`npm run images` で `docs/images/` を作り直してください。
 - `src/` か `tools/` を変えたら、`npm install` (初回のみ) のあと `npm run build` で `dist/bb.mjs` を作り直してください。Pagesから配布している1ファイル版のCLIです。
-- 使い方が変わったら `llms.txt` も更新してください。リポジトリを持たないAIは、Pagesの `llms.txt` だけを見て使います。
+- 使い方が変わったら `docs/agent/common.md` を更新し、`npm run build` を実行してください。そこから `llms.txt` (URLだけを渡されたAI向け) と `skill/breadboard-viewer/` (Claude のスキル) が生成されます。`llms.txt` と `skill/` は直接編集しないでください。
 - `npm test` が通ることを確認してください。

@@ -10,6 +10,10 @@ Claude Code や Codex などのAIエージェントが、読み書きしやす�
 
 https://monoradio102.github.io/breadboard-viewer/llms.txt
 
+よく使う場合は、**Claude のスキル**としてインストールしておくと、URLを渡さなくても
+「ブレッドボードの配線図を描いて」と頼むだけで使われます (インストールのコマンドは llms.txt にあります)。
+claude.ai では [skill/breadboard-viewer.zip](skill/breadboard-viewer.zip) をスキルとしてアップロードします。
+
 | | |
 |---|---|
 | ![トランジスタでモーター駆動 + サーボ](docs/images/motor-servo.svg) | ![HC-SR04 で距離アラーム](docs/images/distance-alarm.svg) |
@@ -97,4 +101,6 @@ bb.help()
 | `docs/images/` | README用の画像 (`npm run images` で生成) |
 | `tools/bb.mjs` | コマンドライン |
 | `dist/bb.mjs` | コマンドラインを1ファイルにまとめたもの (`npm run build` で生成。Pagesから配布) |
-| `llms.txt` | AIエージェント向けの手引き (Pagesのトップから参照) |
+| `docs/agent/common.md` | AIエージェント向けの手引きの本文 (`llms.txt` と `SKILL.md` の元) |
+| `llms.txt` | AIエージェント向けの手引き (Pagesのトップから参照。`npm run build` で生成) |
+| `skill/breadboard-viewer/` | Claude のスキル (`SKILL.md`, `bb.mjs`, `FORMAT.md`, `OPS.md`。`npm run build` で生成) と、その zip |
